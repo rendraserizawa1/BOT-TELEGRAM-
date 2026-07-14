@@ -1,0 +1,27 @@
+{
+  "name": "bot-telegram-perabot",
+  "version": "1.0.0",
+  "description": "Bot Telegram Toko Perabot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": "20.x"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.66.0",
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.0",
+    "express-session": "^1.17.3",
+    "form-data": "^4.0.0",
+    "mongodb": "^6.8.0",
+    "xlsx": "^0.18.5",
+    "jsqr": "^1.4.0",
+    "jimp": "^0.22.10",
+    "qrcode-reader": "^1.0.4",
+    "sharp": "^0.33.0"
+  }
+}
