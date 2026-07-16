@@ -2448,83 +2448,254 @@ async function koreksiVoiceText(rawText) {
 }
 
 // ════════════════════════════════════════════════════════════════
-//   13. EXCEL ENGINE
+//   13. EXCEL ENGINE (Multi-File Per Toko + Auto-Detect Header)
 // ════════════════════════════════════════════════════════════════
 
 let DATA_BARANG = [];
 
-function loadExcel() {
-  if (!fs.existsSync(CONFIG.paths.excel)) {
-    log.warn('EXCEL', 'File tidak ditemukan');
-    return false;
+/**
+ * Load Excel per toko dengan format:
+ * - Header auto-detect (bisa di baris berapapun)
+ * - Kolom fleksibel (support banyak variasi nama)
+ * - Format angka Indonesia (25.000 → 25000)
+ * 
+ * Mapping kolom:
+ * - Kode Item → kode barang
+ * - Nama Item → nama barang
+ * - Jenis → jenis material
+ * - Stok → stok fisik
+ * - Satuan → satuan (PCS, PACK, DZ, dll)
+ * - Harga Price → HARGA ECER (retail 1-5 pcs)
+ * - Harga Jual → HARGA AMBIL/GROSIR (6+ pcs)
+ * - HPP (optional) → Harga Pokok/Modal
+ */
+function loadExcelPerToko(tokoKode) {
+  const filePath = CONFIG.paths.excelPerToko[tokoKode];
+  if (!filePath || !fs.existsSync(filePath)) {
+    log.warn('EXCEL', `File ${tokoKode}: tidak ditemukan (${filePath})`);
+    return [];
   }
+  
   try {
-    const wb = xlsx.readFile(CONFIG.paths.excel);
+    const wb = xlsx.readFile(filePath);
     const ws = wb.Sheets[wb.SheetNames[0]];
     const allRows = xlsx.utils.sheet_to_json(ws, { header: 1, defval: 0, blankrows: false });
-    if (allRows.length < 3) return false;
-
-    const headers = allRows[1].map(h => String(h || '').trim());
-    const findCol = name => headers.findIndex(h =>
-      h.toLowerCase().replace(/\s+/g, ' ').trim() === name.toLowerCase()
-    );
-
-    const colMap = {
-      kode: findCol('Kode Item'),
-      nama: findCol('Nama Item'),
-      jenis: findCol('Jenis'),
-      merek: findCol('Merek'),
-      satuan: findCol('Satuan'),
-    };
-
-    const tokoColMap = {};
-    Object.keys(TOKO_COLS).forEach(kode => {
-      const c = TOKO_COLS[kode];
-      tokoColMap[kode] = {
-        ecer: findCol(c.ecer),
-        ambil: findCol(c.ambil),
-        stok: findCol(c.stok),
-      };
-    });
-
-    if (colMap.kode === -1 || colMap.nama === -1) {
-      log.error('EXCEL', 'Kolom Kode/Nama tidak ditemukan');
-      return false;
+    
+    if (allRows.length < 3) {
+      log.warn('EXCEL', `File ${tokoKode}: kurang data (< 3 baris)`);
+      return [];
     }
-
-    DATA_BARANG = [];
-    for (let i = 2; i < allRows.length; i++) {
+    
+    // ═══ AUTO-DETECT HEADER ═══
+    // Header biasanya di baris 1-15 (karena ada logo/info toko di atas)
+    let headerRowIdx = -1;
+    let headers = [];
+    
+    for (let i = 0; i < Math.min(15, allRows.length); i++) {
+      const row = allRows[i];
+      if (!row) continue;
+      
+      const rowStr = row.map(c => String(c || '').toLowerCase()).join('|');
+      
+      // Header terdeteksi kalau mengandung "kode" dan "nama"
+      if ((rowStr.includes('kode item') || rowStr.includes('kode')) && 
+          (rowStr.includes('nama item') || rowStr.includes('nama'))) {
+        headerRowIdx = i;
+        headers = row.map(h => String(h || '').trim());
+        break;
+      }
+    }
+    
+    if (headerRowIdx === -1) {
+      log.error('EXCEL', `File ${tokoKode}: Header tidak ditemukan (cari "Kode Item" dan "Nama Item")`);
+      return [];
+    }
+    
+    log.info('EXCEL', `File ${tokoKode}: Header di baris ${headerRowIdx + 1}`);
+    
+    // ═══ FLEXIBLE COLUMN MATCHING ═══
+    const findCol = (...names) => {
+      // Exact match dulu
+      for (const name of names) {
+        const idx = headers.findIndex(h => 
+          h.toLowerCase().replace(/\s+/g, ' ').trim() === name.toLowerCase()
+        );
+        if (idx !== -1) return idx;
+      }
+      // Partial match sebagai fallback
+      for (const name of names) {
+        const idx = headers.findIndex(h => 
+          h.toLowerCase().includes(name.toLowerCase())
+        );
+        if (idx !== -1) return idx;
+      }
+      return -1;
+    };
+    
+    const colMap = {
+      no: findCol('No', 'no.', 'nomor'),
+      kode: findCol('Kode Item', 'Kode', 'Code'),
+      nama: findCol('Nama Item', 'Nama', 'Name', 'Item'),
+      jenis: findCol('Jenis', 'Type', 'Category'),
+      stok: findCol('Stok', 'Stock', 'Qty Stok'),
+      satuan: findCol('Satuan', 'Unit', 'Sat'),
+      qtyPaket: findCol('Qty / Paket', 'Qty/Paket', 'Paket'),
+      // ★ Harga Price = ECER (retail 1-5 pcs) - harga lebih mahal
+      hargaEcer: findCol('Harga Price', 'Price', 'Ecer', 'Retail', 'Harga Ecer'),
+      // ★ Harga Jual = AMBIL/GROSIR (6+ pcs) - harga lebih murah
+      hargaAmbil: findCol('Harga Jual', 'Jual', 'Ambil', 'Grosir', 'Wholesale'),
+      // ★ HPP = Harga Pokok/Modal (opsional)
+      hargaHPP: findCol('HPP', 'Harga Beli', 'Harga Pokok', 'Harga Modal', 'Modal'),
+      merek: findCol('Merek', 'Merk', 'Brand'),
+    };
+    
+    // Validasi kolom wajib
+    if (colMap.kode === -1 || colMap.nama === -1) {
+      log.error('EXCEL', `File ${tokoKode}: Kolom "Kode Item" atau "Nama Item" tidak ada`);
+      log.error('EXCEL', `Headers ditemukan: ${headers.join(', ')}`);
+      return [];
+    }
+    
+    log.info('EXCEL', `${tokoKode} mapping: kode=${colMap.kode}, nama=${colMap.nama}, stok=${colMap.stok}, satuan=${colMap.satuan}, ecer=${colMap.hargaEcer}, ambil=${colMap.hargaAmbil}, hpp=${colMap.hargaHPP}`);
+    
+    // ═══ PARSER ANGKA FORMAT INDONESIA ═══
+    const parseNum = (val) => {
+      if (!val && val !== 0) return 0;
+      if (typeof val === 'number') return Math.floor(val);
+      
+      let str = String(val).trim();
+      // Hapus "Rp", spasi, dll
+      str = str.replace(/[^0-9,.-]/g, '');
+      if (!str) return 0;
+      
+      // Handle format Indonesia:
+      // "25.000" → 25000 (titik = ribuan)
+      // "25,000" → 25000 (koma = ribuan, jarang)
+      // "25.5" → 25 (kalau ada desimal, ambil bulat saja)
+      
+      // Hapus semua titik & koma (asumsi = pemisah ribuan)
+      const cleaned = str.replace(/[.,]/g, '');
+      return parseInt(cleaned) || 0;
+    };
+    
+    // ═══ PARSE DATA (baris setelah header) ═══
+    const items = [];
+    for (let i = headerRowIdx + 1; i < allRows.length; i++) {
       const row = allRows[i];
       if (!row || row.length === 0) continue;
+      
       const kode = String(row[colMap.kode] || '').trim().toUpperCase();
-      if (!kode || kode === '0') continue;
-
-      const item = {
+      if (!kode || kode === '0' || kode === 'NO' || kode === 'KODE') continue;
+      
+      const nama = String(row[colMap.nama] || '').trim().toUpperCase();
+      if (!nama || nama.length < 2) continue;
+      
+      // ★ Harga Price = ECER (mahal, untuk 1-5 pcs)
+      // ★ Harga Jual = AMBIL/GROSIR (murah, untuk 6+ pcs)
+      const hargaEcer = colMap.hargaEcer >= 0 ? parseNum(row[colMap.hargaEcer]) : 0;
+      const hargaAmbil = colMap.hargaAmbil >= 0 ? parseNum(row[colMap.hargaAmbil]) : 0;
+      const hargaHPP = colMap.hargaHPP >= 0 ? parseNum(row[colMap.hargaHPP]) : 0;
+      
+      items.push({
         kode,
-        nama: String(row[colMap.nama] || '').trim().toUpperCase(),
-        jenis: String(row[colMap.jenis] || '').trim(),
-        merek: String(row[colMap.merek] || '').trim(),
-        satuan: String(row[colMap.satuan] || '').trim(),
-        harga: {},
-      };
-      Object.keys(TOKO_COLS).forEach(tk => {
-        const tc = tokoColMap[tk];
-        item.harga[tk] = {
-          ecer: tc.ecer >= 0 ? (parseFloat(row[tc.ecer]) || 0) : 0,
-          ambil: tc.ambil >= 0 ? (parseFloat(row[tc.ambil]) || 0) : 0,
-          stok: tc.stok >= 0 ? (parseInt(row[tc.stok]) || 0) : 0,
-        };
+        nama,
+        jenis: colMap.jenis >= 0 ? String(row[colMap.jenis] || '').trim() : '',
+        merek: colMap.merek >= 0 ? String(row[colMap.merek] || '').trim() : '',
+        satuan: colMap.satuan >= 0 ? String(row[colMap.satuan] || 'PCS').trim().toUpperCase() : 'PCS',
+        toko: tokoKode,
+        hpp: hargaHPP,
+        ecer: hargaEcer,                                    // ← Harga Price (retail)
+        ambil: hargaAmbil > 0 ? hargaAmbil : hargaEcer,    // ← Harga Jual (grosir), fallback ke ecer
+        stok: colMap.stok >= 0 ? parseNum(row[colMap.stok]) : 0,
       });
-      DATA_BARANG.push(item);
     }
-    log.info('EXCEL', `Loaded ${DATA_BARANG.length} item`);
-    return true;
+    
+    log.info('EXCEL', `File ${tokoKode}: ${items.length} item loaded`);
+    return items;
   } catch(e) {
-    log.error('EXCEL', 'Gagal load', e.message);
-    return false;
+    log.error('EXCEL', `File ${tokoKode} gagal load: ${e.message}`);
+    return [];
   }
 }
 
+/**
+ * Load semua toko dan gabung jadi 1 array.
+ * Barang dengan kode SAMA di multi-toko akan di-merge menjadi 1 entry
+ * dengan harga per toko masing-masing.
+ */
+function loadExcel() {
+  const perTokoItems = {};
+  const totalPerToko = {};
+  
+  // Load setiap toko
+  Object.keys(CONFIG.paths.excelPerToko).forEach(tokoKode => {
+    const items = loadExcelPerToko(tokoKode);
+    perTokoItems[tokoKode] = items;
+    totalPerToko[tokoKode] = items.length;
+  });
+  
+  // Merge: barang dengan kode SAMA di multi-toko → 1 entry
+  const mergedMap = new Map();
+  
+  Object.entries(perTokoItems).forEach(([tokoKode, items]) => {
+    items.forEach(item => {
+      const key = item.kode;
+      
+      if (!mergedMap.has(key)) {
+        // Barang baru
+        mergedMap.set(key, {
+          kode: item.kode,
+          nama: item.nama,
+          jenis: item.jenis,
+          merek: item.merek,
+          satuan: item.satuan,
+          satuanPerToko: { [tokoKode]: item.satuan },
+          namaPerToko: { [tokoKode]: item.nama },
+          harga: {
+            nk: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
+            tdm: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
+            oesapa: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
+            kefa: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
+            cp: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
+          },
+        });
+      }
+      
+      const existing = mergedMap.get(key);
+      // Set harga & stok untuk toko ini
+      existing.harga[tokoKode] = {
+        ecer: item.ecer,
+        ambil: item.ambil,
+        stok: item.stok,
+        hpp: item.hpp || 0,
+      };
+      // Simpan satuan & nama spesifik per toko
+      existing.satuanPerToko[tokoKode] = item.satuan;
+      existing.namaPerToko[tokoKode] = item.nama;
+    });
+  });
+  
+  DATA_BARANG = Array.from(mergedMap.values());
+  
+  // Reset cache Homebase DB index kalau ada
+  if (typeof resetDBIndex === 'function') {
+    try { resetDBIndex(); } catch(e) {}
+  }
+  
+  // Log ringkasan
+  console.log('═'.repeat(60));
+  console.log(`📦 EXCEL LOADED (per toko):`);
+  Object.entries(totalPerToko).forEach(([tk, count]) => {
+    const status = count > 0 ? '✅' : '⚠️';
+    console.log(`   ${status} ${NAMA_TOKO[tk] || tk}: ${count} item`);
+  });
+  console.log(`📦 TOTAL UNIQUE BARANG: ${DATA_BARANG.length}`);
+  console.log('═'.repeat(60));
+  
+  return DATA_BARANG.length > 0;
+}
+
+// Load saat startup
 loadExcel();
 
 // ════════════════════════════════════════════════════════════════
