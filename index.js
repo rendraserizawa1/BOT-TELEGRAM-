@@ -36,7 +36,7 @@ const CONFIG = {
   sessionSecret: process.env.SESSION_SECRET || 'bot-telegram-secret-key',
   botUsername: process.env.BOT_USERNAME || 'Aivirtual_Robot',
   
-  paths: {
+    paths: {
     storage: path.join(__dirname, 'storage'),
     members: path.join(__dirname, 'storage', 'members.json'),
     kontak: path.join(__dirname, 'storage', 'kontak.json'),
@@ -47,7 +47,14 @@ const CONFIG = {
     beritaacara: path.join(__dirname, 'storage', 'berita_acara.json'),
     soShared: path.join(__dirname, 'storage', 'so_shared.json'),
     roleLaporan: path.join(__dirname, 'storage', 'role_laporan.json'),
-    excel: path.join(__dirname, 'harga_barang_5toko.xlsx'),
+    excelFolder: path.join(__dirname, 'harga_toko'),
+    excelPerToko: {
+      nk: path.join(__dirname, 'harga_toko', 'nk.xlsx'),
+      tdm: path.join(__dirname, 'harga_toko', 'tdm.xlsx'),
+      oesapa: path.join(__dirname, 'harga_toko', 'oesapa.xlsx'),
+      kefa: path.join(__dirname, 'harga_toko', 'kefa.xlsx'),
+      cp: path.join(__dirname, 'harga_toko', 'cp.xlsx'),
+    },
     logs: path.join(__dirname, 'logs', 'error.log'),
   },
   
@@ -67,7 +74,7 @@ if (!CONFIG.geminiKey) {
 }
 
 // Buat folder yang dibutuhkan
-[CONFIG.paths.storage, path.dirname(CONFIG.paths.logs)].forEach(dir => {
+[CONFIG.paths.storage, path.dirname(CONFIG.paths.logs), CONFIG.paths.excelFolder].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
@@ -2570,9 +2577,7 @@ function loadExcelPerToko(tokoKode) {
       
       // Handle format Indonesia:
       // "25.000" → 25000 (titik = ribuan)
-      // "25,000" → 25000 (koma = ribuan, jarang)
-      // "25.5" → 25 (kalau ada desimal, ambil bulat saja)
-      
+      // "25,000" → 25000 (koma = ribuan)
       // Hapus semua titik & koma (asumsi = pemisah ribuan)
       const cleaned = str.replace(/[.,]/g, '');
       return parseInt(cleaned) || 0;
