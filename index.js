@@ -318,8 +318,8 @@ const GITHUB_CONFIG = {
   token: process.env.GITHUB_TOKEN || '',
   owner: process.env.GITHUB_USERNAME || '',
   repo: process.env.GITHUB_REPO || '',
-  branch: process.env.GITHUB_BRANCH || 'main',
-  folder: 'data-storage', // Folder di GitHub untuk simpan JSON
+  branch: process.env.GITHUB_BRANCH || 'data-storage', // ★ Default branch data, BUKAN main
+  folder: 'data', // Root folder (tidak nested)
 };
 
 // File yang mau disimpan di GitHub (auto-sync)
@@ -492,7 +492,7 @@ async function loadAllFromGitHub() {
  */
 const githubSaveTimers = {};
 
-function saveToGitHubDebounced(fileName, data, delay = 5000) {
+function saveToGitHubDebounced(fileName, data, delay = 60000) {
   if (!isGitHubEnabled) return;
   
   // Clear timer sebelumnya
