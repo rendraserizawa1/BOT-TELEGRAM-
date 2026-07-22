@@ -311,6 +311,229 @@ function decrypt(text) {
   } catch(e) { return text; }
 }
 // ════════════════════════════════════════════════════════════════
+//   4B. GITHUB STORAGE - Data Permanent via GitHub API
+// ════════════════════════════════════════════════════════════════
+
+const GITHUB_CONFIG = {
+  token: process.env.GITHUB_TOKEN || '',
+  owner: process.env.GITHUB_USERNAME || '',
+  repo: process.env.GITHUB_REPO || '',
+  branch: process.env.GITHUB_BRANCH || 'main',
+  folder: 'data-storage', // Folder di GitHub untuk simpan JSON
+};
+
+// File yang mau disimpan di GitHub (auto-sync)
+const GITHUB_SYNC_FILES = [
+  'members', 'kontak', 'pending', 'roleLaporan',
+  'stockopname', 'beritaacara', 'soShared',
+];
+
+const isGitHubEnabled = !!(GITHUB_CONFIG.token && GITHUB_CONFIG.owner && GITHUB_CONFIG.repo);
+
+let githubClient = null;
+if (isGitHubEnabled) {
+  try {
+    const { Octokit } = require('@octokit/rest');
+    githubClient = new Octokit({ auth: GITHUB_CONFIG.token });
+    log.info('GITHUB', `✅ GitHub Storage aktif: ${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}`);
+  } catch(e) {
+    log.error('GITHUB', 'Gagal init: ' + e.message);
+  }
+} else {
+  log.warn('GITHUB', '⚠️ GITHUB_TOKEN belum diset. Data hanya tersimpan lokal (tidak permanent!)');
+}
+
+// Cache untuk SHA file (butuh untuk update)
+const githubFileSHA = {};
+
+/**
+ * Load 1 file JSON dari GitHub
+ */
+async function loadFromGitHub(fileName) {
+  if (!isGitHubEnabled) return null;
+  
+  try {
+    const filePath = `${GITHUB_CONFIG.folder}/${fileName}.json`;
+    const response = await githubClient.repos.getContent({
+      owner: GITHUB_CONFIG.owner,
+      repo: GITHUB_CONFIG.repo,
+      path: filePath,
+      ref: GITHUB_CONFIG.branch,
+    });
+    
+    if (response.data && response.data.content) {
+      // Simpan SHA untuk update nanti
+      githubFileSHA[fileName] = response.data.sha;
+      
+      // Decode base64
+      const content = Buffer.from(response.data.content, 'base64').toString('utf8');
+      const parsed = JSON.parse(content);
+      log.info('GITHUB', `✅ Loaded ${fileName}.json dari GitHub`);
+      return parsed;
+    }
+    return null;
+  } catch(err) {
+    if (err.status === 404) {
+      log.info('GITHUB', `${fileName}.json belum ada di GitHub (akan dibuat)`);
+    } else {
+      log.warn('GITHUB', `Load ${fileName}: ${err.message}`);
+    }
+    return null;
+  }
+}
+
+/**
+ * Save 1 file JSON ke GitHub
+ */
+async function saveToGitHub(fileName, data) {
+  if (!isGitHubEnabled) return false;
+  
+  try {
+    const filePath = `${GITHUB_CONFIG.folder}/${fileName}.json`;
+    const content = JSON.stringify(data, null, 2);
+    const contentBase64 = Buffer.from(content).toString('base64');
+    
+    const params = {
+      owner: GITHUB_CONFIG.owner,
+      repo: GITHUB_CONFIG.repo,
+      path: filePath,
+      message: `chore: auto-update ${fileName}.json [${new Date().toISOString()}]`,
+      content: contentBase64,
+      branch: GITHUB_CONFIG.branch,
+    };
+    
+    // Kalau file sudah ada, sertakan SHA
+    if (githubFileSHA[fileName]) {
+      params.sha = githubFileSHA[fileName];
+    } else {
+      // Coba ambil SHA dulu
+      try {
+        const existing = await githubClient.repos.getContent({
+          owner: GITHUB_CONFIG.owner,
+          repo: GITHUB_CONFIG.repo,
+          path: filePath,
+          ref: GITHUB_CONFIG.branch,
+        });
+        if (existing.data.sha) {
+          params.sha = existing.data.sha;
+          githubFileSHA[fileName] = existing.data.sha;
+        }
+      } catch(e) {} // File belum ada, akan dibuat
+    }
+    
+    const response = await githubClient.repos.createOrUpdateFileContents(params);
+    
+    // Update SHA cache
+    if (response.data && response.data.content && response.data.content.sha) {
+      githubFileSHA[fileName] = response.data.content.sha;
+    }
+    
+    log.info('GITHUB', `✅ Saved ${fileName}.json ke GitHub`);
+    return true;
+  } catch(err) {
+    log.error('GITHUB', `Save ${fileName}: ${err.message}`);
+    return false;
+  }
+}
+
+/**
+ * Load semua file JSON dari GitHub saat startup
+ */
+async function loadAllFromGitHub() {
+  if (!isGitHubEnabled) {
+    log.warn('GITHUB', 'Skip sync: GitHub Storage tidak aktif');
+    return;
+  }
+  
+  log.info('GITHUB', '🔄 Loading data dari GitHub...');
+  
+  for (const fileName of GITHUB_SYNC_FILES) {
+    const data = await loadFromGitHub(fileName);
+    if (data !== null) {
+      // Update memory & lokal
+      switch(fileName) {
+        case 'members':
+          MEMBERS = data;
+          saveJSON(CONFIG.paths.members, MEMBERS);
+          break;
+        case 'kontak':
+          KONTAK = data;
+          saveJSON(CONFIG.paths.kontak, KONTAK);
+          break;
+        case 'pending':
+          PENDING = data;
+          saveJSON(CONFIG.paths.pending, PENDING);
+          break;
+        case 'roleLaporan':
+          ROLE_LAPORAN = data;
+          saveJSON(CONFIG.paths.roleLaporan, ROLE_LAPORAN);
+          break;
+        case 'stockopname':
+          STOCKOPNAME = data;
+          saveJSON(CONFIG.paths.stockopname, STOCKOPNAME);
+          break;
+        case 'beritaacara':
+          BERITA_ACARA = data;
+          saveJSON(CONFIG.paths.beritaacara, BERITA_ACARA);
+          break;
+        case 'soShared':
+          SO_SHARED = data;
+          saveJSON(CONFIG.paths.soShared, SO_SHARED);
+          break;
+      }
+    }
+  }
+  
+  log.info('GITHUB', `✅ Sync complete: ${MEMBERS.length} members, ${Object.keys(KONTAK).length} kontak`);
+}
+
+/**
+ * Save 1 file ke GitHub (debounced untuk hindari spam commits)
+ */
+const githubSaveTimers = {};
+
+function saveToGitHubDebounced(fileName, data, delay = 5000) {
+  if (!isGitHubEnabled) return;
+  
+  // Clear timer sebelumnya
+  if (githubSaveTimers[fileName]) {
+    clearTimeout(githubSaveTimers[fileName]);
+  }
+  
+  // Save setelah 5 detik idle (biar tidak spam commit)
+  githubSaveTimers[fileName] = setTimeout(() => {
+    saveToGitHub(fileName, data).catch(e => log.error('GITHUB', e.message));
+    delete githubSaveTimers[fileName];
+  }, delay);
+}
+
+/**
+ * Enhanced saveJSON yang juga sync ke GitHub
+ */
+const _origSaveJSON = saveJSON;
+saveJSON = function(filePath, data) {
+  // Save ke lokal dulu (cepat)
+  const result = _origSaveJSON(filePath, data);
+  
+  // Detect nama file untuk sync GitHub
+  const fileName = path.basename(filePath, '.json');
+  
+  // Sync ke GitHub (debounced)
+  if (GITHUB_SYNC_FILES.includes(fileName)) {
+    saveToGitHubDebounced(fileName, data);
+  }
+  
+  return result;
+};
+
+// Load dari GitHub saat startup (setelah 3 detik biar bot ready dulu)
+if (isGitHubEnabled) {
+  setTimeout(() => {
+    loadAllFromGitHub().catch(e => log.error('GITHUB', 'Startup sync fail: ' + e.message));
+  }, 3000);
+}
+
+// ════════════════════════════════════════════════════════════════
 //   5. ROLE & MEMBER HELPERS
 // ════════════════════════════════════════════════════════════════
 
@@ -7180,6 +7403,99 @@ async function rejectUser(chatId, targetId) {
   kirim(chatId, `❌ Rejected: ${pending.nama}`);
   try { await kirim(targetId, `❌ Maaf ${pending.nama}, akses ditolak admin.`); } catch(e) {}
 }
+// ═══ GitHub Storage Commands ═══
+
+// Force sync SEMUA data ke GitHub
+bot.onText(/\/synctogithub/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  if (!isGitHubEnabled) return kirim(msg.chat.id, '❌ GitHub Storage belum diaktifkan!\n\nSet GITHUB_TOKEN di Railway Variables.');
+  
+  await kirim(msg.chat.id, '🔄 _Syncing data ke GitHub..._');
+  
+  let success = [], failed = [];
+  const dataMap = {
+    members: MEMBERS,
+    kontak: KONTAK,
+    pending: PENDING,
+    roleLaporan: ROLE_LAPORAN,
+    stockopname: STOCKOPNAME,
+    beritaacara: BERITA_ACARA,
+    soShared: SO_SHARED,
+  };
+  
+  for (const [name, data] of Object.entries(dataMap)) {
+    const ok = await saveToGitHub(name, data);
+    if (ok) success.push(name);
+    else failed.push(name);
+    await tunggu(1000); // Jeda 1 detik antar save
+  }
+  
+  let m = `✅ *SYNC KE GITHUB SELESAI*\n${GARIS_TEBAL}\n\n`;
+  m += `📤 Berhasil: ${success.length}\n${success.map(s => `   ✅ ${s}.json`).join('\n')}\n\n`;
+  if (failed.length > 0) {
+    m += `❌ Gagal: ${failed.length}\n${failed.map(s => `   ❌ ${s}.json`).join('\n')}\n`;
+  }
+  m += `\n💡 Cek di GitHub: \`${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}\``;
+  
+  kirim(msg.chat.id, m);
+});
+
+// Load ulang dari GitHub (kalau data local corrupt)
+bot.onText(/\/loadfromgithub/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  if (!isGitHubEnabled) return kirim(msg.chat.id, '❌ GitHub Storage belum aktif!');
+  
+  await kirim(msg.chat.id, '🔄 _Loading data dari GitHub..._');
+  
+  await loadAllFromGitHub();
+  
+  kirim(msg.chat.id, 
+    `✅ *DATA DI-LOAD DARI GITHUB*\n${GARIS_TEBAL}\n\n` +
+    `👥 Members: ${MEMBERS.length}\n` +
+    `📒 Kontak: ${Object.keys(KONTAK).length}\n` +
+    `🔔 Pending: ${Object.keys(PENDING).length}\n` +
+    `📊 Staff: ${ROLE_LAPORAN.length}\n`
+  );
+});
+
+// Status GitHub Storage
+bot.onText(/\/githubstatus/, (msg) => {
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  
+  let m = `📊 *GITHUB STORAGE STATUS*\n${GARIS_TEBAL}\n\n`;
+  
+  if (!isGitHubEnabled) {
+    m += `❌ *STATUS: NONAKTIF*\n\n`;
+    m += `⚠️ Data hanya di memory Railway.\nSetiap deploy → DATA HILANG!\n\n`;
+    m += `${GARIS_TIPIS}\n💡 *Cara Aktifkan:*\n`;
+    m += `1. GitHub → Settings → Developer settings\n`;
+    m += `2. Personal access tokens → Generate\n`;
+    m += `3. Scope: repo (full access)\n`;
+    m += `4. Copy token\n`;
+    m += `5. Railway → Variables → Add:\n`;
+    m += `   • GITHUB_TOKEN = ghp_xxx\n`;
+    m += `   • GITHUB_USERNAME = username\n`;
+    m += `   • GITHUB_REPO = nama-repo\n`;
+    m += `6. Redeploy service`;
+  } else {
+    m += `✅ *STATUS: AKTIF*\n\n`;
+    m += `📁 Repo: \`${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}\`\n`;
+    m += `🌿 Branch: \`${GITHUB_CONFIG.branch}\`\n`;
+    m += `📂 Folder: \`${GITHUB_CONFIG.folder}/\`\n\n`;
+    m += `${GARIS_TIPIS}\n📊 *Data Tersimpan di GitHub:*\n`;
+    m += `👥 Members: *${MEMBERS.length}*\n`;
+    m += `📒 Kontak: *${Object.keys(KONTAK).length}*\n`;
+    m += `🔔 Pending: *${Object.keys(PENDING).length}*\n`;
+    m += `📊 Staff: *${ROLE_LAPORAN.length}*\n\n`;
+    m += `${GARIS_TIPIS}\n💡 *Commands:*\n`;
+    m += `• /synctogithub - Push semua data ke GitHub\n`;
+    m += `• /loadfromgithub - Pull data dari GitHub\n`;
+    m += `• /githubstatus - Status ini\n\n`;
+    m += `✅ *Data AMAN!*\nSetiap perubahan otomatis backup ke GitHub.\nData tetap ada meski Railway restart/deploy.`;
+  }
+  
+  kirim(msg.chat.id, m);
+});
 
 // ════════════════════════════════════════════════════════════════
 //   33. VOICE HANDLER (LENGKAP DENGAN AUTO-RETRY & SMART ROUTING)
