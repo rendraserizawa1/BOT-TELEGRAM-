@@ -1,52 +1,114 @@
-# Environment Variables (SANGAT PENTING!)
+# ══════════════════════════════════════════
+# SENSITIVE - JANGAN PERNAH DI-UPLOAD!
+# ══════════════════════════════════════════
+
+# Environment Variables
 .env
 .env.local
 .env.production
 .env.development
+.env.*
 *.env
 
-# Storage data (data user, sesi, dll)
+# Kredensial & Password
+kredensial.txt
+password.txt
+secrets.txt
+config-secret.js
+secrets/
+
+# ══════════════════════════════════════════
+# DATA USER & SESSION
+# ══════════════════════════════════════════
+
 storage/
 !storage/.gitkeep
+storage/sesi.json
+storage/disapa.json
+storage/audit.log
 
-# Logs
+# ══════════════════════════════════════════
+# LOGS
+# ══════════════════════════════════════════
+
 logs/
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# Node modules
-node_modules/
+# ══════════════════════════════════════════
+# TEMP & BACKUP FILES
+# ══════════════════════════════════════════
 
-# Excel files (Optional - kalau data sensitif)
-# Uncomment kalau mau exclude:
-# harga_toko/*.xlsx
-# *.xlsx
-
-# Backup files
+temp_*
+*.tmp
 *.backup
 *.bak
-*.tmp
-temp_*
+backup_*
+*.old
 
-# OS files
+# ══════════════════════════════════════════
+# NODE.JS
+# ══════════════════════════════════════════
+
+node_modules/
+package-lock.json
+.npm/
+.pnp/
+.pnp.js
+
+# ══════════════════════════════════════════
+# OS SYSTEM FILES
+# ══════════════════════════════════════════
+
+# macOS
 .DS_Store
-Thumbs.db
-desktop.ini
+.AppleDouble
+.LSOverride
 
-# IDE
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+
+# ══════════════════════════════════════════
+# IDE / EDITOR
+# ══════════════════════════════════════════
+
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+.project
+.classpath
 
-# Package lock (opsional)
-# package-lock.json
+# ══════════════════════════════════════════
+# EXCEL FILES (Optional - kalau super rahasia)
+# ══════════════════════════════════════════
 
-# Session files
-storage/sesi.json
-storage/disapa.json
+# Uncomment kalau mau exclude file Excel:
+# harga_toko/*.xlsx
+# *.xlsx
 
-# Sensitive data
-kredensial.txt
-password.txt
-secrets/
+# ══════════════════════════════════════════
+# RAILWAY / DEPLOYMENT
+# ══════════════════════════════════════════
+
+.railway/
+.vercel/
+.netlify/
+
+# ══════════════════════════════════════════
+# TESTING
+# ══════════════════════════════════════════
+
+coverage/
+.nyc_output/
