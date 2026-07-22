@@ -4389,10 +4389,12 @@ function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
   return msg;
 }
 // ════════════════════════════════════════════════════════════════
-//   25. PROSES CARI BARANG
+//   25. PROSES CARI BARANG (dengan Pagination)
 // ════════════════════════════════════════════════════════════════
 
-async function prosesCari(chatId, userId, keyword, tokoFilter) {
+const HASIL_PER_HALAMAN = 15; // ★ Item per halaman (bisa disesuaikan)
+
+async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
   trackSearch(keyword);
   const loading = await kirim(chatId, '🔍 _Sedang mencari di database..._');
   
@@ -4406,7 +4408,8 @@ async function prosesCari(chatId, userId, keyword, tokoFilter) {
   
   try { if (loading) await bot.deleteMessage(chatId, loading.message_id); } catch(e) {}
   
-    if (results.hasil.length === 0) {
+  // === TIDAK ADA HASIL ===
+  if (results.hasil.length === 0) {
     if (results.saran && results.saran.length > 0) {
       let msg = `🤔 *Tidak Ditemukan Persis*\n${GARIS_TEBAL}\n\n`;
       msg += `Pencarian: _"${escapeMd(keyword)}"_\n\n`;
@@ -4415,15 +4418,11 @@ async function prosesCari(chatId, userId, keyword, tokoFilter) {
       const buttons = [];
       results.saran.forEach((d, i) => {
         msg += `*${i+1}. ${escapeMd(d.nama)}*\n   🔖 \`${d.kode}\`\n\n`;
-        
-        // Tombol untuk pilih barang ini
         buttons.push([{
           text: `${i+1}. ${d.nama}`,
           callback_data: `detail:${d.kode}:${tokoKode || 'all'}`
         }]);
       });
-      
-      msg += `${GARIS_TEBAL}\n💬 *Tap tombol* untuk lihat detail, atau ketik ulang dengan kata lain.`;
       
       buttons.push([{ text: '🔄 Cari Lagi', callback_data: 'menu:4' }]);
       buttons.push([{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]);
@@ -4433,8 +4432,7 @@ async function prosesCari(chatId, userId, keyword, tokoFilter) {
       await kirim(chatId,
         `❌ *Barang tidak ditemukan*\n${GARIS_TEBAL}\n\n` +
         `Pencarian: _${escapeMd(keyword)}_\n\n` +
-        `💡 *Tips:*\n• Coba nama lebih spesifik\n• Atau pakai kode barang\n• Cek ejaan\n\n` +
-        `*Contoh:* \`sapu ferona\` atau \`NN03162\``,
+        `💡 *Tips:*\n• Coba nama lebih spesifik\n• Atau pakai kode barang`,
         { reply_markup: { inline_keyboard: [
           [{ text: '🔄 Cari Lagi', callback_data: 'menu:4' }],
           [{ text: '🔙 Menu Utama', callback_data: 'menu:main' }],
@@ -4444,6 +4442,7 @@ async function prosesCari(chatId, userId, keyword, tokoFilter) {
     return;
   }
   
+  // === SINGLE RESULT (1 item saja) ===
   if (results.hasil.length === 1) {
     const item = results.hasil[0];
     const buttons = [];
@@ -4461,29 +4460,96 @@ async function prosesCari(chatId, userId, keyword, tokoFilter) {
     return;
   }
   
-    // Multiple results - SORT ABJAD
+  // === MULTIPLE RESULTS - dengan PAGINATION ===
+  
+  // Sort abjad
   const sortedResults = [...results.hasil].sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
   
+  // Pagination
+  const totalPages = Math.ceil(sortedResults.length / HASIL_PER_HALAMAN);
+  const currentPage = Math.max(0, Math.min(page, totalPages - 1));
+  const startIdx = currentPage * HASIL_PER_HALAMAN;
+  const endIdx = Math.min(startIdx + HASIL_PER_HALAMAN, sortedResults.length);
+  const pageItems = sortedResults.slice(startIdx, endIdx);
+  
+  // Simpan hasil pencarian di session untuk pagination
+  updateSesi(userId, {
+    lastSearch: {
+      keyword: keyword,
+      tokoFilter: tokoFilter,
+      tokoKode: tokoKode,
+      tipeHarga: tipeHarga,
+      totalResults: sortedResults.length,
+      totalPages: totalPages,
+      currentPage: currentPage,
+    }
+  });
+  
+  // Build header pesan
   let msg = `🔍 *Ditemukan ${sortedResults.length} barang (A-Z)*\n`;
   if (tokoKode) {
     const t = TOKO_LIST.find(x => x.kode === tokoKode);
     msg += `🏪 ${t.nama}\n`;
   }
+  if (totalPages > 1) {
+    msg += `📄 Halaman ${currentPage + 1}/${totalPages} (item ${startIdx + 1}-${endIdx})\n`;
+  }
   msg += `${GARIS_TEBAL}\n\n`;
   
+  // Build list item
   const buttons = [];
-  sortedResults.slice(0, 10).forEach((item, i) => {
-    msg += `*${i+1}. ${escapeMd(item.nama)}*\n   🔖 \`${item.kode}\`\n`;
+  pageItems.forEach((item, i) => {
+    const globalIdx = startIdx + i + 1;
+    msg += `*${globalIdx}. ${escapeMd(item.nama)}*\n   🔖 \`${item.kode}\`\n`;
     if (tokoKode) {
       const h = item.harga[tokoKode];
       const harga = tipeHarga === 'grosir' ? h.ambil : h.ecer;
       msg += `   💰 ${formatRp(harga)} | 📊 ${h.stok} ${h.stok > 0 ? '✅' : '⚠️'}\n`;
     }
     msg += '\n';
-    // NAMA LENGKAP di tombol
-    buttons.push([{ text: `${i+1}. ${item.nama}`, callback_data: `detail:${item.kode}:${tokoKode || 'all'}` }]);
+    buttons.push([{ 
+      text: `${globalIdx}. ${item.nama}`, 
+      callback_data: `detail:${item.kode}:${tokoKode || 'all'}` 
+    }]);
   });
   
+  // ═══ TOMBOL PAGINATION ═══
+  if (totalPages > 1) {
+    const navRow = [];
+    
+    // Previous
+    if (currentPage > 0) {
+      navRow.push({ text: '⬅️ Sebelumnya', callback_data: `caripage:${currentPage - 1}` });
+    }
+    
+    // Info halaman (info only)
+    navRow.push({ 
+      text: `📄 ${currentPage + 1}/${totalPages}`, 
+      callback_data: `caripageinfo` 
+    });
+    
+    // Next
+    if (currentPage < totalPages - 1) {
+      navRow.push({ text: 'Berikutnya ➡️', callback_data: `caripage:${currentPage + 1}` });
+    }
+    
+    buttons.push(navRow);
+    
+    // Quick jump (kalau lebih dari 3 halaman)
+    if (totalPages > 3) {
+      const jumpRow = [];
+      if (currentPage > 1) {
+        jumpRow.push({ text: '⏮️ Awal', callback_data: `caripage:0` });
+      }
+      if (currentPage < totalPages - 2) {
+        jumpRow.push({ text: 'Akhir ⏭️', callback_data: `caripage:${totalPages - 1}` });
+      }
+      if (jumpRow.length > 0) buttons.push(jumpRow);
+    }
+  }
+  
+  // Tombol aksi
+  buttons.push([{ text: '🔄 Cari Lagi', callback_data: 'menu:4' }]);
   buttons.push([{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]);
   
   await kirim(chatId, msg, { reply_markup: { inline_keyboard: buttons }});
@@ -8490,7 +8556,7 @@ bot.on('message', async (msg) => {
   return prosesAI(chatId, userId, text);
 });
 // ════════════════════════════════════════════════════════════════
-//   37. CALLBACK QUERY HANDLER (TUNGGAL - SEMUA CALLBACK + PAGINATION)
+//   37. CALLBACK QUERY HANDLER (LENGKAP - Semua Callback + Pagination)
 // ════════════════════════════════════════════════════════════════
 
 bot.on('callback_query', async (query) => {
@@ -8500,6 +8566,36 @@ bot.on('callback_query', async (query) => {
   const msgId = query.message.message_id;
   
   try { await bot.answerCallbackQuery(query.id); } catch(e) {}
+  
+  // ════════════ PAGINATION CARI BARANG ════════════
+  
+  if (data.startsWith('caripage:')) {
+    const page = parseInt(data.replace('caripage:', ''));
+    const session = getSesi(userId);
+    
+    if (!session.lastSearch || !session.lastSearch.keyword) {
+      await kirim(chatId, '⚠️ Session pencarian expired. Silakan cari lagi.', {
+        reply_markup: { inline_keyboard: [[{ text: '🔄 Cari Lagi', callback_data: 'menu:4' }]] }
+      });
+      return;
+    }
+    
+    try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
+    
+    const ls = session.lastSearch;
+    await prosesCari(chatId, userId, ls.keyword, ls.tokoFilter, page);
+    return;
+  }
+  
+  if (data === 'caripageinfo') {
+    try {
+      await bot.answerCallbackQuery(query.id, {
+        text: '📄 Info halaman - klik ⬅️ / ➡️ untuk navigasi',
+        show_alert: false
+      });
+    } catch(e) {}
+    return;
+  }
   
   // ════════════ KONFIRMASI AI ROUTER ════════════
   
@@ -8569,18 +8665,66 @@ bot.on('callback_query', async (query) => {
   
   if (data === 'menu:main') {
     const userName = getNama(userId) || query.from.first_name || 'Kakak';
-    try { await bot.editMessageText(buildWelcome(userId, userName), { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbMainMenu(userId) }); }
-    catch(e) { await kirim(chatId, buildWelcome(userId, userName), { reply_markup: kbMainMenu(userId) }); }
+    try {
+      await bot.editMessageText(buildWelcome(userId, userName), {
+        chat_id: chatId, message_id: msgId,
+        parse_mode: 'Markdown', reply_markup: kbMainMenu(userId)
+      });
+    } catch(e) {
+      await kirim(chatId, buildWelcome(userId, userName), { reply_markup: kbMainMenu(userId) });
+    }
     return;
   }
-    // ════════════ HOMEBASE ════════════
+  
+  if (data === 'menu:1' || data === 'menu:2' || data === 'menu:5' || data === 'menu:6') {
+    const menuType = parseInt(data.split(':')[1]);
+    if (menuType !== 4 && !bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak.');
+    const labels = { 1: 'Laporan Penjualan', 2: 'Laporan Harga', 5: 'Stock Opname', 6: 'Berita Acara' };
+    
+    try {
+      await bot.editMessageText(`🏦 *Pilih Toko - ${labels[menuType]}*\n${GARIS_TEBAL}`, {
+        chat_id: chatId, message_id: msgId,
+        parse_mode: 'Markdown', reply_markup: kbPilihToko(menuType, menuType === 6)
+      });
+    } catch(e) {
+      await kirim(chatId, `🏦 *Pilih Toko - ${labels[menuType]}*`, { reply_markup: kbPilihToko(menuType, menuType === 6) });
+    }
+    return;
+  }
+  
+  if (data === 'menu:3') {
+    resetSesi(userId);
+    updateSesi(userId, { menu: 3 });
+    kirim(chatId, '🛒 *Laporan Marketplace*\n\nPilih hari:', { reply_markup: kbPilihHari(3, 'mp') });
+    return;
+  }
+  
+  if (data === 'menu:4') {
+    try {
+      await bot.editMessageText('🔍 *Cari Barang*\n\nKetik nama barang atau kode.\n\n*Contoh:*\n• `dandang eagle 20`\n• `harga panci di cp`\n• `grosir kompor`', {
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]]}
+      });
+    } catch(e) {}
+    return;
+  }
+  
+  if (data === 'menu:ai') {
+    const nama = getNama(userId) || 'kak';
+    try {
+      await bot.editMessageText(`🤖 *Halo ${escapeMd(nama)}! Aku Aiva* 😊\n\nAku temen ngobrol kamu! Yuk cerita apa aja 💬\n\n• Curhat & cerita harian\n• Tanya info umum & pengetahuan\n• Cek barang & harga toko\n• Apa aja deh 😄\n\n_Ketik \`/resetchat\` untuk reset memori_`, {
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]]}
+      });
+    } catch(e) {}
+    return;
+  }
   
   if (data === 'menu:7') {
     if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak.');
     try {
       await bot.editMessageText(`🏠 *INPUT BARANG HOMEBASE*\n${GARIS_TEBAL}\n\nPilih toko untuk bandingkan harga:`, {
-        chat_id: chatId, message_id: msgId,
-        parse_mode: 'Markdown',
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
         reply_markup: kbPilihToko(7)
       });
     } catch(e) {
@@ -8588,6 +8732,51 @@ bot.on('callback_query', async (query) => {
     }
     return;
   }
+  
+  if (data === 'menu:9' && isAdmin(userId)) {
+    try {
+      await bot.editMessageText('👑 *MENU ADMIN*', { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbAdminMenu() });
+    } catch(e) {
+      await kirim(chatId, '👑 *MENU ADMIN*', { reply_markup: kbAdminMenu() });
+    }
+    return;
+  }
+  
+  if (data === 'menu:info') {
+    const uptime = Math.floor(process.uptime());
+    await kirim(chatId,
+      `ℹ️ *INFO BOT*\n${GARIS_TEBAL}\n🤖 ${CONFIG.appName}\n📦 ${DATA_BARANG.length} barang\n👥 ${MEMBERS.length} members\n⏱️ Uptime: ${Math.floor(uptime/3600)}j ${Math.floor((uptime%3600)/60)}m\n\n*Your Info:*\n🆔 \`${userId}\`\n📛 ${getUserRole(userId)}`
+    );
+    return;
+  }
+  
+  if (data === 'menu:help') {
+    try {
+      await bot.editMessageText(
+        '❓ *PANDUAN*\n' + GARIS_TEBAL + '\n\n' +
+        '💬 *Cara cepat:*\n' +
+        '• `stock opname` - buka SO\n' +
+        '• `cari barang` - cari\n' +
+        '• `laporan harga` - lap harga\n' +
+        '• `marketplace` - lap mp\n' +
+        '• `berita acara` - BA\n' +
+        '• `homebase` - input nota supplier\n' +
+        '• `info` - info bot\n' +
+        '• `menu utama` - balik ke menu\n\n' +
+        '🔍 *Cari barang:*\n' +
+        '`cari [nama]` atau `harga [nama]`\n' +
+        '*Contoh:* `cari dandang eagle`\n\n' +
+        '*Kode Toko:* NK, TDM, Oesapa, Kefa, CP',
+        {
+          chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]]}
+        }
+      );
+    } catch(e) {}
+    return;
+  }
+  
+  // ════════════ HOMEBASE ACTIONS ════════════
   
   if (data === 'homebase:selesai') {
     const session = getSesi(userId);
@@ -8603,61 +8792,9 @@ bot.on('callback_query', async (query) => {
   
   if (data === 'homebase:reset') {
     updateSesi(userId, { homebaseItems: [] });
-    await kirim(chatId, '🗑️ Data direset. Kirim foto nota baru.', {
+    await kirim(chatId, '🗑️ Data direset.', {
       reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]] }
     });
-    return;
-  }
-  if (data === 'menu:1' || data === 'menu:2' || data === 'menu:5' || data === 'menu:6') {
-    const menuType = parseInt(data.split(':')[1]);
-    if (menuType !== 4 && !bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak.');
-    const labels = { 1: 'Laporan Penjualan', 2: 'Laporan Harga', 5: 'Stock Opname', 6: 'Berita Acara' };
-    
-    if (menuType === 5) {
-      // Stock Opname - cek SO existing
-      const toko = data.split(':')[1]; // Ini cuma angka "5", perlu pilih toko dulu
-      try { await bot.editMessageText(`🏦 *Pilih Toko - ${labels[menuType]}*\n${GARIS_TEBAL}`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbPilihToko(menuType, menuType === 6) }); }
-      catch(e) { await kirim(chatId, `🏦 *Pilih Toko - ${labels[menuType]}*`, { reply_markup: kbPilihToko(menuType, menuType === 6) }); }
-      return;
-    }
-    
-    try { await bot.editMessageText(`🏦 *Pilih Toko - ${labels[menuType]}*\n${GARIS_TEBAL}`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbPilihToko(menuType, menuType === 6) }); }
-    catch(e) { await kirim(chatId, `🏦 *Pilih Toko - ${labels[menuType]}*`, { reply_markup: kbPilihToko(menuType, menuType === 6) }); }
-    return;
-  }
-  
-  if (data === 'menu:3') {
-    resetSesi(userId);
-    updateSesi(userId, { menu: 3 });
-    kirim(chatId, '🛒 *Laporan Marketplace*\n\nPilih hari:', { reply_markup: kbPilihHari(3, 'mp') });
-    return;
-  }
-  
-  if (data === 'menu:4') {
-    try { await bot.editMessageText('🔍 *Cari Barang*\n\nKetik nama barang atau kode.\n\n*Contoh:*\n• `dandang eagle 20`\n• `harga panci di cp`\n• `grosir kompor`', { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]]} }); } catch(e) {}
-    return;
-  }
-  
-  if (data === 'menu:ai') {
-    const nama = getNama(userId) || 'kak';
-    try { await bot.editMessageText(`🤖 *Halo ${escapeMd(nama)}! Aku Aiva* 😊\n\nAku temen ngobrol kamu! Yuk cerita apa aja 💬\n\n• Curhat & cerita harian\n• Tanya info umum & pengetahuan\n• Cek barang & harga toko\n• Apa aja deh 😄\n\n_Ketik \`/resetchat\` untuk reset memori_`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]]} }); } catch(e) {}
-    return;
-  }
-  
-  if (data === 'menu:9' && isAdmin(userId)) {
-    try { await bot.editMessageText('👑 *MENU ADMIN*', { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbAdminMenu() }); }
-    catch(e) { await kirim(chatId, '👑 *MENU ADMIN*', { reply_markup: kbAdminMenu() }); }
-    return;
-  }
-  
-  if (data === 'menu:info') {
-    const uptime = Math.floor(process.uptime());
-    await kirim(chatId, `ℹ️ *INFO BOT*\n${GARIS_TEBAL}\n🤖 ${CONFIG.appName}\n📦 ${DATA_BARANG.length} barang\n👥 ${MEMBERS.length} members\n⏱️ Uptime: ${Math.floor(uptime/3600)}j ${Math.floor((uptime%3600)/60)}m\n\n*Your Info:*\n🆔 \`${userId}\`\n📛 ${getUserRole(userId)}`);
-    return;
-  }
-  
-  if (data === 'menu:help') {
-    try { await bot.editMessageText('❓ *PANDUAN*\n' + GARIS_TEBAL + '\n\n💬 *Cara cepat:*\n• `stock opname` - buka SO\n• `cari barang` - cari\n• `laporan harga` - lap harga\n• `marketplace` - lap mp\n• `berita acara` - BA\n• `info` - info bot\n• `menu utama` - balik ke menu\n\n🔍 *Cari barang:*\n`cari [nama]` atau `harga [nama]`\n*Contoh:* `cari dandang eagle`\n\n*Kode Toko:* NK, TDM, Oesapa, Kefa, CP', { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]]} }); } catch(e) {}
     return;
   }
   
@@ -8674,7 +8811,7 @@ bot.on('callback_query', async (query) => {
     }
     
     if (menuType === '5') {
-      // Stock Opname - CEK SO EXISTING
+      // Stock Opname
       const shared = getSOShared(toko.kode);
       const usersAktif = getAllUsersAktif(toko.kode);
       const allRacks = getAllRacks(toko.kode);
@@ -8726,48 +8863,49 @@ bot.on('callback_query', async (query) => {
       }
       
       updateSesi(userId, { soSetupStep: 'petugas' });
-      try { await bot.editMessageText(`📦 *STOCK OPNAME*\n🏦 ${toko.nama}\n📅 ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n✨ *SO BARU*\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\nJika lebih dari 1, pisah koma.\n\n*Contoh:* \`Budi\` atau \`Budi, Sari\`\n\nKetik *batal* untuk keluar.`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' }); }
-      catch(e) { await kirim(chatId, `📦 *STOCK OPNAME - ${toko.nama}*\n\n👥 *STEP 1/3: Nama Petugas*\nKetik nama petugas.`); }
-      return;
-    }
-if (menuType === '7') {
-      // Homebase
-      updateSesi(userId, {
-        mode: 'homebase',
-        homebaseToko: toko.kode,
-        homebaseItems: [],
-      });
-      try { await bot.editMessageText(
-        `🏠 *INPUT BARANG HOMEBASE*\n🏦 ${toko.nama}\n📅 ${getTanggalIndonesia()}\n${GARIS_TEBAL}\n\n` +
-        `📸 *Kirim FOTO nota/faktur supplier*\n\n` +
-        `Bot akan:\n` +
-        `1. 📸 Scan nama barang, HPP, Harga B & D\n` +
-        `2. 🔗 Cocokkan dengan database (${DATA_BARANG.length} item)\n` +
-        `3. 📊 Bandingkan harga (NAIK/TURUN/SAMA)\n` +
-        `4. 📥 Export Excel perbandingan\n\n` +
-        `💡 Bisa kirim beberapa foto (akumulasi)\n\n` +
-        `Ketik *batal* untuk keluar.`,
-        { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' }
-      ); } catch(e) {
-        await kirim(chatId, `🏠 *HOMEBASE - ${toko.nama}*\n\n📸 Kirim foto nota supplier.`);
+      try {
+        await bot.editMessageText(`📦 *STOCK OPNAME*\n🏦 ${toko.nama}\n📅 ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n✨ *SO BARU*\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\nJika lebih dari 1, pisah koma.\n\n*Contoh:* \`Budi\` atau \`Budi, Sari\`\n\nKetik *batal* untuk keluar.`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
+      } catch(e) {
+        await kirim(chatId, `📦 *STOCK OPNAME - ${toko.nama}*\n\n👥 *STEP 1/3: Nama Petugas*\nKetik nama petugas.`);
       }
       return;
     }
-
     
     if (menuType === '6') {
       const nomorBA = generateNomorBA(toko.kode);
       const baData = { nomorBA, penambahanKasir: [], penyesuaianTambah: [], penyesuaianKurang: [], salahKetikRetur: [], barangMasuk: [], dicoretGudang: [] };
       updateSesi(userId, { mode: 'beritaacara', tokoKode: toko.kode, baData, baSection: null });
-      try { await bot.editMessageText(`📋 *BERITA ACARA*\n🏦 ${toko.nama}\n📅 ${getTanggalIndonesia()}\n🆔 *${nomorBA}*\n${GARIS_TEBAL}`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbBaSection(baData) }); }
-      catch(e) { await kirim(chatId, `📋 *BERITA ACARA*\n🏦 ${toko.nama}\n🆔 ${nomorBA}`, { reply_markup: kbBaSection(baData) }); }
+      try {
+        await bot.editMessageText(`📋 *BERITA ACARA*\n🏦 ${toko.nama}\n📅 ${getTanggalIndonesia()}\n🆔 *${nomorBA}*\n${GARIS_TEBAL}`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbBaSection(baData) });
+      } catch(e) {
+        await kirim(chatId, `📋 *BERITA ACARA*\n🏦 ${toko.nama}\n🆔 ${nomorBA}`, { reply_markup: kbBaSection(baData) });
+      }
+      return;
+    }
+    
+    if (menuType === '7') {
+      // Homebase
+      updateSesi(userId, { mode: 'homebase', homebaseToko: toko.kode, homebaseItems: [] });
+      try {
+        await bot.editMessageText(
+          `🏠 *INPUT BARANG HOMEBASE*\n🏦 ${toko.nama}\n📅 ${getTanggalIndonesia()}\n${GARIS_TEBAL}\n\n` +
+          `📸 *Kirim FOTO nota/faktur supplier*\n\nBot akan:\n` +
+          `1. 📸 Scan nama, HPP, Harga B & D\n` +
+          `2. 🔗 Cocokkan dengan database\n` +
+          `3. 📊 Bandingkan harga\n` +
+          `4. 📥 Export Excel\n\n` +
+          `Bisa kirim beberapa foto.\nKetik *batal* untuk keluar.`,
+          { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' }
+        );
+      } catch(e) {
+        await kirim(chatId, `🏠 *HOMEBASE - ${toko.nama}*\n\n📸 Kirim foto nota.`);
+      }
       return;
     }
     
     try { await bot.editMessageText(`🏦 *${toko.nama}*\n📅 Pilih hari:`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbPilihHari(menuType, tokoKode) }); } catch(e) {}
     return;
   }
-
   
   // ════════════ PILIH HARI ════════════
   
@@ -8780,19 +8918,32 @@ if (menuType === '7') {
       updateSesi(userId, { menu: 1, toko: tokoKode, kemarin, scanActive: true, scanData: {}, scanStepIdx: 0 });
       const steps = SCAN_STEPS[tokoKode];
       const si = steps[0];
-      try { await bot.editMessageText(`📸 *SCAN LAPORAN*\n🏦 ${toko.nama}\n📅 ${getTanggal(kemarin)}\n${GARIS_TEBAL}\n\n📊 Step 1/${steps.length}\n💵 *${si.label}*\n\n📸 Kirim FOTO atau ketik angka manual`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' }); } catch(e) {}
+      try {
+        await bot.editMessageText(`📸 *SCAN LAPORAN*\n🏦 ${toko.nama}\n📅 ${getTanggal(kemarin)}\n${GARIS_TEBAL}\n\n📊 Step 1/${steps.length}\n💵 *${si.label}*\n\n📸 Kirim FOTO atau ketik angka manual`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
+      } catch(e) {}
       return;
     }
     
     if (menuType === '2') {
       updateSesi(userId, { menu: 2, toko: tokoKode, kemarin, hargaPilihMode: true, hargaData: { baru: [], naik: [], turun: [] } });
-      try { await bot.editMessageText(`📸 *WIZARD LAPORAN HARGA*\n🏦 ${toko?.nama || NAMA_TOKO[tokoKode]}\n📅 ${getTanggal(kemarin)}\n${GARIS_TEBAL}\n\n📋 *Pilih mode input:*`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '1️⃣ Gabung (1 foto semua)', callback_data: 'hargamode:gabung' }], [{ text: '2️⃣ Per Kategori (3 step)', callback_data: 'hargamode:perkat' }], [{ text: '🔙 Batal', callback_data: 'menu:main' }]] } }); } catch(e) {}
+      try {
+        await bot.editMessageText(`📸 *WIZARD LAPORAN HARGA*\n🏦 ${toko?.nama || NAMA_TOKO[tokoKode]}\n📅 ${getTanggal(kemarin)}\n${GARIS_TEBAL}\n\n📋 *Pilih mode input:*`, {
+          chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard: [
+            [{ text: '1️⃣ Gabung (1 foto semua)', callback_data: 'hargamode:gabung' }],
+            [{ text: '2️⃣ Per Kategori (3 step)', callback_data: 'hargamode:perkat' }],
+            [{ text: '🔙 Batal', callback_data: 'menu:main' }],
+          ]}
+        });
+      } catch(e) {}
       return;
     }
     
     if (menuType === '3') {
       updateSesi(userId, { menu: 3, kemarin });
-      try { await bot.editMessageText(`🛒 *Laporan Marketplace*\n📅 ${getTanggal(kemarin)}\n\nKirim foto atau ketik format:\n\`\`\`\noesapa 0\ntdm 0\ncentral 21061000\n\`\`\``, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' }); } catch(e) {}
+      try {
+        await bot.editMessageText(`🛒 *Laporan Marketplace*\n📅 ${getTanggal(kemarin)}\n\nKirim foto atau ketik format:\n\`\`\`\noesapa 0\ntdm 0\ncentral 21061000\n\`\`\``, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
+      } catch(e) {}
       return;
     }
   }
@@ -8838,9 +8989,13 @@ if (menuType === '7') {
     const buttons = [];
     TOKO_LIST.forEach(t => { if (t.kode !== tokoKode) buttons.push([{ text: `${t.icon} Lihat di ${t.nama}`, callback_data: `detail:${kode}:${t.kode}` }]); });
     buttons.push([{ text: '🌐 Semua Toko', callback_data: `detail:${kode}:all` }]);
-    buttons.push([{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]);
-    try { await bot.editMessageText(buildDetailBarang(item, tokoKode, 'semua'), { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } }); }
-    catch(e) { await kirim(chatId, buildDetailBarang(item, tokoKode, 'semua'), { reply_markup: { inline_keyboard: buttons } }); }
+    buttons.push([{ text: '🔙 Kembali ke Hasil', callback_data: `caripage:${(getSesi(userId).lastSearch?.currentPage || 0)}` }]);
+    buttons.push([{ text: '📋 Menu Utama', callback_data: 'menu:main' }]);
+    try {
+      await bot.editMessageText(buildDetailBarang(item, tokoKode, 'semua'), { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } });
+    } catch(e) {
+      await kirim(chatId, buildDetailBarang(item, tokoKode, 'semua'), { reply_markup: { inline_keyboard: buttons } });
+    }
     return;
   }
   
@@ -8869,8 +9024,7 @@ if (menuType === '7') {
     if (!session.tokoKode) return;
     updateSesi(userId, { soSetupStep: 'petugas' });
     const usersAktif = getAllUsersAktif(session.tokoKode);
-    let m = `➕ *BERGABUNG KE SO*\n🏦 ${NAMA_TOKO[session.tokoKode]}\n${GARIS_TEBAL}\n\n`;
-    m += `👥 *Petugas yang sudah ada:*\n`;
+    let m = `➕ *BERGABUNG KE SO*\n🏦 ${NAMA_TOKO[session.tokoKode]}\n${GARIS_TEBAL}\n\n👥 *Petugas yang sudah ada:*\n`;
     Object.entries(usersAktif).forEach(([, info], i) => { m += `   ${i+1}. ${info.nama} (di ${info.rakAktif})\n`; });
     m += `\n${GARIS_TIPIS}\n\n👤 *Siapa nama Anda?*\n\nKetik nama.\n*Contoh:* \`Joko\` atau \`Joko, Andi\`\n\nKetik *batal* untuk keluar.`;
     await kirim(chatId, m);
@@ -8919,7 +9073,7 @@ if (menuType === '7') {
   if (data === 'so:reset_yes') {
     const session = getSesi(userId);
     if (!session.tokoKode) return;
-    backupSOShared(session.tokoKode);
+    if (typeof backupSOShared === 'function') backupSOShared(session.tokoKode);
     SO_SHARED[session.tokoKode] = { tanggal: getTanggalSlash(false), sesiAktif: false, racks: {}, usersAktif: {} };
     saveJSON(CONFIG.paths.soShared, SO_SHARED);
     updateSesi(userId, { soSetupStep: 'petugas' });
@@ -8939,7 +9093,7 @@ if (menuType === '7') {
     } else {
       session.soInfo.rakAktif = rakName;
       updateSesi(userId, { soInfo: session.soInfo, soSetupStep: null });
-      updateUserRakSO(session.tokoKode, userId, rakName);
+      if (typeof updateUserRakSO === 'function') updateUserRakSO(session.tokoKode, userId, rakName);
       const existingItems = Object.keys(getBarangDiRak(session.tokoKode, rakName)).length;
       await kirim(chatId, `✅ *Pindah ke: ${escapeMd(rakName)}*\n${existingItems > 0 ? `📊 ${existingItems} jenis barang sudah ada.\n` : '🆕 Rak baru.\n'}\n📝 Lanjutkan input barang...`, { reply_markup: kbSOAktif() });
     }
@@ -9077,7 +9231,7 @@ if (menuType === '7') {
   if (data.startsWith('so:searchinrak:')) {
     const rakName = data.replace('so:searchinrak:', '');
     updateSesi(userId, { soSearchInRak: rakName, soSearchMode: true });
-    await kirim(chatId, `🔍 *CARI ITEM DI RAK: ${rakName}*\n${GARIS_TEBAL}\n\nKetik nama atau kode barang.\n\n*Contoh:*\n• \`sendok\`\n• \`tempat kue\`\n• \`NN13863\`\n\n💡 Ketik *batal* untuk kembali.`, { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali ke Edit Rak', callback_data: `so:editrak:${rakName}` }], [{ text: '🔙 Menu SO', callback_data: 'so:kembali' }]] } });
+    await kirim(chatId, `🔍 *CARI ITEM DI RAK: ${rakName}*\n${GARIS_TEBAL}\n\nKetik nama atau kode barang.\n\n*Contoh:*\n• \`sendok\`\n• \`tempat kue\`\n• \`NN13863\`\n\n💡 Ketik *batal* untuk kembali.`, { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali ke Edit Rak', callback_data: `so:editrak:${rakName}:0` }], [{ text: '🔙 Menu SO', callback_data: 'so:kembali' }]] } });
     return;
   }
   
@@ -9129,7 +9283,7 @@ if (menuType === '7') {
     const rakName = parts[0];
     const kode = parts[1];
     const session = getSesi(userId);
-    hapusItemSO(session.tokoKode, rakName, kode);
+    if (typeof hapusItemSO === 'function') hapusItemSO(session.tokoKode, rakName, kode);
     const item = DATA_BARANG.find(d => d.kode === kode);
     await kirim(chatId, `🗑️ *${escapeMd(item?.nama || kode)}* dihapus dari ${rakName}!`, { reply_markup: kbSOAktif() });
     return;
@@ -9167,7 +9321,7 @@ if (menuType === '7') {
       const excelPath = generateExcelSOGabungan(session.tokoKode, namaToko);
       await bot.sendDocument(chatId, excelPath, {}, { filename: `SO_Gabungan_${session.tokoKode.toUpperCase()}_${getTanggalSlash(false).replace(/\//g, '-')}.xlsx` });
       try { fs.unlinkSync(excelPath); } catch(e) {}
-      leaveSesiSO(session.tokoKode, userId);
+      if (typeof leaveSesiSO === 'function') leaveSesiSO(session.tokoKode, userId);
       resetSesi(userId);
       await kirim(chatId, '✅ *SO Anda selesai!*\n📥 Excel terkirim.\n💡 Data tetap tersimpan untuk user lain.', { reply_markup: kbMainMenu(userId) });
     } catch(err) {
@@ -9198,7 +9352,7 @@ if (menuType === '7') {
     } else if (session.soSetupStep === 'pindahrak_namabaru' || session.soSetupStep === 'rak_input_pindah') {
       session.soInfo.rakAktif = namaRak;
       updateSesi(userId, { soInfo: session.soInfo, soSetupStep: null, soScanRakPending: null });
-      updateUserRakSO(tokoKode, userId, namaRak);
+      if (typeof updateUserRakSO === 'function') updateUserRakSO(tokoKode, userId, namaRak);
       const existingItems = Object.keys(getBarangDiRak(tokoKode, namaRak)).length;
       await kirim(chatId, `✅ *Pindah ke: ${escapeMd(namaRak)}*\n${existingItems > 0 ? `📊 ${existingItems} barang ada.\n` : '🆕 Rak baru.\n'}\n📝 Lanjutkan input...`, { reply_markup: kbSOAktif() });
     } else {
@@ -9224,7 +9378,7 @@ if (menuType === '7') {
     if (!targetRak) return kirim(chatId, '⚠️ Data hilang.', { reply_markup: kbSOAktif() });
     session.soInfo.rakAktif = targetRak;
     updateSesi(userId, { soInfo: session.soInfo, soScanRakPindahPending: null });
-    updateUserRakSO(session.tokoKode, userId, targetRak);
+    if (typeof updateUserRakSO === 'function') updateUserRakSO(session.tokoKode, userId, targetRak);
     const existingItems = Object.keys(getBarangDiRak(session.tokoKode, targetRak)).length;
     await kirim(chatId, `✅ *Pindah ke: ${escapeMd(targetRak)}*\n${existingItems > 0 ? `📊 ${existingItems} barang ada.\n` : '🆕 Rak baru.\n'}\n📝 Lanjutkan input...`, { reply_markup: kbSOAktif() });
     return;
@@ -9235,36 +9389,6 @@ if (menuType === '7') {
     const session = getSesi(userId);
     if (session.soSetupStep) await kirim(chatId, '🔙 Batal. Kirim foto lagi atau ketik nama manual.');
     else await kirim(chatId, '🔙 Batal.', { reply_markup: kbSOAktif() });
-    return;
-  }
-  // ════════════ HOMEBASE ACTIONS ════════════
-  
-  if (data === 'menu:7') {
-    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak.');
-    try { await bot.editMessageText(`🏠 *INPUT BARANG HOMEBASE*\n${GARIS_TEBAL}\n\nPilih toko untuk bandingkan harga:`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbPilihToko(7) }); }
-    catch(e) { await kirim(chatId, '🏠 *INPUT HOMEBASE*\nPilih toko:', { reply_markup: kbPilihToko(7) }); }
-    return;
-  }
-  
-  if (data === 'homebase:selesai') {
-    const session = getSesi(userId);
-    await handleHomebaseMode(chatId, userId, 'selesai', null, session);
-    return;
-  }
-  
-  if (data === 'homebase:review') {
-    const session = getSesi(userId);
-    await handleHomebaseMode(chatId, userId, 'review', null, session);
-    return;
-  }
-  
-  if (data === 'homebase:reset') {
-    updateSesi(userId, { homebaseItems: [] });
-    await kirim(chatId, '🗑️ Data direset. Kirim foto nota baru.', {
-      reply_markup: { inline_keyboard: [
-        [{ text: '🔙 Menu Utama', callback_data: 'menu:main' }],
-      ]}
-    });
     return;
   }
   
@@ -9342,52 +9466,26 @@ if (menuType === '7') {
     return;
   }
   
-    if (data === 'admin:listkontak' && isAdmin(userId)) {
+  if (data === 'admin:listkontak' && isAdmin(userId)) {
     let m = `📒 *KONTAK TERSIMPAN (${Object.keys(KONTAK).length})*\n${GARIS_TEBAL}\n\n`;
-    
     const kontakEntries = Object.entries(KONTAK);
-    if (kontakEntries.length === 0) {
-      m += '_Belum ada kontak tersimpan._';
-    } else {
+    if (kontakEntries.length === 0) m += '_Belum ada kontak._';
+    else {
       kontakEntries.slice(0, 25).forEach(([id, nama], i) => {
         const isMemberStatus = MEMBERS.includes(id) ? '✅' : '⚠️';
-        m += `${i+1}. ${isMemberStatus} *${escapeMd(nama)}*\n`;
-        m += `   🆔 \`${id}\`\n\n`;
+        m += `${i+1}. ${isMemberStatus} *${escapeMd(nama)}*\n   🆔 \`${id}\`\n\n`;
       });
-      if (kontakEntries.length > 25) {
-        m += `_... +${kontakEntries.length - 25} lainnya_\n\n`;
-      }
+      if (kontakEntries.length > 25) m += `_... +${kontakEntries.length - 25} lainnya_\n\n`;
     }
-    
     m += `${GARIS_TIPIS}\n💡 *Cara Kelola:*\n`;
     m += `• Ubah nama: \`/setnama [ID] [nama baru]\`\n`;
     m += `• Cari member: \`/carimember [nama/ID]\`\n`;
     m += `• Hapus kontak: \`/hapuskontak [ID]\`\n`;
-    m += `\n*Contoh:*\n\`/setnama 123456789 Pak Budi Baru\``;
-    
     try {
-      await bot.editMessageText(m, {
-        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
-        reply_markup: { inline_keyboard: [
-          [{ text: '🔍 Cari Member', callback_data: 'admin:carimember_help' }],
-          [{ text: '🔙 Admin', callback_data: 'menu:9' }],
-        ]}
-      });
+      await bot.editMessageText(m, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } });
     } catch(e) {
-      await kirim(chatId, m, { reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] }});
+      await kirim(chatId, m, { reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } });
     }
-    return;
-  }
-  
-  if (data === 'admin:carimember_help' && isAdmin(userId)) {
-    await kirim(chatId,
-      `🔍 *CARI MEMBER*\n${GARIS_TEBAL}\n\n` +
-      `Ketik command:\n\`/carimember [nama atau ID]\`\n\n` +
-      `*Contoh:*\n` +
-      `• \`/carimember Budi\` - cari nama\n` +
-      `• \`/carimember 12345\` - cari ID\n\n` +
-      `Bot akan tampilkan semua member yang cocok + cara ubah nama.`
-    );
     return;
   }
   
