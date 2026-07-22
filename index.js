@@ -6788,6 +6788,73 @@ async function handleHomebaseMode(chatId, userId, message, imageBuffer, session)
 // ════════════════════════════════════════════════════════════════
 //   32. COMMAND HANDLERS
 // ════════════════════════════════════════════════════════════════
+// ═══ AUDIT LOG untuk aktivitas sensitif ═══
+const AUDIT_LOG_FILE = path.join(CONFIG.paths.storage, 'audit.log');
+
+function auditLog(userId, action, details = '') {
+  const timestamp = getJamSekarang();
+  const nama = getNama(userId) || 'Unknown';
+  const isAdminUser = isAdmin(userId) ? 'ADMIN' : 'USER';
+  const entry = `[${timestamp}] [${isAdminUser}] ${nama} (${userId}) → ${action} | ${details}\n`;
+  
+  try {
+    fs.appendFileSync(AUDIT_LOG_FILE, entry);
+  } catch(e) {
+    log.error('AUDIT', 'Fail write: ' + e.message);
+  }
+  
+  // Notif ke admin untuk aktivitas SUPER sensitif
+  const SENSITIVE_ACTIONS = ['LOGIN_FAILED', 'MEMBER_DELETED', 'CONFIG_CHANGED', 'BACKUP_DELETED'];
+  if (SENSITIVE_ACTIONS.includes(action) && CONFIG.adminId) {
+    try {
+      bot.sendMessage(CONFIG.adminId, 
+        `🚨 *AUDIT ALERT*\n\n👤 ${nama} (${userId})\n📝 Action: *${action}*\n${details ? '📋 Detail: ' + details : ''}\n⏰ ${timestamp}`,
+        { parse_mode: 'Markdown' }
+      );
+    } catch(e) {}
+  }
+}
+
+// Wrap command sensitif untuk auto-log
+bot.onText(/\/approve (\d+)/, (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  auditLog(msg.from.id, 'APPROVE_MEMBER', `Target: ${match[1]}`);
+  approveUser(msg.chat.id, match[1]);
+});
+
+bot.onText(/\/reject (\d+)/, (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  auditLog(msg.from.id, 'REJECT_MEMBER', `Target: ${match[1]}`);
+  rejectUser(msg.chat.id, match[1]);
+});
+
+bot.onText(/\/removemember (\d+)/, (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  auditLog(msg.from.id, 'MEMBER_DELETED', `Target: ${match[1]}`);
+  const r = hapusMember(match[1]);
+  kirim(msg.chat.id, r.ok ? '✅ Member dihapus' : '❌ ' + r.alasan);
+});
+
+// Command untuk lihat audit log (admin only)
+bot.onText(/\/auditlog/, (msg) => {
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  
+  try {
+    if (!fs.existsSync(AUDIT_LOG_FILE)) {
+      return kirim(msg.chat.id, '📋 Audit log kosong.');
+    }
+    
+    const content = fs.readFileSync(AUDIT_LOG_FILE, 'utf8');
+    const lines = content.trim().split('\n').slice(-30); // 30 terakhir
+    
+    let m = `📋 *AUDIT LOG (30 terakhir)*\n${GARIS_TEBAL}\n\n`;
+    m += '```\n' + lines.join('\n') + '\n```';
+    
+    kirim(msg.chat.id, m);
+  } catch(e) {
+    kirim(msg.chat.id, '❌ Error: ' + e.message);
+  }
+});
 
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
