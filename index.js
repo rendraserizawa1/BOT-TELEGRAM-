@@ -9265,14 +9265,29 @@ webApp.post('/login', (req, res) => {
   const now = Date.now();
   if (!loginAttempts[ip]) loginAttempts[ip] = { count: 0, firstAttempt: now };
   if (now - loginAttempts[ip].firstAttempt > 15 * 60 * 1000) loginAttempts[ip] = { count: 0, firstAttempt: now };
-  if (loginAttempts[ip].count >= 5) return res.status(429).send('<h1>⛔ Too Many Attempts</h1><p>Coba lagi 15 menit.</p><a href="/login">Kembali</a>');
+  
+  if (loginAttempts[ip].count >= 5) {
+    // ★ ALERT ADMIN kalau ada brute force!
+    if (CONFIG.adminId && loginAttempts[ip].count === 5) {
+      try {
+        bot.sendMessage(CONFIG.adminId, 
+          `🚨 *SECURITY ALERT*\n\n⚠️ Brute force login attempt!\n🌐 IP: \`${ip}\`\n🕐 ${getJamSekarang()}\n\nAccount temporarily locked.`,
+          { parse_mode: 'Markdown' }
+        );
+      } catch(e) {}
+    }
+    return res.status(429).send('<h1>⛔ Too Many Attempts</h1>');
+  }
   
   if (req.body.username === CONFIG.dashboardUser && req.body.password === CONFIG.dashboardPass) {
     loginAttempts[ip] = { count: 0, firstAttempt: now };
     req.session.loggedIn = true;
+    log.info('LOGIN', `✅ Success from IP: ${ip}`);
     return res.redirect('/dashboard');
   }
+  
   loginAttempts[ip].count++;
+  log.warn('LOGIN', `❌ Failed from IP: ${ip} (attempt ${loginAttempts[ip].count})`);
   res.redirect('/login?error=1');
 });
 
