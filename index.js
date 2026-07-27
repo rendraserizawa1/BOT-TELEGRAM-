@@ -311,23 +311,21 @@ function decrypt(text) {
   } catch(e) { return text; }
 }
 // ════════════════════════════════════════════════════════════════
-//   4B. GITHUB STORAGE - Data Permanent (Branch Terpisah - No Loop!)
+//   4B. GITHUB STORAGE - Data Permanent (FIXED - Reliable Sync)
 // ════════════════════════════════════════════════════════════════
 
 const GITHUB_CONFIG = {
   token: process.env.GITHUB_TOKEN || '',
   owner: process.env.GITHUB_USERNAME || '',
   repo: process.env.GITHUB_REPO || '',
-  // ★ WAJIB branch terpisah dari main! Kalau sama, akan infinite loop deploy!
   branch: process.env.GITHUB_BRANCH || 'data-storage',
-  folder: 'data',
+  folder: 'data-storage',
 };
 
-// ⚠️ SAFETY CHECK: Jangan pernah simpan ke branch main!
+// Safety check
 if (GITHUB_CONFIG.branch === 'main' || GITHUB_CONFIG.branch === 'master') {
-  console.error('🚨 CRITICAL: GITHUB_BRANCH tidak boleh "main" atau "master"! Akan infinite loop!');
-  console.error('🔧 Set GITHUB_BRANCH = data-storage di Railway Variables');
-  GITHUB_CONFIG.token = ''; // Disable GitHub sync
+  console.error('🚨 CRITICAL: GITHUB_BRANCH tidak boleh "main" atau "master"! Set ke "data-storage"');
+  GITHUB_CONFIG.token = '';
 }
 
 const GITHUB_SYNC_FILES = [
@@ -342,22 +340,25 @@ if (isGitHubEnabled) {
   try {
     const { Octokit } = require('@octokit/rest');
     githubClient = new Octokit({ auth: GITHUB_CONFIG.token });
-    log.info('GITHUB', `✅ GitHub Storage aktif`);
-    log.info('GITHUB', `   Repo: ${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}`);
-    log.info('GITHUB', `   Branch: ${GITHUB_CONFIG.branch} (data-only, no deploy)`);
+    console.log('═'.repeat(60));
+    console.log(`✅ [GITHUB] Storage aktif`);
+    console.log(`   📁 Repo: ${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}`);
+    console.log(`   🌿 Branch: ${GITHUB_CONFIG.branch}`);
+    console.log(`   📂 Folder: ${GITHUB_CONFIG.folder}/`);
+    console.log('═'.repeat(60));
   } catch(e) {
-    log.error('GITHUB', 'Gagal init: ' + e.message);
+    console.error('❌ [GITHUB] Gagal init:', e.message);
   }
 } else {
-  log.warn('GITHUB', '⚠️ GITHUB_TOKEN belum diset atau branch salah!');
+  console.warn('⚠️ [GITHUB] Storage NONAKTIF - Data hanya di memory!');
+  console.warn('   Set GITHUB_TOKEN, GITHUB_USERNAME, GITHUB_REPO di Railway Variables');
 }
 
 const githubFileSHA = {};
-
-// ★ Rate limiter - max 1 commit per file per 2 menit
 const lastCommitTime = {};
-const MIN_COMMIT_INTERVAL = 2 * 60 * 1000; // 2 menit
+const MIN_COMMIT_INTERVAL = 60 * 1000; // 1 menit (dulu 2 menit, dipercepat)
 
+// ═══ LOAD dari GitHub ═══
 async function loadFromGitHub(fileName) {
   if (!isGitHubEnabled) return null;
   
@@ -374,48 +375,32 @@ async function loadFromGitHub(fileName) {
       githubFileSHA[fileName] = response.data.sha;
       const content = Buffer.from(response.data.content, 'base64').toString('utf8');
       const parsed = JSON.parse(content);
-      log.info('GITHUB', `✅ Loaded ${fileName}.json`);
+      const size = Array.isArray(parsed) ? parsed.length : Object.keys(parsed).length;
+      console.log(`✅ [GITHUB] Loaded ${fileName}.json (${size} items)`);
       return parsed;
     }
     return null;
   } catch(err) {
     if (err.status === 404) {
-      log.info('GITHUB', `${fileName}.json belum ada (akan dibuat saat save)`);
+      console.log(`ℹ️ [GITHUB] ${fileName}.json belum ada (akan dibuat)`);
     } else {
-      log.warn('GITHUB', `Load ${fileName}: ${err.message}`);
+      console.warn(`⚠️ [GITHUB] Load ${fileName}: ${err.message}`);
     }
     return null;
   }
 }
 
-async function saveToGitHub(fileName, data) {
+// ═══ SAVE ke GitHub (dengan retry) ═══
+async function saveToGitHub(fileName, data, retryCount = 0) {
   if (!isGitHubEnabled) return false;
-  
-  // Rate limit check
-  const now = Date.now();
-  if (lastCommitTime[fileName] && (now - lastCommitTime[fileName]) < MIN_COMMIT_INTERVAL) {
-    const waitSec = Math.ceil((MIN_COMMIT_INTERVAL - (now - lastCommitTime[fileName])) / 1000);
-    log.info('GITHUB', `⏰ ${fileName}: rate limited (tunggu ${waitSec}s)`);
-    return false;
-  }
   
   try {
     const filePath = `${GITHUB_CONFIG.folder}/${fileName}.json`;
     const content = JSON.stringify(data, null, 2);
     const contentBase64 = Buffer.from(content).toString('base64');
     
-    const params = {
-      owner: GITHUB_CONFIG.owner,
-      repo: GITHUB_CONFIG.repo,
-      path: filePath,
-      message: `data: update ${fileName}`,
-      content: contentBase64,
-      branch: GITHUB_CONFIG.branch,
-    };
-    
-    if (githubFileSHA[fileName]) {
-      params.sha = githubFileSHA[fileName];
-    } else {
+    // Ambil SHA terbaru kalau belum ada
+    if (!githubFileSHA[fileName]) {
       try {
         const existing = await githubClient.repos.getContent({
           owner: GITHUB_CONFIG.owner,
@@ -423,12 +408,20 @@ async function saveToGitHub(fileName, data) {
           path: filePath,
           ref: GITHUB_CONFIG.branch,
         });
-        if (existing.data.sha) {
-          params.sha = existing.data.sha;
-          githubFileSHA[fileName] = existing.data.sha;
-        }
-      } catch(e) {}
+        if (existing.data.sha) githubFileSHA[fileName] = existing.data.sha;
+      } catch(e) {} // File belum ada, akan dibuat baru
     }
+    
+    const params = {
+      owner: GITHUB_CONFIG.owner,
+      repo: GITHUB_CONFIG.repo,
+      path: filePath,
+      message: `data: update ${fileName} [${new Date().toISOString()}]`,
+      content: contentBase64,
+      branch: GITHUB_CONFIG.branch,
+    };
+    
+    if (githubFileSHA[fileName]) params.sha = githubFileSHA[fileName];
     
     const response = await githubClient.repos.createOrUpdateFileContents(params);
     
@@ -436,100 +429,202 @@ async function saveToGitHub(fileName, data) {
       githubFileSHA[fileName] = response.data.content.sha;
     }
     
-    lastCommitTime[fileName] = now;
-    log.info('GITHUB', `✅ Saved ${fileName}.json ke branch ${GITHUB_CONFIG.branch}`);
+    lastCommitTime[fileName] = Date.now();
+    const size = Array.isArray(data) ? data.length : Object.keys(data).length;
+    console.log(`✅ [GITHUB] Saved ${fileName}.json (${size} items)`);
     return true;
   } catch(err) {
-    log.error('GITHUB', `Save ${fileName}: ${err.message}`);
+    // Retry kalau conflict (SHA lama)
+    if (err.status === 409 && retryCount < 3) {
+      console.warn(`⚠️ [GITHUB] ${fileName}: Conflict, retry ${retryCount + 1}...`);
+      delete githubFileSHA[fileName]; // Reset SHA, ambil terbaru
+      await new Promise(r => setTimeout(r, 1000));
+      return saveToGitHub(fileName, data, retryCount + 1);
+    }
+    
+    console.error(`❌ [GITHUB] Save ${fileName} FAIL: ${err.message}`);
     return false;
   }
 }
 
-async function loadAllFromGitHub() {
+// ═══ LOAD SEMUA saat startup (PENTING!) ═══
+async function loadAllFromGitHubSync() {
   if (!isGitHubEnabled) {
-    log.warn('GITHUB', 'Skip sync: GitHub Storage tidak aktif');
+    console.warn('⚠️ [GITHUB] Skip startup sync: GitHub tidak aktif');
     return;
   }
   
-  log.info('GITHUB', '🔄 Loading data dari GitHub branch ' + GITHUB_CONFIG.branch + '...');
+  console.log('🔄 [GITHUB] Loading data dari GitHub branch: ' + GITHUB_CONFIG.branch);
+  
+  let loadedCount = 0;
   
   for (const fileName of GITHUB_SYNC_FILES) {
-    const data = await loadFromGitHub(fileName);
-    if (data !== null) {
-      switch(fileName) {
-        case 'members':
-          MEMBERS = data;
-          _origSaveJSON(CONFIG.paths.members, MEMBERS);
-          break;
-        case 'kontak':
-          KONTAK = data;
-          _origSaveJSON(CONFIG.paths.kontak, KONTAK);
-          break;
-        case 'pending':
-          PENDING = data;
-          _origSaveJSON(CONFIG.paths.pending, PENDING);
-          break;
-        case 'roleLaporan':
-          ROLE_LAPORAN = data;
-          _origSaveJSON(CONFIG.paths.roleLaporan, ROLE_LAPORAN);
-          break;
-        case 'stockopname':
-          STOCKOPNAME = data;
-          _origSaveJSON(CONFIG.paths.stockopname, STOCKOPNAME);
-          break;
-        case 'beritaacara':
-          BERITA_ACARA = data;
-          _origSaveJSON(CONFIG.paths.beritaacara, BERITA_ACARA);
-          break;
-        case 'soShared':
-          SO_SHARED = data;
-          _origSaveJSON(CONFIG.paths.soShared, SO_SHARED);
-          break;
+    try {
+      const data = await loadFromGitHub(fileName);
+      if (data !== null) {
+        // Update memory & lokal file
+        switch(fileName) {
+          case 'members':
+            if (Array.isArray(data)) {
+              MEMBERS.length = 0;
+              MEMBERS.push(...data);
+              _origSaveJSON(CONFIG.paths.members, MEMBERS);
+              loadedCount++;
+            }
+            break;
+          case 'kontak':
+            Object.keys(KONTAK).forEach(k => delete KONTAK[k]);
+            Object.assign(KONTAK, data);
+            _origSaveJSON(CONFIG.paths.kontak, KONTAK);
+            loadedCount++;
+            break;
+          case 'pending':
+            Object.keys(PENDING).forEach(k => delete PENDING[k]);
+            Object.assign(PENDING, data);
+            _origSaveJSON(CONFIG.paths.pending, PENDING);
+            loadedCount++;
+            break;
+          case 'roleLaporan':
+            if (Array.isArray(data)) {
+              ROLE_LAPORAN.length = 0;
+              ROLE_LAPORAN.push(...data);
+              _origSaveJSON(CONFIG.paths.roleLaporan, ROLE_LAPORAN);
+              loadedCount++;
+            }
+            break;
+          case 'stockopname':
+            Object.keys(STOCKOPNAME).forEach(k => delete STOCKOPNAME[k]);
+            Object.assign(STOCKOPNAME, data);
+            _origSaveJSON(CONFIG.paths.stockopname, STOCKOPNAME);
+            loadedCount++;
+            break;
+          case 'beritaacara':
+            Object.keys(BERITA_ACARA).forEach(k => delete BERITA_ACARA[k]);
+            Object.assign(BERITA_ACARA, data);
+            _origSaveJSON(CONFIG.paths.beritaacara, BERITA_ACARA);
+            loadedCount++;
+            break;
+          case 'soShared':
+            Object.keys(SO_SHARED).forEach(k => delete SO_SHARED[k]);
+            Object.assign(SO_SHARED, data);
+            _origSaveJSON(CONFIG.paths.soShared, SO_SHARED);
+            loadedCount++;
+            break;
+        }
       }
+      // Jeda 300ms antar request biar tidak rate-limit
+      await new Promise(r => setTimeout(r, 300));
+    } catch(err) {
+      console.error(`❌ [GITHUB] Error load ${fileName}: ${err.message}`);
     }
   }
   
-  log.info('GITHUB', `✅ Sync complete: ${MEMBERS.length} members, ${Object.keys(KONTAK).length} kontak`);
+  console.log('═'.repeat(60));
+  console.log(`✅ [GITHUB] Startup sync complete: ${loadedCount}/${GITHUB_SYNC_FILES.length} files loaded`);
+  console.log(`   👥 Members: ${MEMBERS.length}`);
+  console.log(`   📒 Kontak: ${Object.keys(KONTAK).length}`);
+  console.log(`   🔔 Pending: ${Object.keys(PENDING).length}`);
+  console.log(`   📊 Staff: ${ROLE_LAPORAN.length}`);
+  console.log('═'.repeat(60));
 }
 
-// Debounce: commit setelah 60 detik idle (mencegah spam)
+// ═══ DEBOUNCED SAVE (biar tidak spam commit) ═══
 const githubSaveTimers = {};
+const DEBOUNCE_DELAY = 30000; // 30 detik (lebih cepat dari 60)
 
-function saveToGitHubDebounced(fileName, data, delay = 60000) {  // ★ 60 detik
-  if (!isGitHubEnabled) return;
+function saveToGitHubDebounced(fileName, data) {
+  if (!isGitHubEnabled) {
+    console.log(`⚠️ [GITHUB] Skip save ${fileName}: GitHub tidak aktif`);
+    return;
+  }
+  
+  console.log(`⏳ [GITHUB] Queue save ${fileName} (debounce ${DEBOUNCE_DELAY/1000}s)`);
   
   if (githubSaveTimers[fileName]) {
     clearTimeout(githubSaveTimers[fileName]);
   }
   
   githubSaveTimers[fileName] = setTimeout(() => {
-    saveToGitHub(fileName, data).catch(e => log.error('GITHUB', e.message));
+    saveToGitHub(fileName, data).catch(e => console.error(`❌ [GITHUB] ${e.message}`));
     delete githubSaveTimers[fileName];
-  }, delay);
+  }, DEBOUNCE_DELAY);
 }
 
-// Simpan reference ke saveJSON asli
+// Save reference SEBELUM override
 const _origSaveJSON = saveJSON;
 
-// Override saveJSON untuk auto-sync ke GitHub
+// ═══ OVERRIDE saveJSON supaya auto-sync ke GitHub ═══
 saveJSON = function(filePath, data) {
+  // Save ke lokal dulu (cepat)
   const result = _origSaveJSON(filePath, data);
   
+  // Detect nama file
   const fileName = path.basename(filePath, '.json');
   
+  // Sync ke GitHub kalau termasuk file yang perlu di-sync
   if (GITHUB_SYNC_FILES.includes(fileName)) {
+    console.log(`💾 [SAVE] ${fileName}.json → memory + local + GitHub queue`);
     saveToGitHubDebounced(fileName, data);
   }
   
   return result;
 };
 
-// Load dari GitHub saat startup
-if (isGitHubEnabled) {
-  setTimeout(() => {
-    loadAllFromGitHub().catch(e => log.error('GITHUB', 'Startup sync fail: ' + e.message));
-  }, 3000);
+// ═══ FORCE FLUSH sebelum shutdown ═══
+async function flushGitHubSaves() {
+  console.log('🔄 [GITHUB] Flushing pending saves...');
+  const pending = Object.keys(githubSaveTimers);
+  
+  for (const fileName of pending) {
+    clearTimeout(githubSaveTimers[fileName]);
+    delete githubSaveTimers[fileName];
+    
+    // Get current data
+    let data = null;
+    switch(fileName) {
+      case 'members': data = MEMBERS; break;
+      case 'kontak': data = KONTAK; break;
+      case 'pending': data = PENDING; break;
+      case 'roleLaporan': data = ROLE_LAPORAN; break;
+      case 'stockopname': data = STOCKOPNAME; break;
+      case 'beritaacara': data = BERITA_ACARA; break;
+      case 'soShared': data = SO_SHARED; break;
+    }
+    
+    if (data) {
+      try {
+        await saveToGitHub(fileName, data);
+        console.log(`✅ [FLUSH] ${fileName}.json`);
+      } catch(e) {
+        console.error(`❌ [FLUSH] ${fileName}: ${e.message}`);
+      }
+    }
+  }
 }
+
+// ═══ AUTO-LOAD SAAT STARTUP ═══
+// PENTING: Load dari GitHub SEBELUM bot terima command!
+if (isGitHubEnabled) {
+  console.log('🚀 [GITHUB] Auto-load enabled. Loading in 2 seconds...');
+  
+  // Delay 2 detik biar bot ready dulu, tapi sebelum users mulai chat
+  setTimeout(() => {
+    loadAllFromGitHubSync().catch(e => console.error('❌ [GITHUB] Startup fail:', e.message));
+  }, 2000);
+}
+
+// Flush pending saves saat shutdown
+process.on('SIGTERM', async () => {
+  console.log('🛑 SIGTERM received, flushing GitHub saves...');
+  await flushGitHubSaves();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('🛑 SIGINT received, flushing GitHub saves...');
+  await flushGitHubSaves();
+  process.exit(0);
+});
 // ════════════════════════════════════════════════════════════════
 //   5. ROLE & MEMBER HELPERS
 // ════════════════════════════════════════════════════════════════
@@ -7558,6 +7653,93 @@ bot.onText(/\/githubstatus/, (msg) => {
   }
   
   kirim(msg.chat.id, m);
+});
+// ═══ DEBUG GitHub Storage ═══
+
+bot.onText(/\/debugsync/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  
+  let m = `🔍 *DEBUG GITHUB SYNC*\n${GARIS_TEBAL}\n\n`;
+  
+  m += `📊 *Config:*\n`;
+  m += `• Token: ${GITHUB_CONFIG.token ? '✅ Ada (' + GITHUB_CONFIG.token.substring(0, 10) + '...)' : '❌ TIDAK ADA!'}\n`;
+  m += `• Owner: ${GITHUB_CONFIG.owner || '❌ TIDAK ADA!'}\n`;
+  m += `• Repo: ${GITHUB_CONFIG.repo || '❌ TIDAK ADA!'}\n`;
+  m += `• Branch: ${GITHUB_CONFIG.branch}\n`;
+  m += `• Folder: ${GITHUB_CONFIG.folder}/\n\n`;
+  
+  m += `📊 *Status:*\n`;
+  m += `• GitHub Enabled: ${isGitHubEnabled ? '✅' : '❌'}\n`;
+  m += `• Client Ready: ${githubClient ? '✅' : '❌'}\n\n`;
+  
+  m += `📊 *Data in Memory:*\n`;
+  m += `• MEMBERS: ${MEMBERS.length} items\n`;
+  m += `• KONTAK: ${Object.keys(KONTAK).length} items\n`;
+  m += `• PENDING: ${Object.keys(PENDING).length} items\n`;
+  m += `• ROLE_LAPORAN: ${ROLE_LAPORAN.length} items\n\n`;
+  
+  m += `📊 *Save Queue:*\n`;
+  const queued = Object.keys(githubSaveTimers);
+  if (queued.length === 0) m += `_(kosong)_\n`;
+  else queued.forEach(k => m += `• ${k}\n`);
+  m += '\n';
+  
+  m += `📊 *Last Commit:*\n`;
+  const lastCommits = Object.keys(lastCommitTime);
+  if (lastCommits.length === 0) m += `_(belum ada commit)_\n`;
+  else lastCommits.forEach(k => {
+    const ago = Math.floor((Date.now() - lastCommitTime[k]) / 1000);
+    m += `• ${k}: ${ago}s lalu\n`;
+  });
+  
+  m += `\n${GARIS_TIPIS}\n💡 *Commands:*\n`;
+  m += `• /synctogithub - Force push semua ke GitHub\n`;
+  m += `• /loadfromgithub - Pull semua dari GitHub\n`;
+  m += `• /debugsync - Debug ini\n`;
+  m += `• /testadduser - Test add user (debug)\n`;
+  
+  kirim(msg.chat.id, m);
+});
+
+// Test add user untuk debug
+bot.onText(/\/testadduser/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  
+  const testId = `999${Date.now().toString().substring(6)}`;
+  const testName = `TEST_USER_${new Date().toISOString().substring(11, 19)}`;
+  
+  // Add ke MEMBERS
+  MEMBERS.push(testId);
+  saveJSON(CONFIG.paths.members, MEMBERS);
+  
+  // Add ke KONTAK
+  KONTAK[testId] = testName;
+  saveJSON(CONFIG.paths.kontak, KONTAK);
+  
+  await kirim(msg.chat.id, 
+    `🧪 *TEST ADD USER*\n${GARIS_TIPIS}\n\n` +
+    `✅ Added:\n` +
+    `• ID: \`${testId}\`\n` +
+    `• Nama: ${testName}\n\n` +
+    `📊 Total members sekarang: ${MEMBERS.length}\n\n` +
+    `⏳ Tunggu 30 detik, lalu cek GitHub:\n` +
+    `https://github.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/blob/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.folder}/members.json\n\n` +
+    `Kalau ID \`${testId}\` muncul di GitHub, sync BERHASIL!`
+  );
+});
+
+// Force flush saves ke GitHub
+bot.onText(/\/flushgithub/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  
+  const queued = Object.keys(githubSaveTimers);
+  if (queued.length === 0) {
+    return kirim(msg.chat.id, '✅ Tidak ada save yang pending.\n\nGunakan /synctogithub untuk force push semua.');
+  }
+  
+  await kirim(msg.chat.id, `🔄 Force flushing ${queued.length} pending saves...`);
+  await flushGitHubSaves();
+  await kirim(msg.chat.id, '✅ Flush selesai! Cek GitHub sekarang.');
 });
 
 // ════════════════════════════════════════════════════════════════
