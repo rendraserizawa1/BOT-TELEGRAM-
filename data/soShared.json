@@ -1,1 +1,14 @@
-{}
+{
+  "nk": {
+    "tanggal": "27/07/2026",
+    "sesiAktif": false,
+    "racks": {
+      "Rak plastik": {
+        "items": {},
+        "createdBy": "8997270739",
+        "createdAt": 1785125306834
+      }
+    },
+    "usersAktif": {}
+  }
+}
