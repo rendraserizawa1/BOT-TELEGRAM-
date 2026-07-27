@@ -1,1 +1,73 @@
-{}
+{
+  "nk": {
+    "tanggal": "27/07/2026",
+    "sesiAktif": true,
+    "racks": {
+      "PLASTIK": {
+        "items": {
+          "NEW_MS2T78XP": {
+            "entries": [
+              {
+                "userId": "8997270739",
+                "namaPetugas": "BUDI",
+                "qty": 1,
+                "jenis": "fisik",
+                "jamInput": "13:51",
+                "timestamp": 1785131494909
+              }
+            ]
+          },
+          "NEW_MS2TIK86": {
+            "entries": [
+              {
+                "userId": "8997270739",
+                "namaPetugas": "BUDI",
+                "qty": 2,
+                "jenis": "fisik",
+                "jamInput": "14:00",
+                "timestamp": 1785132022759
+              }
+            ]
+          }
+        },
+        "createdBy": "8997270739",
+        "createdAt": 1785131469473
+      }
+    },
+    "usersAktif": {
+      "8997270739": {
+        "nama": "BUDI",
+        "petugas": [
+          "BUDI"
+        ],
+        "rakAktif": "PLASTIK",
+        "jamMulai": "13:51",
+        "lastActive": 1785132022759
+      }
+    },
+    "barangBaru": [
+      {
+        "kode": "NEW_MS2T78XP",
+        "nama": "KASUR BIGFOAM 160",
+        "rak": "PLASTIK",
+        "jenis": "fisik",
+        "qty": 1,
+        "petugas": "BUDI",
+        "jam": "13:51",
+        "fotoFileId": "AgACAgUAAxkBAAIy-mpm8f3etb_0C5l07uWfSMaefqSGAALxFGsbcos5V1E2W4rVJKG0AQADAgADeQADPQQ",
+        "timestamp": 1785131494909
+      },
+      {
+        "kode": "NEW_MS2TIK86",
+        "nama": "PAYUNG PANTAI",
+        "rak": "PLASTIK",
+        "jenis": "fisik",
+        "qty": 2,
+        "petugas": "BUDI",
+        "jam": "14:00",
+        "fotoFileId": "AgACAgUAAxkBAAIzBmpm9AO5ZGNfiEIIbfJUDR6JZU1lAAL4FGsbcos5VzSkO7EQdQLFAQADAgADeQADPQQ",
+        "timestamp": 1785132022759
+      }
+    ]
+  }
+}
