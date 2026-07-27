@@ -1356,6 +1356,46 @@ function generateExcelSOGabungan(tokoKode, namaToko) {
     ];
     xlsx.utils.book_append_sheet(wb, wsPetugas, sheetName);
   });
+
+    // ═══ SHEET TAMBAHAN: BARANG BARU (Tidak Ada di Database) ═══
+  // Kumpulkan dari semua user yang SO
+  const barangBaruAll = [];
+  
+  Object.values(shared.usersAktif || {}).forEach(userInfo => {
+    // Barang baru dari setiap user disimpan di session mereka
+    // Kita ambil dari shared data juga
+  });
+  
+  // Cek di shared items yang kode-nya NEW_*
+  Object.entries(shared.racks || {}).forEach(([rakName, rackData]) => {
+    Object.entries(rackData.items || {}).forEach(([kode, itemData]) => {
+      if (kode.startsWith('NEW_')) {
+        let totalQty = 0;
+        const petugas = [];
+        itemData.entries.forEach(e => {
+          totalQty += e.qty;
+          if (!petugas.includes(e.namaPetugas)) petugas.push(e.namaPetugas);
+        });
+        
+        barangBaruAll.push({
+          'Kode Temp': kode,
+          'Nama Barang': kode, // Nama dari shared (kode saja yang ada)
+          'Rak': rakName,
+          'Qty': totalQty,
+          'Petugas': petugas.join(', '),
+          'Status': 'BARANG BARU - TIDAK ADA DI DATABASE',
+        });
+      }
+    });
+  });
+  
+  if (barangBaruAll.length > 0) {
+    const wsNew = xlsx.utils.json_to_sheet(barangBaruAll);
+    wsNew['!cols'] = [
+      { wch: 20 }, { wch: 45 }, { wch: 15 }, { wch: 8 }, { wch: 20 }, { wch: 35 },
+    ];
+    xlsx.utils.book_append_sheet(wb, wsNew, 'Barang Baru');
+  }
   
   const filePath = path.join(CONFIG.paths.storage, `temp_so_gabungan_${tokoKode}_${Date.now()}.xlsx`);
   xlsx.writeFile(wb, filePath);
@@ -5276,7 +5316,20 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     } else {
       m += `\n_Belum ada barang diinput._\n`;
     }
-    
+
+        // ═══ TAMPILKAN BARANG BARU (yang tidak ada di database) ═══
+    const barangBaru = session.soBarangBaru || [];
+    if (barangBaru.length > 0) {
+      m += `\n🆕 *BARANG BARU (${barangBaru.length} item):*\n${GARIS_TIPIS}\n`;
+      m += `_(Tidak ada di database Excel)_\n\n`;
+      barangBaru.forEach((b, i) => {
+        m += `${i+1}. *${escapeMd(b.nama)}*\n`;
+        m += `   📍 ${b.rak} | ${b.jenis === 'fisik' ? '🏪' : '🏭'} ${b.jenis}: ${b.qty}\n`;
+        m += `   👤 ${b.petugas} | ⏰ ${b.jam}\n`;
+        m += `   📸 ${b.foto ? 'Ada foto ✅' : 'Tanpa foto'}\n\n`;
+      });
+    }
+      
     await kirim(chatId, m, {
       reply_markup: { inline_keyboard: [
         [{ text: '📊 Export Excel Gabungan', callback_data: 'so:exportgabungan' }],
@@ -5297,6 +5350,167 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
         [{ text: '🔙 Kembali Input', callback_data: 'so:kembali' }],
       ]}}
     );
+    return;
+  }
+    // ════════════ TAMBAH BARANG BARU (Tidak Ada di Database) ════════════
+  
+  if (low === 'tambahbaru' || low === 'tambah barang' || low === 'barang baru' || low === 'add item') {
+    updateSesi(userId, { soTambahBaruStep: 'nama' });
+    await kirim(chatId,
+      `➕ *TAMBAH BARANG BARU*\n${GARIS_TEBAL}\n\n` +
+      `📦 Rak: *${soInfo.rakAktif}*\n\n` +
+      `Barang ini TIDAK ADA di database/Excel.\n` +
+      `Data akan dicatat sebagai barang baru di laporan SO.\n\n` +
+      `📝 *STEP 1/3: Nama Barang*\n\n` +
+      `Ketik nama barang lengkap:\n\n` +
+      `*Contoh:*\n` +
+      `• \`RAK PIRING STAINLESS 3 SUSUN\`\n` +
+      `• \`TEMPAT BUMBU KACA SET 6\`\n\n` +
+      `Ketik *batal* untuk keluar.`
+    );
+    return;
+  }
+  
+  // Step 1: Input nama barang baru
+  if (session.soTambahBaruStep === 'nama') {
+    if (low === 'batal' || low === '/batal') {
+      updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null });
+      await kirim(chatId, '✅ Dibatalkan.', { reply_markup: kbSOAktif() });
+      return;
+    }
+    
+    if (!message || message.length < 3) {
+      await kirim(chatId, '⚠️ Nama barang minimal 3 karakter.');
+      return;
+    }
+    
+    const namaBarang = message.trim().toUpperCase();
+    
+    // Cek apakah barang sudah ada di database
+    const existing = DATA_BARANG.find(d => 
+      d.nama === namaBarang || d.nama.includes(namaBarang) || namaBarang.includes(d.nama)
+    );
+    
+    if (existing) {
+      await kirim(chatId,
+        `⚠️ *Barang mirip ditemukan di database:*\n\n` +
+        `📦 ${escapeMd(existing.nama)}\n🔖 \`${existing.kode}\`\n\n` +
+        `Mau pakai barang ini atau tetap tambah baru?`,
+        { reply_markup: { inline_keyboard: [
+          [{ text: `✅ Pakai "${existing.nama.substring(0, 30)}"`, callback_data: `so:pick:${existing.kode}` }],
+          [{ text: '➕ Tetap Tambah Baru', callback_data: 'so:konfirmtambahbaru' }],
+          [{ text: '🔙 Batal', callback_data: 'so:kembali' }],
+        ]}}
+      );
+      
+      // Simpan nama baru di session untuk nanti
+      updateSesi(userId, { soBaruNama: namaBarang });
+      return;
+    }
+    
+    // Tidak ada yang mirip, lanjut
+    updateSesi(userId, { soBaruNama: namaBarang, soTambahBaruStep: 'qty' });
+    
+    await kirim(chatId,
+      `✅ *Nama: ${escapeMd(namaBarang)}*\n${GARIS_TIPIS}\n\n` +
+      `📝 *STEP 2/3: Jumlah Barang*\n\n` +
+      `Ketik seperti biasa:\n` +
+      `• \`TOKO 15\` — stok di toko/rak\n` +
+      `• \`GUDANG 20\` — stok di gudang\n\n` +
+      `📍 Rak: ${soInfo.rakAktif}`
+    );
+    return;
+  }
+  
+  // Step 2: Input qty barang baru
+  if (session.soTambahBaruStep === 'qty') {
+    if (low === 'batal' || low === '/batal') {
+      updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null });
+      await kirim(chatId, '✅ Dibatalkan.', { reply_markup: kbSOAktif() });
+      return;
+    }
+    
+    const match = message.trim().match(/^(toko|fisik|gudang)\s+(\d+)$/i);
+    if (!match) {
+      const angka = message.replace(/[^0-9]/g, '');
+      if (angka) {
+        await kirim(chatId, `⚠️ Ketik:\n• \`TOKO ${angka}\`\n• \`GUDANG ${angka}\``);
+        return;
+      }
+      await kirim(chatId, '⚠️ Format: `TOKO 15` atau `GUDANG 20`');
+      return;
+    }
+    
+    const jenis = match[1].toLowerCase();
+    const jumlah = parseInt(match[2]);
+    const jenisKey = (jenis === 'toko' || jenis === 'fisik') ? 'fisik' : 'gudang';
+    const namaBarang = session.soBaruNama;
+    const namaPetugas = soInfo.petugas[0] || getNama(userId) || 'User';
+    
+    // Buat kode temporary untuk barang baru
+    const kodeBaru = `NEW_${Date.now().toString(36).toUpperCase()}`;
+    
+    // Simpan ke shared SO (sama seperti barang biasa)
+    if (typeof tambahInputSO === 'function') {
+      tambahInputSO(tokoKode, soInfo.rakAktif, kodeBaru, userId, namaPetugas, jumlah, jenisKey);
+    }
+    
+    // Juga simpan info barang baru ke session (untuk Excel)
+    if (!session.soBarangBaru) session.soBarangBaru = [];
+    session.soBarangBaru.push({
+      kode: kodeBaru,
+      nama: namaBarang,
+      rak: soInfo.rakAktif,
+      jenis: jenisKey,
+      qty: jumlah,
+      petugas: namaPetugas,
+      jam: getJamSekarang(),
+      foto: null, // Belum ada foto
+    });
+    
+    updateSesi(userId, { 
+      soTambahBaruStep: 'foto',
+      soBaruKode: kodeBaru,
+      soBaruQty: jumlah,
+      soBaruJenis: jenisKey,
+      soBarangBaru: session.soBarangBaru,
+    });
+    
+    await kirim(chatId,
+      `✅ *Barang baru tersimpan!*\n${GARIS_TEBAL}\n\n` +
+      `📦 *${escapeMd(namaBarang)}*\n` +
+      `🔖 Kode: \`${kodeBaru}\` _(temporary)_\n` +
+      `📍 Rak: ${soInfo.rakAktif}\n` +
+      `${jenisKey === 'fisik' ? '🏪' : '🏭'} ${jenisKey.toUpperCase()}: ${jumlah}\n` +
+      `👤 ${namaPetugas}\n\n` +
+      `${GARIS_TIPIS}\n\n` +
+      `📸 *STEP 3/3: Foto Barang (Opsional)*\n\n` +
+      `Kirim FOTO barang untuk dokumentasi.\n` +
+      `Atau ketik *skip* untuk lewati.`,
+      { reply_markup: { inline_keyboard: [
+        [{ text: '⏭️ Skip Foto', callback_data: 'so:skipfoto' }],
+        [{ text: '🔙 Kembali Input', callback_data: 'so:kembali' }],
+      ]}}
+    );
+    return;
+  }
+  
+  // Step 3: Tunggu foto (handled di photo handler)
+  if (session.soTambahBaruStep === 'foto') {
+    if (low === 'skip' || low === 'lewat' || low === 'lanjut') {
+      updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null, soBaruKode: null });
+      
+      const totalBaru = (session.soBarangBaru || []).length;
+      await kirim(chatId,
+        `✅ *Barang baru ditambahkan tanpa foto*\n\n` +
+        `📦 Total barang baru di SO: *${totalBaru}*\n\n` +
+        `💬 Lanjutkan input barang atau pilih:`,
+        { reply_markup: kbSOAktif() }
+      );
+      return;
+    }
+    
+    await kirim(chatId, '📸 Kirim foto barang, atau ketik *skip* untuk lewati.');
     return;
   }
   
@@ -5608,6 +5822,9 @@ function kbSOAktif() {
     [
       { text: '📦 Pindah Rak', callback_data: 'so:pindahrak' },
       { text: '✏️ Edit Rak', callback_data: 'so:editrak' },
+    ],
+    [
+      { text: '➕ Tambah Barang Baru', callback_data: 'so:tambahbaru' },
     ],
     [
       { text: '📊 Export Gabungan', callback_data: 'so:exportgabungan' },
@@ -8015,6 +8232,63 @@ bot.on('photo', async (msg) => {
     
     // ROUTING berdasarkan mode aktif (existing)
     if (session.mode === 'stockopname') {
+
+      // ★ Foto barang baru (step foto)
+      if (session.soTambahBaruStep === 'foto') {
+        try {
+          // Simpan foto ke admin (sebagai dokumentasi)
+          const namaBarang = session.soBaruNama || 'Barang Baru';
+          const kodeBaru = session.soBaruKode || 'NEW';
+          const rakAktif = session.soInfo?.rakAktif || '-';
+          const namaToko = NAMA_TOKO[session.tokoKode] || 'Toko';
+          
+          // Forward foto ke admin sebagai backup
+          if (CONFIG.adminId) {
+            try {
+              await bot.sendPhoto(CONFIG.adminId, photo.file_id, {
+                caption: `📸 *FOTO BARANG BARU (SO)*\n\n` +
+                  `🏦 ${namaToko}\n` +
+                  `📦 ${namaBarang}\n` +
+                  `🔖 ${kodeBaru}\n` +
+                  `📍 Rak: ${rakAktif}\n` +
+                  `👤 ${getNama(userId) || 'User'}\n` +
+                  `⏰ ${getJamSekarang()}`,
+                parse_mode: 'Markdown',
+              });
+            } catch(e) { console.warn('Gagal forward foto ke admin:', e.message); }
+          }
+          
+          // Update item di soBarangBaru
+          if (session.soBarangBaru && session.soBarangBaru.length > 0) {
+            const lastItem = session.soBarangBaru[session.soBarangBaru.length - 1];
+            lastItem.foto = photo.file_id;
+            lastItem.fotoTimestamp = Date.now();
+          }
+          
+          updateSesi(userId, { 
+            soTambahBaruStep: null, 
+            soBaruNama: null, 
+            soBaruKode: null,
+            soBarangBaru: session.soBarangBaru,
+          });
+          
+          const totalBaru = (session.soBarangBaru || []).length;
+          await kirim(chatId,
+            `✅ *Foto tersimpan!*\n\n` +
+            `📦 ${escapeMd(namaBarang)}\n` +
+            `📸 Foto didokumentasikan.\n` +
+            `📦 Total barang baru: *${totalBaru}*\n\n` +
+            `💬 Lanjutkan input barang atau pilih:`,
+            { reply_markup: kbSOAktif() }
+          );
+        } catch(err) {
+          log.error('SO-FOTO', err.message);
+          await kirim(chatId, '❌ Error simpan foto: ' + err.message);
+        }
+        return;
+      }
+      
+      
       // Cek apakah lagi di step input rak (setup awal atau pindah rak)
       const isStepRak = session.soSetupStep === 'rak' || 
                        session.soSetupStep === 'rak_input' || 
@@ -9571,6 +9845,50 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     if (session.soSetupStep) await kirim(chatId, '🔙 Batal. Kirim foto lagi atau ketik nama manual.');
     else await kirim(chatId, '🔙 Batal.', { reply_markup: kbSOAktif() });
+    return;
+  }
+
+  // ════════════ STOCK OPNAME: TAMBAH BARANG BARU ════════════
+  
+  if (data === 'so:tambahbaru') {
+    const session = getSesi(userId);
+    await handleStockOpnameMode(chatId, userId, 'tambahbaru', session);
+    return;
+  }
+  
+  if (data === 'so:konfirmtambahbaru') {
+    const session = getSesi(userId);
+    const namaBarang = session.soBaruNama;
+    if (!namaBarang) {
+      await kirim(chatId, '⚠️ Data hilang, coba lagi.', { reply_markup: kbSOAktif() });
+      return;
+    }
+    
+    updateSesi(userId, { soTambahBaruStep: 'qty' });
+    
+    await kirim(chatId,
+      `✅ *Nama: ${escapeMd(namaBarang)}*\n${GARIS_TIPIS}\n\n` +
+      `📝 *STEP 2/3: Jumlah Barang*\n\n` +
+      `Ketik:\n` +
+      `• \`TOKO 15\` — stok di toko/rak\n` +
+      `• \`GUDANG 20\` — stok di gudang\n\n` +
+      `📍 Rak: ${session.soInfo?.rakAktif || '-'}`
+    );
+    return;
+  }
+  
+  if (data === 'so:skipfoto') {
+    const session = getSesi(userId);
+    
+    updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null, soBaruKode: null });
+    
+    const totalBaru = (session.soBarangBaru || []).length;
+    await kirim(chatId,
+      `✅ *Barang baru ditambahkan (tanpa foto)*\n\n` +
+      `📦 Total barang baru: *${totalBaru}*\n\n` +
+      `💬 Lanjutkan input barang:`,
+      { reply_markup: kbSOAktif() }
+    );
     return;
   }
   
