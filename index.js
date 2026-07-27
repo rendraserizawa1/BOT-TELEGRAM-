@@ -891,36 +891,8 @@ function generateNomorBA(tokoKode) {
 }
 
 // ════════════════════════════════════════════════════════════════
-//   8B. SHARED STOCK OPNAME HELPERS (Multi-User + Edit + Gabungan)
+//   8B. SHARED STOCK OPNAME HELPERS (Multi-User + Barang Baru + Foto)
 // ════════════════════════════════════════════════════════════════
-
-/**
- * Struktur SO_SHARED:
- * {
- *   "tdm": {
- *     "tanggal": "24/06/2026",
- *     "sesiAktif": true,
- *     "racks": {
- *       "Rak A1": {
- *         "items": {
- *           "NN00001": {
- *             "entries": [
- *               { userId, namaPetugas, qty, jenis, jamInput, timestamp }
- *             ]
- *           }
- *         },
- *         "createdBy": "123456789",
- *         "createdAt": 1719024900000
- *       }
- *     },
- *     "usersAktif": {
- *       "123456789": {
- *         nama, rakAktif, jamMulai, petugas:[], lastActive
- *       }
- *     }
- *   }
- * }
- */
 
 function getSOShared(tokoKode) {
   const tanggalHariIni = getTanggalSlash(false);
@@ -931,21 +903,24 @@ function getSOShared(tokoKode) {
       sesiAktif: false,
       racks: {},
       usersAktif: {},
+      barangBaru: [],
     };
   }
   
-  // Reset jika tanggal berbeda (SO hari baru)
   if (SO_SHARED[tokoKode].tanggal !== tanggalHariIni) {
-    // Backup sebelum reset
     backupSOShared(tokoKode);
     SO_SHARED[tokoKode] = {
       tanggal: tanggalHariIni,
       sesiAktif: false,
       racks: {},
       usersAktif: {},
+      barangBaru: [],
     };
     saveJSON(CONFIG.paths.soShared, SO_SHARED);
   }
+  
+  // Pastikan barangBaru array ada
+  if (!SO_SHARED[tokoKode].barangBaru) SO_SHARED[tokoKode].barangBaru = [];
   
   return SO_SHARED[tokoKode];
 }
@@ -967,8 +942,6 @@ function saveShared() {
   saveJSON(CONFIG.paths.soShared, SO_SHARED);
 }
 
-// ── User Management ──
-
 function joinSesiSO(tokoKode, userId, namaPetugas, petugas, rak, jamMulai) {
   const shared = getSOShared(tokoKode);
   shared.sesiAktif = true;
@@ -983,7 +956,6 @@ function joinSesiSO(tokoKode, userId, namaPetugas, petugas, rak, jamMulai) {
     shared.racks[rak] = { items: {}, createdBy: String(userId), createdAt: Date.now() };
   }
   saveShared();
-  triggerBackupAfterEvent(tokoKode, 60000); // ⬅️ Backup 1 menit setelah join
 }
 
 function updateUserRakSO(tokoKode, userId, rakBaru) {
@@ -996,7 +968,6 @@ function updateUserRakSO(tokoKode, userId, rakBaru) {
     shared.racks[rakBaru] = { items: {}, createdBy: String(userId), createdAt: Date.now() };
   }
   saveShared();
-  triggerBackupAfterEvent(tokoKode); // ⬅️ TAMBAH INI
 }
 
 function leaveSesiSO(tokoKode, userId) {
@@ -1006,8 +977,6 @@ function leaveSesiSO(tokoKode, userId) {
     shared.sesiAktif = false;
   }
   saveShared();
-  // Backup saat user leave (data final user tersebut)
-  kirimBackupKeAdmin(tokoKode, 'event', true).catch(e => {});
 }
 
 function getAllUsersAktif(tokoKode) {
@@ -1019,8 +988,6 @@ function getAllRacks(tokoKode) {
   const shared = getSOShared(tokoKode);
   return shared.racks || {};
 }
-
-// ── Item Management ──
 
 function tambahInputSO(tokoKode, rak, kodeBarang, userId, namaPetugas, qty, jenis) {
   const shared = getSOShared(tokoKode);
@@ -1045,6 +1012,7 @@ function tambahInputSO(tokoKode, rak, kodeBarang, userId, namaPetugas, qty, jeni
   }
   
   saveShared();
+  if (typeof triggerBackupAfterEvent === 'function') triggerBackupAfterEvent(tokoKode);
 }
 
 function editQtyItemSO(tokoKode, rak, kodeBarang, entryIndex, newQty) {
@@ -1066,7 +1034,7 @@ function editQtyItemSO(tokoKode, rak, kodeBarang, entryIndex, newQty) {
   }
   
   saveShared();
-  triggerBackupAfterEvent(tokoKode); // ⬅️ TAMBAH INI
+  if (typeof triggerBackupAfterEvent === 'function') triggerBackupAfterEvent(tokoKode);
   return true;
 }
 
@@ -1077,7 +1045,7 @@ function hapusItemSO(tokoKode, rak, kodeBarang) {
   
   delete shared.racks[rak].items[kodeBarang];
   saveShared();
-  triggerBackupAfterEvent(tokoKode); // ⬅️ TAMBAH INI
+  if (typeof triggerBackupAfterEvent === 'function') triggerBackupAfterEvent(tokoKode);
   return true;
 }
 
@@ -1085,7 +1053,6 @@ function tambahQtyItemSO(tokoKode, rak, kodeBarang, userId, namaPetugas, tambahQ
   const shared = getSOShared(tokoKode);
   if (!shared.racks[rak] || !shared.racks[rak].items[kodeBarang]) {
     tambahInputSO(tokoKode, rak, kodeBarang, userId, namaPetugas, tambahQty, jenis);
-    triggerBackupAfterEvent(tokoKode); // ⬅️ TAMBAH INI
     return;
   }
   
@@ -1110,10 +1077,8 @@ function tambahQtyItemSO(tokoKode, rak, kodeBarang, userId, namaPetugas, tambahQ
   }
   
   saveShared();
-  triggerBackupAfterEvent(tokoKode); // ⬅️ TAMBAH INI
+  if (typeof triggerBackupAfterEvent === 'function') triggerBackupAfterEvent(tokoKode);
 }
-
-// ── Query Functions ──
 
 function getBarangDiRak(tokoKode, rak) {
   const shared = getSOShared(tokoKode);
@@ -1156,6 +1121,34 @@ function getTotalBarangSemuaRak(tokoKode, kodeBarang) {
   return { totalFisik, totalGudang, total: totalFisik + totalGudang, raks };
 }
 
+function cekBarangSudahDiSO(tokoKode, kodeBarang, currentUserId) {
+  const shared = getSOShared(tokoKode);
+  const inputs = [];
+  Object.entries(shared.racks || {}).forEach(([rakName, rackData]) => {
+    const itemData = rackData.items[kodeBarang];
+    if (itemData) {
+      itemData.entries.forEach(e => {
+        if (String(e.userId) !== String(currentUserId)) {
+          inputs.push({ ...e, rak: rakName });
+        }
+      });
+    }
+  });
+  return inputs;
+}
+
+function getAllItemsSO(tokoKode) {
+  const shared = getSOShared(tokoKode);
+  const all = {};
+  Object.entries(shared.racks || {}).forEach(([rakName, rackData]) => {
+    Object.entries(rackData.items || {}).forEach(([kode, itemData]) => {
+      if (!all[kode]) all[kode] = [];
+      itemData.entries.forEach(e => all[kode].push({ ...e, rak: rakName }));
+    });
+  });
+  return all;
+}
+
 function getSOGabunganData(tokoKode) {
   const shared = getSOShared(tokoKode);
   const gabungan = { fisik: {}, gudang: {} };
@@ -1175,9 +1168,16 @@ function getSOGabunganData(tokoKode) {
   return gabungan;
 }
 
+function resetSOSharedToko(tokoKode) {
+  if (SO_SHARED[tokoKode]) {
+    backupSOShared(tokoKode);
+    delete SO_SHARED[tokoKode];
+    saveJSON(CONFIG.paths.soShared, SO_SHARED);
+  }
+}
+
 function formatInfoBarangDiRakLain(tokoKode, kodeBarang, currentRak, currentUserId) {
   const raks = getBarangDiSemuaRak(tokoKode, kodeBarang);
-  // Filter: tampilkan info dari rak lain ATAU entry user lain
   const info = [];
   
   raks.forEach(r => {
@@ -1204,211 +1204,53 @@ function formatInfoBarangDiRakLain(tokoKode, kodeBarang, currentRak, currentUser
   return m;
 }
 
-// ── Excel Gabungan Generator ──
+// ═══ BARANG BARU (tidak ada di database) ═══
 
-function generateExcelSOGabungan(tokoKode, namaToko) {
+function tambahBarangBaruSO(tokoKode, data) {
   const shared = getSOShared(tokoKode);
-  const gabungan = getSOGabunganData(tokoKode);
+  if (!shared.barangBaru) shared.barangBaru = [];
   
-  const wb = xlsx.utils.book_new();
-  
-  // ── SHEET 1: INFO UMUM ──
-  const infoRows = [
-    { Info: 'LAPORAN STOCK OPNAME GABUNGAN', Detail: '' },
-    { Info: 'Toko', Detail: namaToko },
-    { Info: 'Tanggal', Detail: getTanggalIndonesia() },
-    { Info: '', Detail: '' },
-    { Info: 'PETUGAS YANG BERPARTISIPASI', Detail: '' },
-  ];
-  
-  const allPetugas = new Set();
-  Object.values(shared.usersAktif || {}).forEach(u => {
-    (u.petugas || [u.nama]).forEach(p => allPetugas.add(p));
-  });
-  // Juga dari entries
-  Object.values(shared.racks || {}).forEach(rackData => {
-    Object.values(rackData.items || {}).forEach(itemData => {
-      itemData.entries.forEach(e => allPetugas.add(e.namaPetugas));
-    });
+  shared.barangBaru.push({
+    kode: data.kode,
+    nama: data.nama,
+    rak: data.rak,
+    jenis: data.jenis,
+    qty: data.qty,
+    petugas: data.petugas,
+    jam: data.jam,
+    fotoFileId: data.fotoFileId || null,
+    timestamp: Date.now(),
   });
   
-  let petugasIdx = 0;
-  allPetugas.forEach(p => {
-    petugasIdx++;
-    infoRows.push({ Info: `Petugas ${petugasIdx}`, Detail: p });
-  });
-  
-  infoRows.push({ Info: '', Detail: '' });
-  infoRows.push({ Info: 'RAK YANG DIOPNAME', Detail: '' });
-  
-  Object.entries(shared.racks || {}).forEach(([rakName, rackData], i) => {
-    const totalItems = Object.keys(rackData.items || {}).length;
-    infoRows.push({ 
-      Info: `Rak ${i+1}`, 
-      Detail: `${rakName} | ${totalItems} jenis barang` 
-    });
-  });
-  
-  const allKodes = new Set([
-    ...Object.keys(gabungan.fisik),
-    ...Object.keys(gabungan.gudang),
-  ]);
-  
-  infoRows.push({ Info: '', Detail: '' });
-  infoRows.push({ Info: 'Total Rak', Detail: Object.keys(shared.racks || {}).length });
-  infoRows.push({ Info: 'Total Jenis Barang', Detail: allKodes.size });
-  infoRows.push({ Info: 'Total Petugas', Detail: allPetugas.size });
-  
-  const wsInfo = xlsx.utils.json_to_sheet(infoRows);
-  wsInfo['!cols'] = [{ wch: 30 }, { wch: 55 }];
-  xlsx.utils.book_append_sheet(wb, wsInfo, 'Info Opname');
-  
-  // ── SHEET 2: REKAP GABUNGAN ──
-  const rekapRows = [];
-  allKodes.forEach(kode => {
-    const item = DATA_BARANG.find(d => d.kode === kode);
-    if (!item) return;
-    const stokSistem = item.harga[tokoKode]?.stok || 0;
-    const stokFisik = gabungan.fisik[kode] || 0;
-    const stokGudang = gabungan.gudang[kode] || 0;
-    const totalOpname = stokFisik + stokGudang;
-    const selisih = totalOpname - stokSistem;
-    rekapRows.push({
-      'Kode Item': kode,
-      'Nama Item': item.nama,
-      'Jenis': item.jenis || '',
-      'Merek': item.merek || '',
-      'Satuan': item.satuan,
-      'Stok Sistem': stokSistem,
-      'Stok Fisik': stokFisik,
-      'Stok Gudang': stokGudang,
-      'Total Opname': totalOpname,
-      'Selisih': selisih,
-      'Status': selisih === 0 ? 'SESUAI' : selisih > 0 ? 'LEBIH' : 'KURANG',
-    });
-  });
-  
-  rekapRows.sort((a, b) => {
-    const order = { 'KURANG': 0, 'LEBIH': 1, 'SESUAI': 2 };
-    return (order[a.Status] || 0) - (order[b.Status] || 0);
-  });
-  
-  const wsRekap = xlsx.utils.json_to_sheet(rekapRows);
-  wsRekap['!cols'] = [
-    { wch: 12 }, { wch: 45 }, { wch: 15 }, { wch: 15 }, { wch: 8 },
-    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 8 }, { wch: 10 },
-  ];
-  xlsx.utils.book_append_sheet(wb, wsRekap, 'Rekap Gabungan');
-  
-  // ── SHEET 3+: DETAIL PER RAK ──
-  Object.entries(shared.racks || {}).forEach(([rakName, rackData], idx) => {
-    const rakRows = [];
-    Object.entries(rackData.items || {}).forEach(([kode, itemData]) => {
-      const item = DATA_BARANG.find(d => d.kode === kode);
-      itemData.entries.forEach(entry => {
-        rakRows.push({
-          'Kode': kode,
-          'Nama Barang': item?.nama || kode,
-          'Satuan': item?.satuan || '',
-          'Petugas': entry.namaPetugas,
-          'Jenis': entry.jenis.toUpperCase(),
-          'Qty': entry.qty,
-          'Jam Input': entry.jamInput,
-        });
-      });
-    });
-    
-    if (rakRows.length === 0) return;
-    
-    const sheetName = `Rak ${idx+1} ${rakName}`.substring(0, 31);
-    const wsRak = xlsx.utils.json_to_sheet(rakRows);
-    wsRak['!cols'] = [
-      { wch: 12 }, { wch: 40 }, { wch: 8 }, { wch: 15 },
-      { wch: 10 }, { wch: 8 }, { wch: 18 },
-    ];
-    xlsx.utils.book_append_sheet(wb, wsRak, sheetName);
-  });
-  
-  // ── SHEET: DETAIL PER PETUGAS ──
-  const petugasMap = {};
-  Object.entries(shared.racks || {}).forEach(([rakName, rackData]) => {
-    Object.entries(rackData.items || {}).forEach(([kode, itemData]) => {
-      const item = DATA_BARANG.find(d => d.kode === kode);
-      itemData.entries.forEach(entry => {
-        if (!petugasMap[entry.namaPetugas]) petugasMap[entry.namaPetugas] = [];
-        petugasMap[entry.namaPetugas].push({
-          'Rak': rakName,
-          'Kode': kode,
-          'Nama Barang': item?.nama || kode,
-          'Jenis': entry.jenis.toUpperCase(),
-          'Qty': entry.qty,
-          'Jam': entry.jamInput,
-        });
-      });
-    });
-  });
-  
-  Object.entries(petugasMap).forEach(([nama, rows]) => {
-    const sheetName = `Petugas ${nama}`.substring(0, 31);
-    const wsPetugas = xlsx.utils.json_to_sheet(rows);
-    wsPetugas['!cols'] = [
-      { wch: 15 }, { wch: 12 }, { wch: 40 }, { wch: 10 }, { wch: 8 }, { wch: 18 },
-    ];
-    xlsx.utils.book_append_sheet(wb, wsPetugas, sheetName);
-  });
-
-    // ═══ SHEET TAMBAHAN: BARANG BARU (Tidak Ada di Database) ═══
-  // Kumpulkan dari semua user yang SO
-  const barangBaruAll = [];
-  
-  Object.values(shared.usersAktif || {}).forEach(userInfo => {
-    // Barang baru dari setiap user disimpan di session mereka
-    // Kita ambil dari shared data juga
-  });
-  
-  // Cek di shared items yang kode-nya NEW_*
-  Object.entries(shared.racks || {}).forEach(([rakName, rackData]) => {
-    Object.entries(rackData.items || {}).forEach(([kode, itemData]) => {
-      if (kode.startsWith('NEW_')) {
-        let totalQty = 0;
-        const petugas = [];
-        itemData.entries.forEach(e => {
-          totalQty += e.qty;
-          if (!petugas.includes(e.namaPetugas)) petugas.push(e.namaPetugas);
-        });
-        
-        barangBaruAll.push({
-          'Kode Temp': kode,
-          'Nama Barang': kode, // Nama dari shared (kode saja yang ada)
-          'Rak': rakName,
-          'Qty': totalQty,
-          'Petugas': petugas.join(', '),
-          'Status': 'BARANG BARU - TIDAK ADA DI DATABASE',
-        });
-      }
-    });
-  });
-  
-  if (barangBaruAll.length > 0) {
-    const wsNew = xlsx.utils.json_to_sheet(barangBaruAll);
-    wsNew['!cols'] = [
-      { wch: 20 }, { wch: 45 }, { wch: 15 }, { wch: 8 }, { wch: 20 }, { wch: 35 },
-    ];
-    xlsx.utils.book_append_sheet(wb, wsNew, 'Barang Baru');
-  }
-  
-  const filePath = path.join(CONFIG.paths.storage, `temp_so_gabungan_${tokoKode}_${Date.now()}.xlsx`);
-  xlsx.writeFile(wb, filePath);
-  return filePath;
+  saveShared();
 }
+
+function getBarangBaruSO(tokoKode) {
+  const shared = getSOShared(tokoKode);
+  return shared.barangBaru || [];
+}
+
+function updateFotoBarangBaruSO(tokoKode, kode, fotoFileId) {
+  const shared = getSOShared(tokoKode);
+  const barangBaru = shared.barangBaru || [];
+  const item = barangBaru.find(b => b.kode === kode);
+  if (item) {
+    item.fotoFileId = fotoFileId;
+    saveShared();
+    return true;
+  }
+  return false;
+}
+
+// ═══ GENERATE LAPORAN SO GABUNGAN (Text) ═══
 
 function generateLaporanSOGabungan(tokoKode, namaToko) {
   const shared = getSOShared(tokoKode);
   const gabungan = getSOGabunganData(tokoKode);
+  const barangBaru = getBarangBaruSO(tokoKode);
   
   let m = `📋 *LAPORAN STOCK OPNAME GABUNGAN*\n🏦 ${namaToko}\n📅 ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n`;
   
-  // Petugas
   const allPetugas = new Set();
   Object.values(shared.racks || {}).forEach(rackData => {
     Object.values(rackData.items || {}).forEach(itemData => {
@@ -1421,7 +1263,6 @@ function generateLaporanSOGabungan(tokoKode, namaToko) {
   
   m += `👥 *PETUGAS:* ${[...allPetugas].join(', ')}\n\n`;
   
-  // Rak
   m += `📦 *RAK DIOPNAME:*\n${GARIS_TIPIS}\n`;
   Object.entries(shared.racks || {}).forEach(([rakName, rackData], i) => {
     const totalItems = Object.keys(rackData.items || {}).length;
@@ -1429,7 +1270,6 @@ function generateLaporanSOGabungan(tokoKode, namaToko) {
   });
   m += '\n';
   
-  // Hasil
   m += `${GARIS_TEBAL}\n📊 *HASIL OPNAME:*\n${GARIS_TEBAL}\n\n`;
   
   const allKodes = new Set([
@@ -1439,6 +1279,8 @@ function generateLaporanSOGabungan(tokoKode, namaToko) {
   
   const kurang = [], lebih = [], sesuai = [];
   allKodes.forEach(kode => {
+    if (kode.startsWith('NEW_')) return; // Skip barang baru
+    
     const item = DATA_BARANG.find(d => d.kode === kode);
     if (!item) return;
     const sistem = item.harga[tokoKode]?.stok || 0;
@@ -1451,7 +1293,7 @@ function generateLaporanSOGabungan(tokoKode, namaToko) {
     else if (selisih > 0) lebih.push(data);
     else sesuai.push(data);
   });
-    // SORT ABJAD semua kategori
+  
   kurang.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
   lebih.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
   sesuai.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
@@ -1476,12 +1318,192 @@ function generateLaporanSOGabungan(tokoKode, namaToko) {
     if (sesuai.length > 10) m += `_+${sesuai.length - 10} lainnya_\n`;
   }
   
+  // Barang baru
+  if (barangBaru.length > 0) {
+    m += `\n🆕 *BARANG BARU (${barangBaru.length}):*\n${GARIS_TIPIS}\n`;
+    m += `_(Tidak ada di database Excel)_\n\n`;
+    barangBaru.forEach((b, i) => {
+      m += `${i+1}. *${b.nama}*\n   📍 ${b.rak} | ${b.jenis === 'fisik' ? '🏪' : '🏭'} ${b.jenis}: ${b.qty} | 👤 ${b.petugas}\n   📸 ${b.fotoFileId ? 'Ada foto ✅' : 'Tanpa foto'}\n\n`;
+    });
+  }
+  
   m += `\n${GARIS_TEBAL}\n📊 *RINGKASAN:*\n`;
   m += `   📦 Rak: ${Object.keys(shared.racks || {}).length} | 📊 Barang: ${allKodes.size}\n`;
   m += `   ✅ ${sesuai.length} | ➕ ${lebih.length} | ➖ ${kurang.length}\n`;
+  m += `   🆕 Barang baru: ${barangBaru.length}\n`;
   m += `   👥 Petugas: ${allPetugas.size}\n`;
   
   return m;
+}
+
+// ═══ GENERATE EXCEL SO GABUNGAN (ExcelJS + Foto Embedded) ═══
+
+async function generateExcelSOGabungan(tokoKode, namaToko) {
+  const shared = getSOShared(tokoKode);
+  const gabungan = getSOGabunganData(tokoKode);
+  const barangBaru = getBarangBaruSO(tokoKode);
+  
+  const wb = new ExcelJS.Workbook();
+  
+  // ═══ SHEET 1: INFO ═══
+  const wsInfo = wb.addWorksheet('Info Opname');
+  wsInfo.columns = [{ width: 30 }, { width: 55 }];
+  
+  const allPetugas = new Set();
+  Object.values(shared.usersAktif || {}).forEach(u => (u.petugas || [u.nama]).forEach(p => allPetugas.add(p)));
+  Object.values(shared.racks || {}).forEach(rd => Object.values(rd.items || {}).forEach(id => id.entries.forEach(e => allPetugas.add(e.namaPetugas))));
+  
+  wsInfo.addRow(['LAPORAN STOCK OPNAME GABUNGAN', '']);
+  wsInfo.addRow(['Toko', namaToko]);
+  wsInfo.addRow(['Tanggal', getTanggalIndonesia()]);
+  wsInfo.addRow(['', '']);
+  wsInfo.addRow(['PETUGAS', '']);
+  let pi = 0;
+  allPetugas.forEach(p => { pi++; wsInfo.addRow([`Petugas ${pi}`, p]); });
+  wsInfo.addRow(['', '']);
+  wsInfo.addRow(['RAK', '']);
+  Object.entries(shared.racks || {}).forEach(([rn, rd], i) => {
+    wsInfo.addRow([`Rak ${i+1}`, `${rn} | ${Object.keys(rd.items || {}).length} jenis`]);
+  });
+  const allKodes = new Set([...Object.keys(gabungan.fisik), ...Object.keys(gabungan.gudang)]);
+  wsInfo.addRow(['', '']);
+  wsInfo.addRow(['Total Rak', Object.keys(shared.racks || {}).length]);
+  wsInfo.addRow(['Total Barang', allKodes.size]);
+  wsInfo.addRow(['Barang Baru', barangBaru.length]);
+  
+  // ═══ SHEET 2: REKAP ═══
+  const wsRekap = wb.addWorksheet('Rekap Gabungan');
+  wsRekap.columns = [
+    { header: 'Kode', width: 14 }, { header: 'Nama Item', width: 45 },
+    { header: 'Jenis', width: 15 }, { header: 'Merek', width: 15 },
+    { header: 'Satuan', width: 8 }, { header: 'Sistem', width: 10 },
+    { header: 'Fisik', width: 10 }, { header: 'Gudang', width: 10 },
+    { header: 'Total', width: 10 }, { header: 'Selisih', width: 8 },
+    { header: 'Status', width: 10 },
+  ];
+  wsRekap.getRow(1).eachCell(c => { c.font = { bold: true, color: { argb: 'FFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0F3460' } }; });
+  
+  const rows = [];
+  allKodes.forEach(kode => {
+    if (kode.startsWith('NEW_')) return;
+    const item = DATA_BARANG.find(d => d.kode === kode);
+    if (!item) return;
+    const s = item.harga[tokoKode]?.stok || 0;
+    const f = gabungan.fisik[kode] || 0;
+    const g = gabungan.gudang[kode] || 0;
+    const t = f + g;
+    const sel = t - s;
+    rows.push({ k: kode, n: item.nama, j: item.jenis || '', m: item.merek || '', sat: item.satuan, s, f, g, t, sel, st: sel === 0 ? 'SESUAI' : sel > 0 ? 'LEBIH' : 'KURANG' });
+  });
+  rows.sort((a, b) => { const o = { 'KURANG': 0, 'LEBIH': 1, 'SESUAI': 2 }; return (o[a.st] || 0) - (o[b.st] || 0); });
+  rows.forEach(r => {
+    const row = wsRekap.addRow([r.k, r.n, r.j, r.m, r.sat, r.s, r.f, r.g, r.t, r.sel, r.st]);
+    const c = row.getCell(11);
+    if (r.st === 'KURANG') c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCCCC' } };
+    else if (r.st === 'LEBIH') c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFCC' } };
+    else c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'CCFFCC' } };
+  });
+  
+  // ═══ SHEET PER RAK ═══
+  Object.entries(shared.racks || {}).forEach(([rakName, rackData], idx) => {
+    const rakRows = [];
+    Object.entries(rackData.items || {}).forEach(([kode, itemData]) => {
+      const item = DATA_BARANG.find(d => d.kode === kode);
+      let nama = item?.nama || kode;
+      if (kode.startsWith('NEW_')) {
+        const baru = barangBaru.find(b => b.kode === kode);
+        if (baru) nama = baru.nama;
+      }
+      itemData.entries.forEach(e => {
+        rakRows.push([kode, nama, item?.satuan || '', e.namaPetugas, e.jenis.toUpperCase(), e.qty, e.jamInput, kode.startsWith('NEW_') ? 'BARANG BARU' : '']);
+      });
+    });
+    if (!rakRows.length) return;
+    
+    const sn = `Rak ${idx + 1} ${rakName}`.substring(0, 31);
+    const ws = wb.addWorksheet(sn);
+    ws.columns = [
+      { header: 'Kode', width: 18 }, { header: 'Nama Barang', width: 45 },
+      { header: 'Satuan', width: 8 }, { header: 'Petugas', width: 15 },
+      { header: 'Jenis', width: 10 }, { header: 'Qty', width: 8 },
+      { header: 'Jam', width: 18 }, { header: 'Status', width: 15 },
+    ];
+    ws.getRow(1).eachCell(c => { c.font = { bold: true, color: { argb: 'FFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0F3460' } }; });
+    rakRows.forEach(r => {
+      const row = ws.addRow(r);
+      if (r[7] === 'BARANG BARU') row.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2CC' } }; });
+    });
+  });
+  
+  // ═══ SHEET BARANG BARU (dengan FOTO!) ═══
+  if (barangBaru.length > 0) {
+    const wsNew = wb.addWorksheet('Barang Baru');
+    wsNew.columns = [
+      { header: 'No', width: 5 }, { header: 'Kode', width: 18 },
+      { header: 'Nama Barang', width: 45 }, { header: 'Rak', width: 18 },
+      { header: 'Jenis', width: 10 }, { header: 'Qty', width: 8 },
+      { header: 'Petugas', width: 15 }, { header: 'Jam', width: 12 },
+      { header: 'Foto', width: 25 },
+    ];
+    wsNew.getRow(1).eachCell(c => { c.font = { bold: true, color: { argb: 'FFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'CC6600' } }; c.alignment = { horizontal: 'center' }; });
+    
+    for (let i = 0; i < barangBaru.length; i++) {
+      const b = barangBaru[i];
+      const rowNum = i + 2;
+      
+      wsNew.addRow([i + 1, b.kode, b.nama, b.rak, b.jenis.toUpperCase(), b.qty, b.petugas, b.jam, b.fotoFileId ? 'Ada Foto' : 'Tanpa Foto']);
+      wsNew.getRow(rowNum).eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8E1' } }; });
+      
+      // EMBED FOTO
+      if (b.fotoFileId) {
+        try {
+          const fileLink = await bot.getFileLink(b.fotoFileId);
+          const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
+          const imageBuffer = Buffer.from(response.data);
+          
+          const imageId = wb.addImage({ buffer: imageBuffer, extension: 'jpeg' });
+          wsNew.getRow(rowNum).height = 120;
+          wsNew.addImage(imageId, {
+            tl: { col: 8, row: rowNum - 1 },
+            ext: { width: 150, height: 110 },
+          });
+        } catch(imgErr) {
+          log.warn('SO-EXCEL-IMG', `Foto ${b.kode}: ${imgErr.message}`);
+          wsNew.getCell(`I${rowNum}`).value = 'Foto gagal dimuat';
+        }
+      }
+    }
+  }
+  
+  // ═══ SHEET PETUGAS ═══
+  const petugasMap = {};
+  Object.entries(shared.racks || {}).forEach(([rn, rd]) => {
+    Object.entries(rd.items || {}).forEach(([kode, id]) => {
+      const item = DATA_BARANG.find(d => d.kode === kode);
+      let nama = item?.nama || kode;
+      if (kode.startsWith('NEW_')) { const baru = barangBaru.find(b => b.kode === kode); if (baru) nama = baru.nama; }
+      id.entries.forEach(e => {
+        if (!petugasMap[e.namaPetugas]) petugasMap[e.namaPetugas] = [];
+        petugasMap[e.namaPetugas].push([rn, kode, nama, e.jenis.toUpperCase(), e.qty, e.jamInput]);
+      });
+    });
+  });
+  
+  Object.entries(petugasMap).forEach(([nama, rw]) => {
+    const sn = `Petugas ${nama}`.substring(0, 31);
+    const ws = wb.addWorksheet(sn);
+    ws.columns = [
+      { header: 'Rak', width: 18 }, { header: 'Kode', width: 18 },
+      { header: 'Nama Barang', width: 45 }, { header: 'Jenis', width: 10 },
+      { header: 'Qty', width: 8 }, { header: 'Jam', width: 18 },
+    ];
+    ws.getRow(1).eachCell(c => { c.font = { bold: true }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'BDD7EE' } }; });
+    rw.forEach(r => ws.addRow(r));
+  });
+  
+  const filePath = path.join(CONFIG.paths.storage, `temp_so_gabungan_${tokoKode}_${Date.now()}.xlsx`);
+  await wb.xlsx.writeFile(filePath);
+  return filePath;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -4961,8 +4983,28 @@ async function prosesAI(chatId, userId, pertanyaan) {
 }
 
 // ════════════════════════════════════════════════════════════════
-//   27. STOCK OPNAME HANDLER (EDIT RAK + EDIT ITEM + GABUNGAN)
+//   27. STOCK OPNAME HANDLER (Lengkap + Tambah Barang Baru + Foto)
 // ════════════════════════════════════════════════════════════════
+
+function kbSOAktif() {
+  return { inline_keyboard: [
+    [
+      { text: '👥 User Lain', callback_data: 'so:userlain' },
+      { text: '📊 Review', callback_data: 'so:review' },
+    ],
+    [
+      { text: '📦 Pindah Rak', callback_data: 'so:pindahrak' },
+      { text: '✏️ Edit Rak', callback_data: 'so:editrak' },
+    ],
+    [
+      { text: '➕ Tambah Barang Baru', callback_data: 'so:tambahbaru' },
+    ],
+    [
+      { text: '📊 Export Gabungan', callback_data: 'so:exportgabungan' },
+      { text: '✅ Selesai', callback_data: 'so:selesai' },
+    ],
+  ]};
+}
 
 function tampilkanBarangPilihan(item, tokoKode, userId, rakAktif) {
   const h = item.harga[tokoKode];
@@ -4970,11 +5012,11 @@ function tampilkanBarangPilihan(item, tokoKode, userId, rakAktif) {
   let m = `📦 *Barang ditemukan!*\n${GARIS_TEBAL}\n`;
   m += `🔖 ${item.kode}\n📦 ${escapeMd(item.nama)}\n📏 ${item.satuan}\n💻 Stok Sistem: ${h.stok}\n`;
   
-  // Info di rak lain / user lain
-  const infoLain = formatInfoBarangDiRakLain(tokoKode, item.kode, rakAktif, userId);
-  if (infoLain) m += infoLain;
+  if (userId) {
+    const infoLain = formatInfoBarangDiRakLain(tokoKode, item.kode, rakAktif, userId);
+    if (infoLain) m += infoLain;
+  }
   
-  // Info total semua rak
   const totalAll = getTotalBarangSemuaRak(tokoKode, item.kode);
   if (totalAll.total > 0) {
     m += `\n📊 *Total semua rak:*\n`;
@@ -4997,13 +5039,18 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
   const namaToko = NAMA_TOKO[tokoKode];
   
   if (!session.soInfo) {
-    session.soInfo = { petugas: [], rakAktif: null, jamMulaiAktif: null };
+    session.soInfo = { petugas: [], rakHistory: [], rakAktif: null, jamMulaiAktif: null };
     updateSesi(userId, { soInfo: session.soInfo });
   }
+  if (!session.soData) {
+    session.soData = { fisik: {}, gudang: {} };
+    updateSesi(userId, { soData: session.soData });
+  }
   const soInfo = session.soInfo;
+  const soData = session.soData;
   
   if (low === 'batal' || low === '/batal') {
-    leaveSesiSO(tokoKode, userId);
+    if (typeof leaveSesiSO === 'function') leaveSesiSO(tokoKode, userId);
     resetSesi(userId);
     await kirim(chatId, '✅ Stock opname dibatalkan.', { reply_markup: kbMainMenu(userId) });
     return;
@@ -5019,7 +5066,6 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     soInfo.petugas = petugas;
     updateSesi(userId, { soInfo, soSetupStep: 'rak' });
     
-    // Cek rak yang sudah ada
     const existingRacks = Object.keys(getAllRacks(tokoKode));
     let rakMsg = `✅ *Petugas:* ${petugas.join(', ')}\n${GARIS_TIPIS}\n\n📦 *STEP 2/3: Pilih/Buat Rak*\n\n`;
     
@@ -5032,17 +5078,10 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
         buttons.push([{ text: `📦 ${rak} (${items} barang)`, callback_data: `so:pilihrak:${rak}` }]);
       });
       buttons.push([{ text: '🆕 Buat Rak Baru', callback_data: 'so:rakbaru' }]);
-      
-      rakMsg += `\n💡 *3 cara input rak:*\n`;
-      rakMsg += `   1. Pilih dari tombol di bawah\n`;
-      rakMsg += `   2. 📸 *Kirim FOTO barcode/label rak*\n`;
-      rakMsg += `   3. Ketik nama rak manual`;
+      rakMsg += `\n💡 *3 cara input rak:*\n   1. Pilih dari tombol\n   2. 📸 Kirim FOTO barcode rak\n   3. Ketik nama manual`;
       await kirim(chatId, rakMsg, { reply_markup: { inline_keyboard: buttons }});
-        } else {
-      rakMsg += `💡 *2 cara input rak:*\n`;
-      rakMsg += `   1. 📸 *Kirim FOTO barcode/label rak* (auto-scan)\n`;
-      rakMsg += `   2. Ketik nama manual\n\n`;
-      rakMsg += `*Contoh ketik:* \`Rak A1\``;
+    } else {
+      rakMsg += `💡 *2 cara input rak:*\n   1. 📸 Kirim FOTO barcode rak\n   2. Ketik manual\n\n*Contoh:* \`Rak A1\``;
       await kirim(chatId, rakMsg);
     }
     return;
@@ -5090,7 +5129,6 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       });
     }
     
-    // Cek rak ini sudah ada barang?
     const existingItems = Object.keys(getBarangDiRak(tokoKode, soInfo.rakAktif)).length;
     let infoRak = '';
     if (existingItems > 0) {
@@ -5104,7 +5142,7 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       `⏰ Mulai: *${jamMulai}*\n` +
       infoRak + infoLain +
       `\n${GARIS_TEBAL}\n\n📝 *INPUT BARANG:*\nKetik nama/kode → pilih → \`TOKO 15\` / \`GUDANG 20\`\n\n` +
-      `*Perintah:* review | userlain | pindahrak | editrak | selesai | batal`,
+      `*Perintah:* review | userlain | pindahrak | editrak | tambahbaru | selesai | batal`,
       { reply_markup: kbSOAktif() }
     );
     return;
@@ -5116,14 +5154,12 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     if (!message || message.length < 2) return kirim(chatId, '⚠️ Nama rak minimal 2 karakter.');
     soInfo.rakAktif = message.trim();
     updateSesi(userId, { soInfo, soSetupStep: null });
-    
     updateUserRakSO(tokoKode, userId, soInfo.rakAktif);
     
     const existingItems = Object.keys(getBarangDiRak(tokoKode, soInfo.rakAktif)).length;
-    
     await kirim(chatId,
       `✅ *Pindah ke: ${escapeMd(soInfo.rakAktif)}*\n${GARIS_TIPIS}\n` +
-      (existingItems > 0 ? `📊 Rak ini sudah punya ${existingItems} jenis barang.\n` : '') +
+      (existingItems > 0 ? `📊 Rak ini sudah punya ${existingItems} jenis barang.\n` : '🆕 Rak baru, kosong.\n') +
       `\n📝 Lanjutkan input barang...`,
       { reply_markup: kbSOAktif() }
     );
@@ -5158,24 +5194,24 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     
     if (entryIdx >= entries.length) {
       updateSesi(userId, { soEditMode: false, soEditInfo: null });
-      await kirim(chatId, '⚠️ Entry tidak ditemukan. Mungkin sudah dihapus.', { reply_markup: kbSOAktif() });
+      await kirim(chatId, '⚠️ Entry tidak ditemukan.', { reply_markup: kbSOAktif() });
       return;
     }
     
     let newQty;
-    if (sign === '+') {
-      newQty = entries[entryIdx].qty + angka;
-    } else if (sign === '-') {
-      newQty = Math.max(0, entries[entryIdx].qty - angka);
-    } else {
-      newQty = angka;
-    }
+    if (sign === '+') newQty = entries[entryIdx].qty + angka;
+    else if (sign === '-') newQty = Math.max(0, entries[entryIdx].qty - angka);
+    else newQty = angka;
     
     editQtyItemSO(tokoKode, editInfo.rak, editInfo.kode, entryIdx, newQty);
     updateSesi(userId, { soEditMode: false, soEditInfo: null });
     
     const item = DATA_BARANG.find(d => d.kode === editInfo.kode);
-    const namaBarang = item?.nama || editInfo.kode;
+    let namaBarang = item?.nama || editInfo.kode;
+    if (editInfo.kode.startsWith('NEW_')) {
+      const baru = getBarangBaruSO(tokoKode).find(b => b.kode === editInfo.kode);
+      if (baru) namaBarang = baru.nama;
+    }
     
     if (newQty <= 0) {
       await kirim(chatId, `🗑️ *${escapeMd(namaBarang)}* dihapus dari ${editInfo.rak}!`, { reply_markup: kbSOAktif() });
@@ -5191,168 +5227,7 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     return;
   }
   
-  // ════════ COMMANDS ════════
-  
-  if (low === 'userlain' || low === 'lihatuser') {
-    const usersAktif = getAllUsersAktif(tokoKode);
-    const userLainList = Object.entries(usersAktif).filter(([uid]) => String(uid) !== String(userId));
-    
-    if (!userLainList.length) {
-      return kirim(chatId, `👥 Hanya kamu yang SO di ${namaToko} saat ini.`);
-    }
-    
-    let m = `👥 *USER AKTIF SO DI ${namaToko}*\n${GARIS_TEBAL}\n\n`;
-    userLainList.forEach(([, info], i) => {
-      const lastMin = Math.floor((Date.now() - info.lastActive) / 60000);
-      const st = lastMin < 5 ? '🟢' : lastMin < 15 ? '🟡' : '🔴';
-      m += `${i+1}. ${st} *${info.nama}* di *${info.rakAktif}*\n   ⏰ Mulai: ${info.jamMulai} | Aktif ${lastMin < 1 ? 'baru saja' : lastMin + 'm lalu'}\n\n`;
-    });
-    
-    await kirim(chatId, m, { reply_markup: kbSOAktif() });
-    return;
-  }
-  
-    if (low === 'pindahrak' || low === 'pindah rak' || low === 'ganti rak') {
-    const existingRacks = Object.keys(getAllRacks(tokoKode));
-    
-    const buttons = [];
-    existingRacks.forEach(rak => {
-      if (rak === soInfo.rakAktif) return;
-      const items = Object.keys(getBarangDiRak(tokoKode, rak)).length;
-      buttons.push([{ text: `📦 ${rak} (${items} barang)`, callback_data: `so:pilihrak:${rak}` }]);
-    });
-    buttons.push([{ text: '🆕 Buat Rak Baru', callback_data: 'so:rakbaru' }]);
-    buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
-    
-    await kirim(chatId,
-      `📦 *PINDAH RAK*\n${GARIS_TEBAL}\n\n` +
-      `Rak aktif: *${escapeMd(soInfo.rakAktif)}*\n\n` +
-      `💡 *3 cara pindah:*\n` +
-      `   1. Pilih dari tombol di bawah\n` +
-      `   2. 📸 *Kirim FOTO barcode/label rak tujuan*\n` +
-      `   3. Klik "Buat Rak Baru" + ketik nama`,
-      { reply_markup: { inline_keyboard: buttons }}
-    );
-    return;
-  }
-  
-  if (low === 'editrak' || low === 'edit rak') {
-    const existingRacks = Object.keys(getAllRacks(tokoKode));
-    
-    if (!existingRacks.length) return kirim(chatId, '⚠️ Belum ada rak.');
-    
-    const buttons = [];
-    existingRacks.forEach(rak => {
-      const items = Object.keys(getBarangDiRak(tokoKode, rak)).length;
-      buttons.push([{ text: `✏️ ${rak} (${items} barang)`, callback_data: `so:editrak:${rak}` }]);
-    });
-    buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
-    
-    await kirim(chatId,
-      `✏️ *EDIT RAK*\nPilih rak yang ingin diedit:`,
-      { reply_markup: { inline_keyboard: buttons }}
-    );
-    return;
-  }
-  
-    if (low === 'review') {
-    const gabungan = getSOGabunganData(tokoKode);
-    const allRacks = getAllRacks(tokoKode);
-    const allKodes = new Set([...Object.keys(gabungan.fisik), ...Object.keys(gabungan.gudang)]);
-    
-    let m = `👁️ *REVIEW SO - ${namaToko}*\n${GARIS_TEBAL}\n\n`;
-    m += `📦 Rak aktif: *${soInfo.rakAktif}*\n`;
-    m += `📚 Total rak: ${Object.keys(allRacks).length}\n\n`;
-    
-    // Info per rak
-    Object.entries(allRacks).forEach(([rakName, rackData], i) => {
-      const itemCount = Object.keys(rackData.items || {}).length;
-      const isAktif = rakName === soInfo.rakAktif;
-      m += `${i+1}. ${isAktif ? '📍' : '📦'} *${rakName}* — ${itemCount} barang ${isAktif ? '(AKTIF)' : ''}\n`;
-    });
-    
-    m += `\n${GARIS_TIPIS}\n`;
-    
-    // Daftar SEMUA barang di SEMUA rak, SORT ABJAD
-    if (allKodes.size > 0) {
-      const allItems = [];
-      allKodes.forEach(kode => {
-        const item = DATA_BARANG.find(d => d.kode === kode);
-        const nama = item?.nama || kode;
-        const satuan = item?.satuan || '';
-        const sistem = item?.harga[tokoKode]?.stok || 0;
-        const fisik = gabungan.fisik[kode] || 0;
-        const gudang = gabungan.gudang[kode] || 0;
-        const total = fisik + gudang;
-        const selisih = total - sistem;
-        allItems.push({ kode, nama, satuan, sistem, fisik, gudang, total, selisih });
-      });
-      
-      // SORT ABJAD
-      allItems.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
-      
-      m += `📋 *DAFTAR BARANG (A-Z):*\n${GARIS_TIPIS}\n\n`;
-      
-      allItems.forEach((d, i) => {
-        const statusIcon = d.selisih === 0 ? '✅' : d.selisih > 0 ? '➕' : '➖';
-        // Tampilkan NAMA LENGKAP (tidak dipotong)
-        m += `*${i+1}. ${escapeMd(d.nama)}*\n`;
-        m += `   🔖 \`${d.kode}\`\n`;
-        m += `   💻 Sistem: ${d.sistem}`;
-        if (d.fisik > 0) m += ` | 🏪 ${d.fisik}`;
-        if (d.gudang > 0) m += ` | 🏭 ${d.gudang}`;
-        m += ` | 📦 Total: ${d.total}`;
-        m += ` ${statusIcon} ${d.selisih === 0 ? '' : (d.selisih > 0 ? '+' : '') + d.selisih}\n\n`;
-      });
-      
-      // Ringkasan
-      const kurang = allItems.filter(d => d.selisih < 0).length;
-      const lebih = allItems.filter(d => d.selisih > 0).length;
-      const sesuai = allItems.filter(d => d.selisih === 0).length;
-      
-      m += `${GARIS_TEBAL}\n📊 *RINGKASAN:*\n`;
-      m += `   📦 Total: ${allItems.length} barang\n`;
-      m += `   ✅ Sesuai: ${sesuai} | ➕ Lebih: ${lebih} | ➖ Kurang: ${kurang}\n`;
-    } else {
-      m += `\n_Belum ada barang diinput._\n`;
-    }
-
-        // ═══ TAMPILKAN BARANG BARU (yang tidak ada di database) ═══
-    const barangBaru = session.soBarangBaru || [];
-    if (barangBaru.length > 0) {
-      m += `\n🆕 *BARANG BARU (${barangBaru.length} item):*\n${GARIS_TIPIS}\n`;
-      m += `_(Tidak ada di database Excel)_\n\n`;
-      barangBaru.forEach((b, i) => {
-        m += `${i+1}. *${escapeMd(b.nama)}*\n`;
-        m += `   📍 ${b.rak} | ${b.jenis === 'fisik' ? '🏪' : '🏭'} ${b.jenis}: ${b.qty}\n`;
-        m += `   👤 ${b.petugas} | ⏰ ${b.jam}\n`;
-        m += `   📸 ${b.foto ? 'Ada foto ✅' : 'Tanpa foto'}\n\n`;
-      });
-    }
-      
-    await kirim(chatId, m, {
-      reply_markup: { inline_keyboard: [
-        [{ text: '📊 Export Excel Gabungan', callback_data: 'so:exportgabungan' }],
-        [{ text: '✏️ Edit Rak', callback_data: 'so:editrak' }],
-        [{ text: '✅ Selesai SO', callback_data: 'so:selesai' }],
-        [{ text: '🔙 Lanjut Input', callback_data: 'so:kembali' }],
-      ]}
-    });
-    return;
-  }
-  
-  if (low === 'selesai' || low === 'done') {
-    await kirim(chatId,
-      `🤔 *Selesai Stock Opname?*\n${GARIS_TEBAL}\n\nPilih:`,
-      { reply_markup: { inline_keyboard: [
-        [{ text: '📊 Export & Keluar (Saya Saja)', callback_data: 'so:selesaisaya' }],
-        [{ text: '📊 Export Gabungan Semua User', callback_data: 'so:exportgabungan' }],
-        [{ text: '🔙 Kembali Input', callback_data: 'so:kembali' }],
-      ]}}
-    );
-    return;
-  }
-    // ════════════ TAMBAH BARANG BARU (Tidak Ada di Database) ════════════
+  // ════════ TAMBAH BARANG BARU (Tidak Ada di Database) ════════
   
   if (low === 'tambahbaru' || low === 'tambah barang' || low === 'barang baru' || low === 'add item') {
     updateSesi(userId, { soTambahBaruStep: 'nama' });
@@ -5371,7 +5246,6 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     return;
   }
   
-  // Step 1: Input nama barang baru
   if (session.soTambahBaruStep === 'nama') {
     if (low === 'batal' || low === '/batal') {
       updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null });
@@ -5386,7 +5260,6 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     
     const namaBarang = message.trim().toUpperCase();
     
-    // Cek apakah barang sudah ada di database
     const existing = DATA_BARANG.find(d => 
       d.nama === namaBarang || d.nama.includes(namaBarang) || namaBarang.includes(d.nama)
     );
@@ -5403,12 +5276,10 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
         ]}}
       );
       
-      // Simpan nama baru di session untuk nanti
       updateSesi(userId, { soBaruNama: namaBarang });
       return;
     }
     
-    // Tidak ada yang mirip, lanjut
     updateSesi(userId, { soBaruNama: namaBarang, soTambahBaruStep: 'qty' });
     
     await kirim(chatId,
@@ -5422,7 +5293,6 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     return;
   }
   
-  // Step 2: Input qty barang baru
   if (session.soTambahBaruStep === 'qty') {
     if (low === 'batal' || low === '/batal') {
       updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null });
@@ -5447,17 +5317,13 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     const namaBarang = session.soBaruNama;
     const namaPetugas = soInfo.petugas[0] || getNama(userId) || 'User';
     
-    // Buat kode temporary untuk barang baru
     const kodeBaru = `NEW_${Date.now().toString(36).toUpperCase()}`;
     
-    // Simpan ke shared SO (sama seperti barang biasa)
-    if (typeof tambahInputSO === 'function') {
-      tambahInputSO(tokoKode, soInfo.rakAktif, kodeBaru, userId, namaPetugas, jumlah, jenisKey);
-    }
+    // Simpan ke shared items (agar muncul di semua sheet Excel)
+    tambahInputSO(tokoKode, soInfo.rakAktif, kodeBaru, userId, namaPetugas, jumlah, jenisKey);
     
-    // Juga simpan info barang baru ke session (untuk Excel)
-    if (!session.soBarangBaru) session.soBarangBaru = [];
-    session.soBarangBaru.push({
+    // Simpan info barang baru ke shared data (untuk sheet Barang Baru + Excel)
+    tambahBarangBaruSO(tokoKode, {
       kode: kodeBaru,
       nama: namaBarang,
       rak: soInfo.rakAktif,
@@ -5465,7 +5331,7 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       qty: jumlah,
       petugas: namaPetugas,
       jam: getJamSekarang(),
-      foto: null, // Belum ada foto
+      fotoFileId: null,
     });
     
     updateSesi(userId, { 
@@ -5473,7 +5339,6 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       soBaruKode: kodeBaru,
       soBaruQty: jumlah,
       soBaruJenis: jenisKey,
-      soBarangBaru: session.soBarangBaru,
     });
     
     await kirim(chatId,
@@ -5486,6 +5351,7 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       `${GARIS_TIPIS}\n\n` +
       `📸 *STEP 3/3: Foto Barang (Opsional)*\n\n` +
       `Kirim FOTO barang untuk dokumentasi.\n` +
+      `Foto akan MUNCUL di Excel!\n\n` +
       `Atau ketik *skip* untuk lewati.`,
       { reply_markup: { inline_keyboard: [
         [{ text: '⏭️ Skip Foto', callback_data: 'so:skipfoto' }],
@@ -5495,16 +5361,12 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     return;
   }
   
-  // Step 3: Tunggu foto (handled di photo handler)
   if (session.soTambahBaruStep === 'foto') {
     if (low === 'skip' || low === 'lewat' || low === 'lanjut') {
       updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null, soBaruKode: null });
-      
-      const totalBaru = (session.soBarangBaru || []).length;
+      const totalBaru = getBarangBaruSO(tokoKode).length;
       await kirim(chatId,
-        `✅ *Barang baru ditambahkan tanpa foto*\n\n` +
-        `📦 Total barang baru di SO: *${totalBaru}*\n\n` +
-        `💬 Lanjutkan input barang atau pilih:`,
+        `✅ *Barang baru ditambahkan tanpa foto*\n\n📦 Total barang baru di SO: *${totalBaru}*\n\n💬 Lanjutkan input barang atau pilih:`,
         { reply_markup: kbSOAktif() }
       );
       return;
@@ -5514,216 +5376,156 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     return;
   }
   
-  // ════════ INPUT QTY ════════
-  // ════════════ SEARCH IN RAK MODE ════════════
+  // ════════ COMMANDS ════════
   
-  if (session.soSearchMode && session.soSearchInRak) {
-    const rakName = session.soSearchInRak;
+  if (low === 'userlain' || low === 'lihatuser') {
+    const usersAktif = getAllUsersAktif(tokoKode);
+    const userLainList = Object.entries(usersAktif).filter(([uid]) => String(uid) !== String(userId));
     
-    if (low === 'batal' || low === '/batal') {
-      updateSesi(userId, { soSearchMode: false, soSearchInRak: null });
-      // Redirect balik ke edit rak
-      await kirim(chatId, '🔙 Batal, kembali ke edit rak.');
-      // Trigger callback editrak
-      const items = getBarangDiRak(tokoKode, rakName);
-      const total = Object.keys(items).length;
-      await kirim(chatId,
-        `✏️ *EDIT RAK: ${rakName}*\n${GARIS_TEBAL}\n📦 Total: ${total} jenis barang\n\nKetik nama barang untuk cari, atau ketik *tampilkan* untuk lihat list lengkap.`,
-        { reply_markup: { inline_keyboard: [
-          [{ text: '📋 Tampilkan List', callback_data: `so:editrak:${rakName}` }],
-          [{ text: '🔙 Kembali', callback_data: 'so:kembali' }],
-        ]}}
-      );
-      return;
+    if (!userLainList.length) {
+      return kirim(chatId, `👥 Hanya kamu yang SO di ${namaToko} saat ini.`);
     }
     
-    if (low === 'tampilkan' || low === 'list' || low === 'lihat semua') {
-      updateSesi(userId, { soSearchMode: false, soSearchInRak: null });
-      // Trigger callback editrak langsung
-      const items = getBarangDiRak(tokoKode, rakName);
-      const itemList = Object.entries(items);
-      
-      if (itemList.length === 0) {
-        await kirim(chatId, `📭 Rak ${rakName} kosong.`, { reply_markup: kbSOAktif() });
-        return;
-      }
-      
-      // Simulasikan callback editrak
-      await kirim(chatId, 'Menampilkan list...', {
-        reply_markup: { inline_keyboard: [
-          [{ text: `📋 Buka List Edit ${rakName}`, callback_data: `so:editrak:${rakName}` }]
-        ]}
-      });
-      return;
-    }
-    
-    // Search item di rak
-    const items = getBarangDiRak(tokoKode, rakName);
-    const itemKodes = Object.keys(items);
-    
-    if (itemKodes.length === 0) {
-      updateSesi(userId, { soSearchMode: false, soSearchInRak: null });
-      await kirim(chatId, `📭 Rak ${rakName} kosong.`, { reply_markup: kbSOAktif() });
-      return;
-    }
-    
-    // Cari yang match
-    const searchLower = message.toLowerCase().trim();
-    const matches = [];
-    
-    itemKodes.forEach(kode => {
-      const item = DATA_BARANG.find(d => d.kode === kode);
-      const nama = (item?.nama || kode).toLowerCase();
-      
-      // Match by kode
-      if (kode.toLowerCase().includes(searchLower)) {
-        matches.push({ kode, item, matchType: 'kode' });
-        return;
-      }
-      
-      // Match by nama (any word)
-      if (nama.includes(searchLower)) {
-        matches.push({ kode, item, matchType: 'nama' });
-        return;
-      }
+    let m = `👥 *USER AKTIF SO DI ${namaToko}*\n${GARIS_TEBAL}\n\n`;
+    userLainList.forEach(([, info], i) => {
+      const lastMin = Math.floor((Date.now() - info.lastActive) / 60000);
+      const st = lastMin < 5 ? '🟢' : lastMin < 15 ? '🟡' : '🔴';
+      m += `${i+1}. ${st} *${info.nama}* di *${info.rakAktif}*\n   ⏰ Mulai: ${info.jamMulai} | Aktif ${lastMin < 1 ? 'baru saja' : lastMin + 'm lalu'}\n\n`;
     });
     
-    if (matches.length === 0) {
-      await kirim(chatId,
-        `❌ *Tidak ditemukan*\n\nItem "${escapeMd(message)}" tidak ada di rak ${rakName}.\n\nCoba kata lain, atau ketik *tampilkan* untuk lihat semua item.`,
-        { reply_markup: { inline_keyboard: [
-          [{ text: '📋 Tampilkan Semua', callback_data: `so:editrak:${rakName}` }],
-          [{ text: '🔙 Batal', callback_data: 'so:kembali' }],
-        ]}}
-      );
-      return;
-    }
-  // ════════════ QUICK EDIT DENGAN DAFTAR HANYA TOMBOL ════════════
-  
-  if (data.startsWith('so:quickeditrak:')) {
-    const parts = data.replace('so:quickeditrak:', '').split(':');
-    const rakName = parts[0];
-    const page = parts[1] ? parseInt(parts[1]) : 0;
-    
-    const session = getSesi(userId);
-    const items = getBarangDiRak(session.tokoKode, rakName);
-    const itemList = Object.entries(items);
-    
-    if (itemList.length === 0) {
-      await kirim(chatId, `📭 Rak ${rakName} kosong.`, { reply_markup: kbSOAktif() });
-      return;
-    }
-    
-    // Sort abjad
-    const sortedItems = itemList.map(([kode, itemData]) => {
-      const item = DATA_BARANG.find(d => d.kode === kode);
-      const nama = item?.nama || kode;
-      let totalQty = 0;
-      itemData.entries.forEach(e => totalQty += e.qty);
-      return { kode, nama, totalQty };
-    }).sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
-    
-    // Pagination: 40 tombol per halaman (mode ringkas)
-    const ITEMS_PER_PAGE = 40;
-    const totalPages = Math.ceil(sortedItems.length / ITEMS_PER_PAGE);
-    const currentPage = Math.max(0, Math.min(page, totalPages - 1));
-    const startIdx = currentPage * ITEMS_PER_PAGE;
-    const endIdx = Math.min(startIdx + ITEMS_PER_PAGE, sortedItems.length);
-    const pageItems = sortedItems.slice(startIdx, endIdx);
-    
-    const m = `⚡ *QUICK EDIT: ${rakName}*\n${GARIS_TEBAL}\n` +
-              `📦 ${sortedItems.length} item ${totalPages > 1 ? `| Hal ${currentPage + 1}/${totalPages}` : ''}\n\n` +
-              `_Tap tombol untuk edit langsung_`;
-    
-    const buttons = [];
-    pageItems.forEach((si, i) => {
-      const globalIdx = startIdx + i + 1;
-      buttons.push([{
-        text: `${globalIdx}. ${si.nama.substring(0, 40)} [${si.totalQty}]`,
-        callback_data: `so:edititem:${rakName}:${si.kode}`
-      }]);
-    });
-    
-    // Navigasi
-    if (totalPages > 1) {
-      const nav = [];
-      if (currentPage > 0) nav.push({ text: '⬅️', callback_data: `so:quickeditrak:${rakName}:${currentPage - 1}` });
-      nav.push({ text: `${currentPage + 1}/${totalPages}`, callback_data: `so:pageinfo:${rakName}:${currentPage}` });
-      if (currentPage < totalPages - 1) nav.push({ text: '➡️', callback_data: `so:quickeditrak:${rakName}:${currentPage + 1}` });
-      buttons.push(nav);
-    }
-    
-    buttons.push([
-      { text: '📋 View Detail', callback_data: `so:editrak:${rakName}:0` },
-      { text: '🔍 Cari Item', callback_data: `so:searchinrak:${rakName}` },
-    ]);
-    buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
-    
-    await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons }});
+    await kirim(chatId, m, { reply_markup: kbSOAktif() });
     return;
   }
-
-    
-    // Kalau ketemu, langsung tampilkan
-    updateSesi(userId, { soSearchMode: false, soSearchInRak: null });
-    
-    if (matches.length === 1) {
-      // 1 match → langsung buka edit item
-      const match = matches[0];
-      const item = match.item;
-      const nama = item?.nama || match.kode;
-      const itemData = items[match.kode];
-      
-      let totalQty = 0;
-      itemData.entries.forEach(e => totalQty += e.qty);
-      
-      let m = `✏️ *EDIT ITEM (found!)*\n${GARIS_TEBAL}\n`;
-      m += `📦 ${escapeMd(nama)}\n📍 Rak: ${rakName}\n📊 Total: ${totalQty}\n\n`;
-      
-      const buttons = [];
-      itemData.entries.forEach((entry, i) => {
-        m += `${i+1}. *${entry.namaPetugas}* | ${entry.jenis} | Qty: *${entry.qty}*\n   ⏰ ${entry.jamInput}\n\n`;
-        buttons.push([
-          { text: `✏️ Edit #${i+1} (${entry.qty})`, callback_data: `so:editentry:${rakName}:${match.kode}:${i}` },
-        ]);
-      });
-      
-      buttons.push([{ text: '🗑️ Hapus Semua', callback_data: `so:hapusitem:${rakName}:${match.kode}` }]);
-      buttons.push([{ text: '🔙 Kembali ke Rak', callback_data: `so:editrak:${rakName}` }]);
-      
-      await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons }});
-      return;
-    }
-    
-    // Multiple matches → tampilkan pilihan
-    let m = `🔍 *${matches.length} item ditemukan di ${rakName}:*\n${GARIS_TEBAL}\n\n`;
+  
+  if (low === 'pindahrak' || low === 'pindah rak' || low === 'ganti rak') {
+    const existingRacks = Object.keys(getAllRacks(tokoKode));
     const buttons = [];
-    
-    matches.slice(0, 15).forEach((match, i) => {
-      const nama = match.item?.nama || match.kode;
-      const itemData = items[match.kode];
-      let totalQty = 0;
-      itemData.entries.forEach(e => totalQty += e.qty);
-      
-      m += `*${i+1}. ${escapeMd(nama)}*\n`;
-      m += `   🔖 \`${match.kode}\` | 📊 ${totalQty}\n\n`;
-      
-      buttons.push([{
-        text: `✏️ ${i+1}. ${nama} (${totalQty})`,
-        callback_data: `so:edititem:${rakName}:${match.kode}`
-      }]);
+    existingRacks.forEach(rak => {
+      if (rak === soInfo.rakAktif) return;
+      const items = Object.keys(getBarangDiRak(tokoKode, rak)).length;
+      buttons.push([{ text: `📦 ${rak} (${items} barang)`, callback_data: `so:pilihrak:${rak}` }]);
     });
-    
-    if (matches.length > 15) {
-      m += `_... +${matches.length - 15} lainnya. Coba cari lebih spesifik._\n`;
-    }
-    
-    buttons.push([{ text: '📋 Lihat Semua Item', callback_data: `so:editrak:${rakName}` }]);
+    buttons.push([{ text: '🆕 Buat Rak Baru', callback_data: 'so:rakbaru' }]);
     buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
     
-    await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons }});
+    await kirim(chatId,
+      `📦 *PINDAH RAK*\n${GARIS_TEBAL}\n\nRak aktif: *${escapeMd(soInfo.rakAktif)}*\n\n💡 *3 cara pindah:*\n   1. Pilih tombol\n   2. 📸 Kirim FOTO barcode rak\n   3. Buat rak baru + ketik`,
+      { reply_markup: { inline_keyboard: buttons }}
+    );
     return;
   }
+  
+  if (low === 'editrak' || low === 'edit rak') {
+    const existingRacks = Object.keys(getAllRacks(tokoKode));
+    if (!existingRacks.length) return kirim(chatId, '⚠️ Belum ada rak.');
+    
+    const buttons = [];
+    existingRacks.forEach(rak => {
+      const items = Object.keys(getBarangDiRak(tokoKode, rak)).length;
+      buttons.push([{ text: `✏️ ${rak} (${items} barang)`, callback_data: `so:editrak:${rak}:0` }]);
+    });
+    buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
+    
+    await kirim(chatId, `✏️ *EDIT RAK*\nPilih rak yang ingin diedit:`, { reply_markup: { inline_keyboard: buttons }});
+    return;
+  }
+  
+  if (low === 'review') {
+    const gabungan = getSOGabunganData(tokoKode);
+    const allRacks = getAllRacks(tokoKode);
+    const allKodes = new Set([...Object.keys(gabungan.fisik), ...Object.keys(gabungan.gudang)]);
+    const barangBaru = getBarangBaruSO(tokoKode);
+    
+    let m = `👁️ *REVIEW SO - ${namaToko}*\n${GARIS_TEBAL}\n\n`;
+    m += `📦 Rak aktif: *${soInfo.rakAktif}*\n`;
+    m += `📚 Total rak: ${Object.keys(allRacks).length}\n\n`;
+    
+    Object.entries(allRacks).forEach(([rakName, rackData], i) => {
+      const itemCount = Object.keys(rackData.items || {}).length;
+      const isAktif = rakName === soInfo.rakAktif;
+      m += `${i+1}. ${isAktif ? '📍' : '📦'} *${rakName}* — ${itemCount} barang ${isAktif ? '(AKTIF)' : ''}\n`;
+    });
+    
+    m += `\n${GARIS_TIPIS}\n`;
+    
+    if (allKodes.size > 0) {
+      const allItems = [];
+      allKodes.forEach(kode => {
+        if (kode.startsWith('NEW_')) return; // Skip barang baru, tampilkan terpisah
+        const item = DATA_BARANG.find(d => d.kode === kode);
+        const nama = item?.nama || kode;
+        const satuan = item?.satuan || '';
+        const sistem = item?.harga[tokoKode]?.stok || 0;
+        const fisik = gabungan.fisik[kode] || 0;
+        const gudang = gabungan.gudang[kode] || 0;
+        const total = fisik + gudang;
+        const selisih = total - sistem;
+        allItems.push({ kode, nama, satuan, sistem, fisik, gudang, total, selisih });
+      });
+      
+      allItems.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+      
+      if (allItems.length > 0) {
+        m += `📋 *DAFTAR BARANG (A-Z):*\n${GARIS_TIPIS}\n\n`;
+        allItems.slice(0, 20).forEach((d, i) => {
+          const statusIcon = d.selisih === 0 ? '✅' : d.selisih > 0 ? '➕' : '➖';
+          m += `*${i+1}. ${escapeMd(d.nama)}*\n   🔖 \`${d.kode}\`\n`;
+          m += `   💻 Sistem: ${d.sistem}`;
+          if (d.fisik > 0) m += ` | 🏪 ${d.fisik}`;
+          if (d.gudang > 0) m += ` | 🏭 ${d.gudang}`;
+          m += ` | 📦 Total: ${d.total} ${statusIcon} ${d.selisih === 0 ? '' : (d.selisih > 0 ? '+' : '') + d.selisih}\n\n`;
+        });
+        if (allItems.length > 20) m += `_... +${allItems.length - 20} lainnya_\n\n`;
+        
+        const kurang = allItems.filter(d => d.selisih < 0).length;
+        const lebih = allItems.filter(d => d.selisih > 0).length;
+        const sesuai = allItems.filter(d => d.selisih === 0).length;
+        
+        m += `${GARIS_TEBAL}\n📊 *RINGKASAN:*\n`;
+        m += `   📦 Total: ${allItems.length} barang\n`;
+        m += `   ✅ Sesuai: ${sesuai} | ➕ Lebih: ${lebih} | ➖ Kurang: ${kurang}\n`;
+      }
+    } else {
+      m += `\n_Belum ada barang diinput._\n`;
+    }
+    
+    // Barang baru
+    if (barangBaru.length > 0) {
+      m += `\n🆕 *BARANG BARU (${barangBaru.length} item):*\n${GARIS_TIPIS}\n`;
+      m += `_(Tidak ada di database Excel)_\n\n`;
+      barangBaru.forEach((b, i) => {
+        m += `${i+1}. *${escapeMd(b.nama)}*\n`;
+        m += `   📍 ${b.rak} | ${b.jenis === 'fisik' ? '🏪' : '🏭'} ${b.jenis}: ${b.qty}\n`;
+        m += `   👤 ${b.petugas} | ⏰ ${b.jam}\n`;
+        m += `   📸 ${b.fotoFileId ? 'Ada foto ✅' : 'Tanpa foto'}\n\n`;
+      });
+    }
+    
+    await kirim(chatId, m, {
+      reply_markup: { inline_keyboard: [
+        [{ text: '📊 Export Excel Gabungan', callback_data: 'so:exportgabungan' }],
+        [{ text: '✏️ Edit Rak', callback_data: 'so:editrak' }],
+        [{ text: '➕ Tambah Barang Baru', callback_data: 'so:tambahbaru' }],
+        [{ text: '✅ Selesai SO', callback_data: 'so:selesai' }],
+        [{ text: '🔙 Lanjut Input', callback_data: 'so:kembali' }],
+      ]}
+    });
+    return;
+  }
+  
+  if (low === 'selesai' || low === 'done') {
+    await kirim(chatId,
+      `🤔 *Selesai Stock Opname?*\n${GARIS_TEBAL}\n\nPilih:`,
+      { reply_markup: { inline_keyboard: [
+        [{ text: '📊 Export & Keluar (Saya Saja)', callback_data: 'so:selesaisaya' }],
+        [{ text: '📊 Export Gabungan Semua User', callback_data: 'so:exportgabungan' }],
+        [{ text: '🔙 Kembali Input', callback_data: 'so:kembali' }],
+      ]}}
+    );
+    return;
+  }
+  
+  // ════════ INPUT QTY BARANG BIASA ════════
   
   if (session.pendingBarangKode) {
     const kode = session.pendingBarangKode;
@@ -5754,7 +5556,6 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     msgK += `📦 ${escapeMd(item.nama)}\n📍 ${soInfo.rakAktif} | ${jenisKey === 'fisik' ? '🏪' : '🏭'} ${jenisKey} +${jumlah}\n`;
     msgK += `👤 ${namaPetugas} ⏰ ${getJamSekarang()}\n\n`;
     
-    // Breakdown per rak
     if (totalAll.raks.length > 1) {
       msgK += `📊 *Per rak:*\n`;
       totalAll.raks.forEach(r => {
@@ -5786,10 +5587,8 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       return;
     }
     
-        if (hasil.hasil.length > 0) {
-      // SORT ABJAD
+    if (hasil.hasil.length > 0) {
       const sortedHasil = [...hasil.hasil].sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
-      
       let m = `🔍 *${sortedHasil.length} ditemukan (A-Z):*\n${GARIS_TEBAL}\n\n`;
       const buttons = [];
       sortedHasil.slice(0, 10).forEach((d, i) => {
@@ -5798,41 +5597,27 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
         m += `*${i+1}. ${escapeMd(d.nama)}*\n   🔖 \`${d.kode}\` | Sistem: ${d.harga[tokoKode]?.stok || 0}`;
         if (adaDiTempatlain) m += ` | SO: ${totalAll.total}`;
         m += '\n\n';
-        // NAMA LENGKAP di tombol (tanpa potong)
         buttons.push([{
           text: `${adaDiTempatlain ? '⚠️ ' : ''}${i+1}. ${d.nama}`,
           callback_data: `so:pick:${d.kode}`
         }]);
       });
+      buttons.push([{ text: '➕ Tambah Barang Baru (Tidak Ada di List)', callback_data: 'so:tambahbaru' }]);
       buttons.push([{ text: '🔙 Batal', callback_data: 'so:kembali' }]);
       await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons }});
       return;
     }
     
-    await kirim(chatId, `❌ "${message}" tidak ditemukan.`);
+    // Tidak ada hasil sama sekali → tawarkan tambah baru
+    await kirim(chatId, 
+      `❌ "${message}" tidak ditemukan di database.\n\n💡 Mau tambah sebagai *barang baru*?`,
+      { reply_markup: { inline_keyboard: [
+        [{ text: '➕ Ya, Tambah Barang Baru', callback_data: 'so:tambahbaru' }],
+        [{ text: '🔍 Cari Lagi', callback_data: 'so:kembali' }],
+      ]}}
+    );
   }
 }
-
-function kbSOAktif() {
-  return { inline_keyboard: [
-    [
-      { text: '👥 User Lain', callback_data: 'so:userlain' },
-      { text: '📊 Review', callback_data: 'so:review' },
-    ],
-    [
-      { text: '📦 Pindah Rak', callback_data: 'so:pindahrak' },
-      { text: '✏️ Edit Rak', callback_data: 'so:editrak' },
-    ],
-    [
-      { text: '➕ Tambah Barang Baru', callback_data: 'so:tambahbaru' },
-    ],
-    [
-      { text: '📊 Export Gabungan', callback_data: 'so:exportgabungan' },
-      { text: '✅ Selesai', callback_data: 'so:selesai' },
-    ],
-  ]};
-}
-
 // ════════════════════════════════════════════════════════════════
 //   28. BERITA ACARA HANDLER
 // ════════════════════════════════════════════════════════════════
@@ -8206,7 +7991,7 @@ async function prosesVoiceSearch(chatId, userId, searchText, originalText) {
 }
 
 // ════════════════════════════════════════════════════════════════
-//   34. PHOTO HANDLER (TUNGGAL - ROUTE SEMUA MODE)
+//   34. PHOTO HANDLER (Tunggal - Route Semua Mode + Foto Barang Baru)
 // ════════════════════════════════════════════════════════════════
 
 bot.on('photo', async (msg) => {
@@ -8222,27 +8007,31 @@ bot.on('photo', async (msg) => {
     const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
     const imageBuffer = Buffer.from(response.data);
     
-        const session = getSesi(userId);
+    const session = getSesi(userId);
     
-    // ★ Homebase mode
+    // ★ Homebase mode - scan nota supplier
     if (session.mode === 'homebase') {
       await handleHomebaseMode(chatId, userId, msg.caption || '', imageBuffer, session);
       return;
     }
     
-    // ROUTING berdasarkan mode aktif (existing)
+    // ★ Stock Opname mode
     if (session.mode === 'stockopname') {
-
-      // ★ Foto barang baru (step foto)
+      
+      // ★★ FOTO BARANG BARU (saat wizard tambah barang baru step foto) ★★
       if (session.soTambahBaruStep === 'foto') {
         try {
-          // Simpan foto ke admin (sebagai dokumentasi)
           const namaBarang = session.soBaruNama || 'Barang Baru';
           const kodeBaru = session.soBaruKode || 'NEW';
           const rakAktif = session.soInfo?.rakAktif || '-';
           const namaToko = NAMA_TOKO[session.tokoKode] || 'Toko';
           
-          // Forward foto ke admin sebagai backup
+          // Update foto di shared data (agar muncul di Excel!)
+          if (typeof updateFotoBarangBaruSO === 'function') {
+            updateFotoBarangBaruSO(session.tokoKode, kodeBaru, photo.file_id);
+          }
+          
+          // Forward foto ke admin sebagai backup dokumentasi
           if (CONFIG.adminId) {
             try {
               await bot.sendPhoto(CONFIG.adminId, photo.file_id, {
@@ -8255,65 +8044,75 @@ bot.on('photo', async (msg) => {
                   `⏰ ${getJamSekarang()}`,
                 parse_mode: 'Markdown',
               });
-            } catch(e) { console.warn('Gagal forward foto ke admin:', e.message); }
-          }
-          
-          // Update item di soBarangBaru
-          if (session.soBarangBaru && session.soBarangBaru.length > 0) {
-            const lastItem = session.soBarangBaru[session.soBarangBaru.length - 1];
-            lastItem.foto = photo.file_id;
-            lastItem.fotoTimestamp = Date.now();
+            } catch(e) { log.warn('SO-FOTO-FWD', 'Gagal forward: ' + e.message); }
           }
           
           updateSesi(userId, { 
             soTambahBaruStep: null, 
             soBaruNama: null, 
             soBaruKode: null,
-            soBarangBaru: session.soBarangBaru,
           });
           
-          const totalBaru = (session.soBarangBaru || []).length;
+          const totalBaru = getBarangBaruSO(session.tokoKode).length;
           await kirim(chatId,
-            `✅ *Foto tersimpan!*\n\n` +
+            `✅ *Foto tersimpan!*\n${GARIS_TEBAL}\n\n` +
             `📦 ${escapeMd(namaBarang)}\n` +
-            `📸 Foto didokumentasikan.\n` +
+            `📸 Foto akan MUNCUL di Excel!\n` +
             `📦 Total barang baru: *${totalBaru}*\n\n` +
             `💬 Lanjutkan input barang atau pilih:`,
             { reply_markup: kbSOAktif() }
           );
         } catch(err) {
           log.error('SO-FOTO', err.message);
-          await kirim(chatId, '❌ Error simpan foto: ' + err.message);
+          await kirim(chatId, '❌ Error simpan foto: ' + err.message, { reply_markup: kbSOAktif() });
         }
         return;
       }
       
-      
-      // Cek apakah lagi di step input rak (setup awal atau pindah rak)
+      // Foto scan barcode/nama rak (saat setup atau pindah rak)
       const isStepRak = session.soSetupStep === 'rak' || 
                        session.soSetupStep === 'rak_input' || 
                        session.soSetupStep === 'pindahrak_namabaru' || 
                        session.soSetupStep === 'rak_input_pindah';
       
       if (isStepRak) {
-        await handleScanRak(chatId, userId, imageBuffer, session);
+        if (typeof handleScanRak === 'function') {
+          await handleScanRak(chatId, userId, imageBuffer, session);
+        }
         return;
       }
       
-      // Cek jika user kirim foto saat di mode SO aktif (tanpa step) - anggap mau pindah rak
+      // Foto saat SO aktif tanpa step - anggap mau pindah rak via scan
       if (!session.soSetupStep && session.soInfo?.rakAktif && session.soInfo.rakAktif !== 'EDIT_MODE') {
-        await handleScanRakPindah(chatId, userId, imageBuffer, session);
+        if (typeof handleScanRakPindah === 'function') {
+          await handleScanRakPindah(chatId, userId, imageBuffer, session);
+        }
         return;
       }
     }
     
+    // ★ Scan laporan penjualan
     if (session.scanActive) {
       await handleScanModeLaporan(chatId, userId, msg.caption || '', imageBuffer, session);
-    } else if (session.hargaActive) {
+      return;
+    }
+    
+    // ★ Wizard laporan harga
+    if (session.hargaActive) {
       await handleHargaMode(chatId, userId, msg.caption || '', imageBuffer, session);
-    } else if (session.mode === 'beritaacara' && session.baSection) {
-      await handleBaScanFoto(chatId, userId, imageBuffer, session);
-    } else if (session.menu === 3) {
+      return;
+    }
+    
+    // ★ Berita Acara scan tabel iPos
+    if (session.mode === 'beritaacara' && session.baSection) {
+      if (typeof handleBaScanFoto === 'function') {
+        await handleBaScanFoto(chatId, userId, imageBuffer, session);
+      }
+      return;
+    }
+    
+    // ★ Marketplace scan
+    if (session.menu === 3) {
       await kirim(chatId, '📸 _Scan laporan marketplace..._');
       try {
         const prompt = `Baca gambar laporan marketplace. Ekstrak per toko (oesapa, tdm, central), channel (wa, shopee, tiktok, tokopedia), bayar (tunai, debit, kredit). Format: nama nilai`;
@@ -8325,19 +8124,21 @@ bot.on('photo', async (msg) => {
       } catch(err) {
         await kirim(chatId, '❌ Gagal: ' + err.message);
       }
-    } else {
-      // Default: AI Vision umum
-      await kirim(chatId, '📸 _Menganalisa foto..._');
-      const prompt = msg.caption
-        ? `Foto toko perabot. ${msg.caption}. Jawab bahasa Indonesia.`
-        : 'Foto toko perabot. Analisa singkat dalam bahasa Indonesia.';
-      const result = await analisaGambarBuffer(imageBuffer, prompt);
-      if (result) {
-        await kirim(chatId, `📸 *Hasil Analisa AI:*\n${GARIS_TEBAL}\n\n${result}`);
-      } else {
-        await kirim(chatId, '❌ AI Vision tidak tersedia.');
-      }
+      return;
     }
+    
+    // ★ Default: AI Vision umum
+    await kirim(chatId, '📸 _Menganalisa foto..._');
+    const prompt = msg.caption
+      ? `Foto toko perabot. ${msg.caption}. Jawab bahasa Indonesia.`
+      : 'Foto toko perabot. Analisa singkat dalam bahasa Indonesia.';
+    const result = await analisaGambarBuffer(imageBuffer, prompt);
+    if (result) {
+      await kirim(chatId, `📸 *Hasil Analisa AI:*\n${GARIS_TEBAL}\n\n${result}`);
+    } else {
+      await kirim(chatId, '❌ AI Vision tidak tersedia.');
+    }
+    
   } catch(err) {
     log.error('PHOTO', err.message);
     kirim(chatId, '❌ Error: ' + err.message);
@@ -9012,7 +8813,7 @@ bot.on('message', async (msg) => {
   return prosesAI(chatId, userId, text);
 });
 // ════════════════════════════════════════════════════════════════
-//   37. CALLBACK QUERY HANDLER (LENGKAP - Semua Callback + Pagination)
+//   37. CALLBACK QUERY HANDLER (LENGKAP - Semua Callback + Barang Baru)
 // ════════════════════════════════════════════════════════════════
 
 bot.on('callback_query', async (query) => {
@@ -9028,16 +8829,13 @@ bot.on('callback_query', async (query) => {
   if (data.startsWith('caripage:')) {
     const page = parseInt(data.replace('caripage:', ''));
     const session = getSesi(userId);
-    
     if (!session.lastSearch || !session.lastSearch.keyword) {
       await kirim(chatId, '⚠️ Session pencarian expired. Silakan cari lagi.', {
         reply_markup: { inline_keyboard: [[{ text: '🔄 Cari Lagi', callback_data: 'menu:4' }]] }
       });
       return;
     }
-    
     try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
-    
     const ls = session.lastSearch;
     await prosesCari(chatId, userId, ls.keyword, ls.tokoFilter, page);
     return;
@@ -9045,10 +8843,7 @@ bot.on('callback_query', async (query) => {
   
   if (data === 'caripageinfo') {
     try {
-      await bot.answerCallbackQuery(query.id, {
-        text: '📄 Info halaman - klik ⬅️ / ➡️ untuk navigasi',
-        show_alert: false
-      });
+      await bot.answerCallbackQuery(query.id, { text: '📄 Info halaman', show_alert: false });
     } catch(e) {}
     return;
   }
@@ -9063,7 +8858,7 @@ bot.on('callback_query', async (query) => {
       const session = getSesi(userId);
       originalText = session.aiPendingQuery || '';
     }
-    if (!originalText) return kirim(chatId, '⚠️ Query hilang, coba ketik ulang.');
+    if (!originalText) return kirim(chatId, '⚠️ Query hilang.');
     updateSesi(userId, { aiPendingQuery: null });
     await prosesCari(chatId, userId, originalText, null);
     return;
@@ -9072,7 +8867,7 @@ bot.on('callback_query', async (query) => {
   if (data === 'airouter:batal') {
     updateSesi(userId, { aiPendingQuery: null });
     try { await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msgId }); } catch(e) {}
-    await kirim(chatId, `Oke kak, lanjut ngobrol aja 😊 Mau apa nih?`);
+    await kirim(chatId, `Oke kak 😊 Mau apa nih?`);
     return;
   }
   
@@ -9081,7 +8876,7 @@ bot.on('callback_query', async (query) => {
   if (data === 'gomenu:yes') {
     const session = getSesi(userId);
     const action = session.pendingMenuAction;
-    if (!action) return kirim(chatId, '⚠️ Aksi hilang, coba lagi.', { reply_markup: kbMainMenu(userId) });
+    if (!action) return kirim(chatId, '⚠️ Aksi hilang.', { reply_markup: kbMainMenu(userId) });
     updateSesi(userId, { pendingMenuAction: null, pendingMenuLabel: null });
     try { await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msgId }); } catch(e) {}
     await executeMenuAction(chatId, userId, action);
@@ -9091,7 +8886,7 @@ bot.on('callback_query', async (query) => {
   if (data === 'gomenu:no') {
     updateSesi(userId, { pendingMenuAction: null, pendingMenuLabel: null });
     try { await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msgId }); } catch(e) {}
-    await kirim(chatId, `Oke kak, lanjut aja 😊 Mau apa?`);
+    await kirim(chatId, `Oke kak 😊`);
     return;
   }
   
@@ -9105,7 +8900,7 @@ bot.on('callback_query', async (query) => {
       const session = getSesi(userId);
       originalText = session.pendingKonfirmasi?.text || '';
     }
-    if (!originalText) return kirim(chatId, '⚠️ Teks hilang, coba lagi.');
+    if (!originalText) return kirim(chatId, '⚠️ Teks hilang.');
     updateSesi(userId, { pendingKonfirmasi: null });
     await prosesCari(chatId, userId, originalText, null);
     return;
@@ -9113,7 +8908,8 @@ bot.on('callback_query', async (query) => {
   
   if (data === 'konfirm:batal') {
     updateSesi(userId, { pendingKonfirmasi: null });
-    try { await bot.editMessageText('👌 Dibatalkan.', { chat_id: chatId, message_id: msgId, reply_markup: kbMainMenu(userId) }); } catch(e) { await kirim(chatId, '👌 OK.', { reply_markup: kbMainMenu(userId) }); }
+    try { await bot.editMessageText('👌 Dibatalkan.', { chat_id: chatId, message_id: msgId, reply_markup: kbMainMenu(userId) }); }
+    catch(e) { await kirim(chatId, '👌 OK.', { reply_markup: kbMainMenu(userId) }); }
     return;
   }
   
@@ -9123,8 +8919,7 @@ bot.on('callback_query', async (query) => {
     const userName = getNama(userId) || query.from.first_name || 'Kakak';
     try {
       await bot.editMessageText(buildWelcome(userId, userName), {
-        chat_id: chatId, message_id: msgId,
-        parse_mode: 'Markdown', reply_markup: kbMainMenu(userId)
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbMainMenu(userId)
       });
     } catch(e) {
       await kirim(chatId, buildWelcome(userId, userName), { reply_markup: kbMainMenu(userId) });
@@ -9136,11 +8931,9 @@ bot.on('callback_query', async (query) => {
     const menuType = parseInt(data.split(':')[1]);
     if (menuType !== 4 && !bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak.');
     const labels = { 1: 'Laporan Penjualan', 2: 'Laporan Harga', 5: 'Stock Opname', 6: 'Berita Acara' };
-    
     try {
       await bot.editMessageText(`🏦 *Pilih Toko - ${labels[menuType]}*\n${GARIS_TEBAL}`, {
-        chat_id: chatId, message_id: msgId,
-        parse_mode: 'Markdown', reply_markup: kbPilihToko(menuType, menuType === 6)
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbPilihToko(menuType, menuType === 6)
       });
     } catch(e) {
       await kirim(chatId, `🏦 *Pilih Toko - ${labels[menuType]}*`, { reply_markup: kbPilihToko(menuType, menuType === 6) });
@@ -9168,7 +8961,7 @@ bot.on('callback_query', async (query) => {
   if (data === 'menu:ai') {
     const nama = getNama(userId) || 'kak';
     try {
-      await bot.editMessageText(`🤖 *Halo ${escapeMd(nama)}! Aku Aiva* 😊\n\nAku temen ngobrol kamu! Yuk cerita apa aja 💬\n\n• Curhat & cerita harian\n• Tanya info umum & pengetahuan\n• Cek barang & harga toko\n• Apa aja deh 😄\n\n_Ketik \`/resetchat\` untuk reset memori_`, {
+      await bot.editMessageText(`🤖 *Halo ${escapeMd(nama)}!* 😊\n\nKetik pertanyaan apa saja!\n\n_/resetchat untuk reset memori_`, {
         chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
         reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]]}
       });
@@ -9179,9 +8972,8 @@ bot.on('callback_query', async (query) => {
   if (data === 'menu:7') {
     if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak.');
     try {
-      await bot.editMessageText(`🏠 *INPUT BARANG HOMEBASE*\n${GARIS_TEBAL}\n\nPilih toko untuk bandingkan harga:`, {
-        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
-        reply_markup: kbPilihToko(7)
+      await bot.editMessageText(`🏠 *INPUT BARANG HOMEBASE*\n${GARIS_TEBAL}\n\nPilih toko:`, {
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbPilihToko(7)
       });
     } catch(e) {
       await kirim(chatId, '🏠 *INPUT HOMEBASE*\nPilih toko:', { reply_markup: kbPilihToko(7) });
@@ -9216,12 +9008,9 @@ bot.on('callback_query', async (query) => {
         '• `laporan harga` - lap harga\n' +
         '• `marketplace` - lap mp\n' +
         '• `berita acara` - BA\n' +
-        '• `homebase` - input nota supplier\n' +
+        '• `homebase` - input nota\n' +
         '• `info` - info bot\n' +
-        '• `menu utama` - balik ke menu\n\n' +
-        '🔍 *Cari barang:*\n' +
-        '`cari [nama]` atau `harga [nama]`\n' +
-        '*Contoh:* `cari dandang eagle`\n\n' +
+        '• `menu utama` - balik menu\n\n' +
         '*Kode Toko:* NK, TDM, Oesapa, Kefa, CP',
         {
           chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
@@ -9267,7 +9056,6 @@ bot.on('callback_query', async (query) => {
     }
     
     if (menuType === '5') {
-      // Stock Opname
       const shared = getSOShared(toko.kode);
       const usersAktif = getAllUsersAktif(toko.kode);
       const allRacks = getAllRacks(toko.kode);
@@ -9289,7 +9077,7 @@ bot.on('callback_query', async (query) => {
           Object.entries(usersAktif).forEach(([uid, info], i) => {
             const lastMin = Math.floor((Date.now() - info.lastActive) / 60000);
             const st = lastMin < 5 ? '🟢' : lastMin < 15 ? '🟡' : '🔴';
-            m += `${i+1}. ${st} *${info.nama}*\n   📦 Rak: ${info.rakAktif}\n   ⏰ Mulai: ${info.jamMulai} | ${lastMin < 1 ? 'baru saja' : lastMin + 'm lalu'}\n\n`;
+            m += `${i+1}. ${st} *${info.nama}* di *${info.rakAktif}*\n   ⏰ Mulai: ${info.jamMulai} | ${lastMin < 1 ? 'baru saja' : lastMin + 'm lalu'}\n\n`;
           });
         }
         
@@ -9298,8 +9086,7 @@ bot.on('callback_query', async (query) => {
           Object.entries(allRacks).forEach(([rakName, rackData], i) => {
             const itemCount = Object.keys(rackData.items || {}).length;
             const pegangRak = Object.values(usersAktif).find(u => u.rakAktif === rakName);
-            const statusRak = pegangRak ? `🟢 ${pegangRak.nama}` : '⚪ Kosong';
-            m += `${i+1}. *${rakName}* (${itemCount} barang)\n   ${statusRak}\n`;
+            m += `${i+1}. *${rakName}* (${itemCount} barang) ${pegangRak ? `🟢 ${pegangRak.nama}` : '⚪ Kosong'}\n`;
           });
           m += '\n';
         }
@@ -9322,7 +9109,7 @@ bot.on('callback_query', async (query) => {
       try {
         await bot.editMessageText(`📦 *STOCK OPNAME*\n🏦 ${toko.nama}\n📅 ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n✨ *SO BARU*\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\nJika lebih dari 1, pisah koma.\n\n*Contoh:* \`Budi\` atau \`Budi, Sari\`\n\nKetik *batal* untuk keluar.`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
       } catch(e) {
-        await kirim(chatId, `📦 *STOCK OPNAME - ${toko.nama}*\n\n👥 *STEP 1/3: Nama Petugas*\nKetik nama petugas.`);
+        await kirim(chatId, `📦 *SO - ${toko.nama}*\n\n👥 *STEP 1/3: Nama Petugas*\nKetik nama petugas.`);
       }
       return;
     }
@@ -9334,23 +9121,16 @@ bot.on('callback_query', async (query) => {
       try {
         await bot.editMessageText(`📋 *BERITA ACARA*\n🏦 ${toko.nama}\n📅 ${getTanggalIndonesia()}\n🆔 *${nomorBA}*\n${GARIS_TEBAL}`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbBaSection(baData) });
       } catch(e) {
-        await kirim(chatId, `📋 *BERITA ACARA*\n🏦 ${toko.nama}\n🆔 ${nomorBA}`, { reply_markup: kbBaSection(baData) });
+        await kirim(chatId, `📋 *BA*\n🏦 ${toko.nama}\n🆔 ${nomorBA}`, { reply_markup: kbBaSection(baData) });
       }
       return;
     }
     
     if (menuType === '7') {
-      // Homebase
       updateSesi(userId, { mode: 'homebase', homebaseToko: toko.kode, homebaseItems: [] });
       try {
         await bot.editMessageText(
-          `🏠 *INPUT BARANG HOMEBASE*\n🏦 ${toko.nama}\n📅 ${getTanggalIndonesia()}\n${GARIS_TEBAL}\n\n` +
-          `📸 *Kirim FOTO nota/faktur supplier*\n\nBot akan:\n` +
-          `1. 📸 Scan nama, HPP, Harga B & D\n` +
-          `2. 🔗 Cocokkan dengan database\n` +
-          `3. 📊 Bandingkan harga\n` +
-          `4. 📥 Export Excel\n\n` +
-          `Bisa kirim beberapa foto.\nKetik *batal* untuk keluar.`,
+          `🏠 *INPUT BARANG HOMEBASE*\n🏦 ${toko.nama}\n📅 ${getTanggalIndonesia()}\n${GARIS_TEBAL}\n\n📸 *Kirim FOTO nota supplier*\n\nBot akan:\n1. Scan nama, HPP, Harga B & D\n2. Cocokkan dengan database\n3. Bandingkan harga\n4. Export Excel\n\nKetik *batal* untuk keluar.`,
           { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' }
         );
       } catch(e) {
@@ -9383,7 +9163,7 @@ bot.on('callback_query', async (query) => {
     if (menuType === '2') {
       updateSesi(userId, { menu: 2, toko: tokoKode, kemarin, hargaPilihMode: true, hargaData: { baru: [], naik: [], turun: [] } });
       try {
-        await bot.editMessageText(`📸 *WIZARD LAPORAN HARGA*\n🏦 ${toko?.nama || NAMA_TOKO[tokoKode]}\n📅 ${getTanggal(kemarin)}\n${GARIS_TEBAL}\n\n📋 *Pilih mode input:*`, {
+        await bot.editMessageText(`📸 *WIZARD LAPORAN HARGA*\n🏦 ${toko?.nama || NAMA_TOKO[tokoKode]}\n📅 ${getTanggal(kemarin)}\n${GARIS_TEBAL}\n\n📋 *Pilih mode:*`, {
           chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
           reply_markup: { inline_keyboard: [
             [{ text: '1️⃣ Gabung (1 foto semua)', callback_data: 'hargamode:gabung' }],
@@ -9432,7 +9212,7 @@ bot.on('callback_query', async (query) => {
     const NAMA_KAT = { baru: 'BARANG BARU', naik: 'BARANG NAIK HARGA', turun: 'BARANG TURUN HARGA' };
     const currentKat = KATEGORI[session.hargaStepIdx || 0];
     const namaToko = NAMA_TOKO[session.toko] || 'Toko';
-    await kirim(chatId, `📸 *Kirim foto lagi:*\n🏪 ${namaToko}\n📋 ${NAMA_KAT[currentKat]}\n\n💡 Item duplikat tidak akan ditambahkan.`, { reply_markup: { inline_keyboard: [[{ text: '⏭️ Lanjut Kategori', callback_data: 'harga:lanjut' }, { text: '✅ Selesai', callback_data: 'harga:selesai' }]] } });
+    await kirim(chatId, `📸 *Kirim foto lagi:*\n🏪 ${namaToko}\n📋 ${NAMA_KAT[currentKat]}`, { reply_markup: { inline_keyboard: [[{ text: '⏭️ Lanjut Kategori', callback_data: 'harga:lanjut' }, { text: '✅ Selesai', callback_data: 'harga:selesai' }]] } });
     return;
   }
   
@@ -9445,7 +9225,8 @@ bot.on('callback_query', async (query) => {
     const buttons = [];
     TOKO_LIST.forEach(t => { if (t.kode !== tokoKode) buttons.push([{ text: `${t.icon} Lihat di ${t.nama}`, callback_data: `detail:${kode}:${t.kode}` }]); });
     buttons.push([{ text: '🌐 Semua Toko', callback_data: `detail:${kode}:all` }]);
-    buttons.push([{ text: '🔙 Kembali ke Hasil', callback_data: `caripage:${(getSesi(userId).lastSearch?.currentPage || 0)}` }]);
+    const session = getSesi(userId);
+    if (session.lastSearch) buttons.push([{ text: '🔙 Kembali ke Hasil', callback_data: `caripage:${session.lastSearch.currentPage || 0}` }]);
     buttons.push([{ text: '📋 Menu Utama', callback_data: 'menu:main' }]);
     try {
       await bot.editMessageText(buildDetailBarang(item, tokoKode, 'semua'), { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } });
@@ -9473,6 +9254,40 @@ bot.on('callback_query', async (query) => {
   if (data === 'so:pindahrak') { const session = getSesi(userId); await handleStockOpnameMode(chatId, userId, 'pindahrak', session); return; }
   if (data === 'so:editrak') { const session = getSesi(userId); await handleStockOpnameMode(chatId, userId, 'editrak', session); return; }
   
+  // ════════════ STOCK OPNAME: TAMBAH BARANG BARU ════════════
+  
+  if (data === 'so:tambahbaru') {
+    const session = getSesi(userId);
+    await handleStockOpnameMode(chatId, userId, 'tambahbaru', session);
+    return;
+  }
+  
+  if (data === 'so:konfirmtambahbaru') {
+    const session = getSesi(userId);
+    const namaBarang = session.soBaruNama;
+    if (!namaBarang) {
+      await kirim(chatId, '⚠️ Data hilang, coba lagi.', { reply_markup: kbSOAktif() });
+      return;
+    }
+    updateSesi(userId, { soTambahBaruStep: 'qty' });
+    await kirim(chatId,
+      `✅ *Nama: ${escapeMd(namaBarang)}*\n${GARIS_TIPIS}\n\n` +
+      `📝 *STEP 2/3: Jumlah Barang*\n\nKetik:\n• \`TOKO 15\`\n• \`GUDANG 20\`\n\n📍 Rak: ${session.soInfo?.rakAktif || '-'}`
+    );
+    return;
+  }
+  
+  if (data === 'so:skipfoto') {
+    const session = getSesi(userId);
+    updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null, soBaruKode: null });
+    const totalBaru = getBarangBaruSO(session.tokoKode).length;
+    await kirim(chatId,
+      `✅ *Barang baru ditambahkan (tanpa foto)*\n\n📦 Total barang baru: *${totalBaru}*\n\n💬 Lanjutkan input barang:`,
+      { reply_markup: kbSOAktif() }
+    );
+    return;
+  }
+  
   // ════════════ STOCK OPNAME: JOIN / RESET ════════════
   
   if (data === 'so:join') {
@@ -9480,9 +9295,9 @@ bot.on('callback_query', async (query) => {
     if (!session.tokoKode) return;
     updateSesi(userId, { soSetupStep: 'petugas' });
     const usersAktif = getAllUsersAktif(session.tokoKode);
-    let m = `➕ *BERGABUNG KE SO*\n🏦 ${NAMA_TOKO[session.tokoKode]}\n${GARIS_TEBAL}\n\n👥 *Petugas yang sudah ada:*\n`;
+    let m = `➕ *BERGABUNG KE SO*\n🏦 ${NAMA_TOKO[session.tokoKode]}\n${GARIS_TEBAL}\n\n👥 *Petugas sudah ada:*\n`;
     Object.entries(usersAktif).forEach(([, info], i) => { m += `   ${i+1}. ${info.nama} (di ${info.rakAktif})\n`; });
-    m += `\n${GARIS_TIPIS}\n\n👤 *Siapa nama Anda?*\n\nKetik nama.\n*Contoh:* \`Joko\` atau \`Joko, Andi\`\n\nKetik *batal* untuk keluar.`;
+    m += `\n${GARIS_TIPIS}\n\n👤 *Siapa nama Anda?*\n\n*Contoh:* \`Joko\` atau \`Joko, Andi\`\n\nKetik *batal* untuk keluar.`;
     await kirim(chatId, m);
     return;
   }
@@ -9508,7 +9323,7 @@ bot.on('callback_query', async (query) => {
           { text: `⚡ Quick`, callback_data: `so:quickeditrak:${rakName}:0` },
         ]);
       } else {
-        buttons.push([{ text: `✏️ ${rakName} (${itemCount} barang)`, callback_data: `so:editrak:${rakName}:0` }]);
+        buttons.push([{ text: `✏️ ${rakName} (${itemCount})`, callback_data: `so:editrak:${rakName}:0` }]);
       }
     });
     buttons.push([{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]);
@@ -9530,7 +9345,7 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     if (!session.tokoKode) return;
     if (typeof backupSOShared === 'function') backupSOShared(session.tokoKode);
-    SO_SHARED[session.tokoKode] = { tanggal: getTanggalSlash(false), sesiAktif: false, racks: {}, usersAktif: {} };
+    SO_SHARED[session.tokoKode] = { tanggal: getTanggalSlash(false), sesiAktif: false, racks: {}, usersAktif: {}, barangBaru: [] };
     saveJSON(CONFIG.paths.soShared, SO_SHARED);
     updateSesi(userId, { soSetupStep: 'petugas' });
     await kirim(chatId, `✅ *Data lama di-backup & direset!*\n${GARIS_TEBAL}\n\n🆕 *SO BARU - ${NAMA_TOKO[session.tokoKode]}*\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\n*Contoh:* \`Budi\` atau \`Budi, Sari\``);
@@ -9545,7 +9360,7 @@ bot.on('callback_query', async (query) => {
     if (session.soSetupStep === 'rak') {
       session.soInfo.rakAktif = rakName;
       updateSesi(userId, { soInfo: session.soInfo, soSetupStep: 'jam' });
-      await kirim(chatId, `✅ *Rak dipilih:* ${escapeMd(rakName)}\n${GARIS_TIPIS}\n\n⏰ *STEP 3/3: Jam Mulai*\nFormat: \`HH:MM\` atau ketik *sekarang* (${getJamSekarang()})`);
+      await kirim(chatId, `✅ *Rak dipilih:* ${escapeMd(rakName)}\n${GARIS_TIPIS}\n\n⏰ *STEP 3/3: Jam Mulai*\nFormat: \`HH:MM\` atau *sekarang* (${getJamSekarang()})`);
     } else {
       session.soInfo.rakAktif = rakName;
       updateSesi(userId, { soInfo: session.soInfo, soSetupStep: null });
@@ -9560,7 +9375,7 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     const step = session.soSetupStep === 'rak' ? 'rak_input' : 'rak_input_pindah';
     updateSesi(userId, { soSetupStep: step });
-    await kirim(chatId, `📦 *Input Nama Rak Baru*\n${GARIS_TIPIS}\n\n💡 *2 cara:*\n   1. 📸 Kirim FOTO barcode/label rak\n   2. Ketik manual\n\n*Contoh ketik:* \`Rak C3\``);
+    await kirim(chatId, `📦 *Input Nama Rak Baru*\n${GARIS_TIPIS}\n\n💡 *2 cara:*\n   1. 📸 Kirim FOTO barcode rak\n   2. Ketik manual\n\n*Contoh:* \`Rak C3\``);
     return;
   }
   
@@ -9580,12 +9395,18 @@ bot.on('callback_query', async (query) => {
       return;
     }
     
+    const barangBaruList = getBarangBaruSO(session.tokoKode);
+    
     const sortedItems = itemList.map(([kode, itemData]) => {
       const item = DATA_BARANG.find(d => d.kode === kode);
-      const nama = item?.nama || kode;
+      let nama = item?.nama || kode;
+      if (kode.startsWith('NEW_')) {
+        const baru = barangBaruList.find(b => b.kode === kode);
+        if (baru) nama = baru.nama;
+      }
       let totalQty = 0;
       itemData.entries.forEach(e => totalQty += e.qty);
-      return { kode, nama, itemData, totalQty };
+      return { kode, nama, itemData, totalQty, isBaru: kode.startsWith('NEW_') };
     }).sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
     
     const ITEMS_PER_PAGE = 20;
@@ -9602,13 +9423,14 @@ bot.on('callback_query', async (query) => {
     const buttons = [];
     pageItems.forEach((si, i) => {
       const globalIdx = startIdx + i + 1;
-      m += `*${globalIdx}. ${escapeMd(si.nama)}*\n   🔖 \`${si.kode}\` | 📊 Total: ${si.totalQty} | ${si.itemData.entries.length} entri\n`;
+      const badge = si.isBaru ? ' 🆕' : '';
+      m += `*${globalIdx}. ${escapeMd(si.nama)}*${badge}\n   🔖 \`${si.kode}\` | 📊 Total: ${si.totalQty} | ${si.itemData.entries.length} entri\n`;
       si.itemData.entries.forEach(e => {
         const jenisIcon = e.jenis === 'fisik' ? '🏪' : '🏭';
         m += `      ${e.namaPetugas}: ${jenisIcon} ${e.jenis} *${e.qty}*\n`;
       });
       m += '\n';
-      buttons.push([{ text: `✏️ ${globalIdx}. ${si.nama} (${si.totalQty})`, callback_data: `so:edititem:${rakName}:${si.kode}` }]);
+      buttons.push([{ text: `✏️ ${globalIdx}. ${si.nama} (${si.totalQty})${badge}`, callback_data: `so:edititem:${rakName}:${si.kode}` }]);
     });
     
     if (totalPages > 1) {
@@ -9625,7 +9447,6 @@ bot.on('callback_query', async (query) => {
       }
     }
     
-    buttons.push([{ text: '🔍 Cari Item di Rak', callback_data: `so:searchinrak:${rakName}` }]);
     buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
     
     await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons } });
@@ -9637,8 +9458,6 @@ bot.on('callback_query', async (query) => {
     return;
   }
   
-  // ════════════ STOCK OPNAME: QUICK EDIT MODE ════════════
-  
   if (data.startsWith('so:quickeditrak:')) {
     const parts = data.replace('so:quickeditrak:', '').split(':');
     const rakName = parts[0];
@@ -9648,9 +9467,15 @@ bot.on('callback_query', async (query) => {
     const itemList = Object.entries(items);
     if (itemList.length === 0) return kirim(chatId, `📭 Rak ${rakName} kosong.`, { reply_markup: kbSOAktif() });
     
+    const barangBaruList = getBarangBaruSO(session.tokoKode);
+    
     const sortedItems = itemList.map(([kode, itemData]) => {
       const item = DATA_BARANG.find(d => d.kode === kode);
-      const nama = item?.nama || kode;
+      let nama = item?.nama || kode;
+      if (kode.startsWith('NEW_')) {
+        const baru = barangBaruList.find(b => b.kode === kode);
+        if (baru) nama = baru.nama;
+      }
       let totalQty = 0;
       itemData.entries.forEach(e => totalQty += e.qty);
       return { kode, nama, totalQty };
@@ -9663,7 +9488,7 @@ bot.on('callback_query', async (query) => {
     const endIdx = Math.min(startIdx + ITEMS_PER_PAGE, sortedItems.length);
     const pageItems = sortedItems.slice(startIdx, endIdx);
     
-    const m = `⚡ *QUICK EDIT: ${rakName}*\n${GARIS_TEBAL}\n📦 ${sortedItems.length} item ${totalPages > 1 ? `| Hal ${currentPage + 1}/${totalPages}` : ''}\n\n_Tap tombol untuk edit_`;
+    const m = `⚡ *QUICK EDIT: ${rakName}*\n${GARIS_TEBAL}\n📦 ${sortedItems.length} item ${totalPages > 1 ? `| Hal ${currentPage + 1}/${totalPages}` : ''}`;
     const buttons = [];
     pageItems.forEach((si, i) => {
       const globalIdx = startIdx + i + 1;
@@ -9676,18 +9501,9 @@ bot.on('callback_query', async (query) => {
       if (currentPage < totalPages - 1) nav.push({ text: '➡️', callback_data: `so:quickeditrak:${rakName}:${currentPage + 1}` });
       buttons.push(nav);
     }
-    buttons.push([{ text: '📋 View Detail', callback_data: `so:editrak:${rakName}:0` }, { text: '🔍 Cari', callback_data: `so:searchinrak:${rakName}` }]);
+    buttons.push([{ text: '📋 View Detail', callback_data: `so:editrak:${rakName}:0` }]);
     buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
     await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons } });
-    return;
-  }
-  
-  // ════════════ STOCK OPNAME: SEARCH ITEM DI RAK ════════════
-  
-  if (data.startsWith('so:searchinrak:')) {
-    const rakName = data.replace('so:searchinrak:', '');
-    updateSesi(userId, { soSearchInRak: rakName, soSearchMode: true });
-    await kirim(chatId, `🔍 *CARI ITEM DI RAK: ${rakName}*\n${GARIS_TEBAL}\n\nKetik nama atau kode barang.\n\n*Contoh:*\n• \`sendok\`\n• \`tempat kue\`\n• \`NN13863\`\n\n💡 Ketik *batal* untuk kembali.`, { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali ke Edit Rak', callback_data: `so:editrak:${rakName}:0` }], [{ text: '🔙 Menu SO', callback_data: 'so:kembali' }]] } });
     return;
   }
   
@@ -9703,11 +9519,15 @@ bot.on('callback_query', async (query) => {
     if (!itemData || !itemData.entries.length) return kirim(chatId, '⚠️ Item tidak ditemukan.', { reply_markup: kbSOAktif() });
     
     const item = DATA_BARANG.find(d => d.kode === kode);
-    const nama = item?.nama || kode;
+    let nama = item?.nama || kode;
+    if (kode.startsWith('NEW_')) {
+      const baru = getBarangBaruSO(session.tokoKode).find(b => b.kode === kode);
+      if (baru) nama = baru.nama;
+    }
     let totalQty = 0;
     itemData.entries.forEach(e => totalQty += e.qty);
     
-    let m = `✏️ *EDIT ITEM*\n${GARIS_TEBAL}\n📦 ${escapeMd(nama)}\n🔖 \`${kode}\`\n📍 Rak: ${rakName}\n📊 Total: ${totalQty}\n\n`;
+    let m = `✏️ *EDIT ITEM*\n${GARIS_TEBAL}\n📦 ${escapeMd(nama)}\n🔖 \`${kode}\`${kode.startsWith('NEW_') ? ' 🆕' : ''}\n📍 Rak: ${rakName}\n📊 Total: ${totalQty}\n\n`;
     const buttons = [];
     itemData.entries.forEach((entry, i) => {
       m += `${i+1}. *${entry.namaPetugas}* | ${entry.jenis} | Qty: *${entry.qty}*\n   ⏰ ${entry.jamInput}\n\n`;
@@ -9729,8 +9549,13 @@ bot.on('callback_query', async (query) => {
     const entry = items[kode]?.entries?.[entryIndex];
     if (!entry) return kirim(chatId, '⚠️ Entry tidak ditemukan.', { reply_markup: kbSOAktif() });
     const item = DATA_BARANG.find(d => d.kode === kode);
+    let nama = item?.nama || kode;
+    if (kode.startsWith('NEW_')) {
+      const baru = getBarangBaruSO(session.tokoKode).find(b => b.kode === kode);
+      if (baru) nama = baru.nama;
+    }
     updateSesi(userId, { soEditMode: true, soEditInfo: { rak: rakName, kode: kode, entryIndex: entryIndex } });
-    await kirim(chatId, `✏️ *EDIT QTY*\n${GARIS_TEBAL}\n📦 ${escapeMd(item?.nama || kode)}\n📍 Rak: ${rakName}\n👤 ${entry.namaPetugas}\n📊 Qty saat ini: *${entry.qty}*\n${GARIS_TIPIS}\n\n💬 *Ketik:*\n• Angka baru: \`10\` (ganti jadi 10)\n• Tambah: \`+5\`\n• Kurangi: \`-3\`\n• \`0\` atau \`hapus\` untuk hapus entry`);
+    await kirim(chatId, `✏️ *EDIT QTY*\n${GARIS_TEBAL}\n📦 ${escapeMd(nama)}\n📍 Rak: ${rakName}\n👤 ${entry.namaPetugas}\n📊 Qty saat ini: *${entry.qty}*\n${GARIS_TIPIS}\n\n💬 *Ketik:*\n• Angka baru: \`10\`\n• Tambah: \`+5\`\n• Kurangi: \`-3\`\n• \`0\` atau \`hapus\` untuk hapus`);
     return;
   }
   
@@ -9741,7 +9566,12 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     if (typeof hapusItemSO === 'function') hapusItemSO(session.tokoKode, rakName, kode);
     const item = DATA_BARANG.find(d => d.kode === kode);
-    await kirim(chatId, `🗑️ *${escapeMd(item?.nama || kode)}* dihapus dari ${rakName}!`, { reply_markup: kbSOAktif() });
+    let nama = item?.nama || kode;
+    if (kode.startsWith('NEW_')) {
+      const baru = getBarangBaruSO(session.tokoKode).find(b => b.kode === kode);
+      if (baru) nama = baru.nama;
+    }
+    await kirim(chatId, `🗑️ *${escapeMd(nama)}* dihapus dari ${rakName}!`, { reply_markup: kbSOAktif() });
     return;
   }
   
@@ -9751,14 +9581,14 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     if (!session.tokoKode) return;
     const namaToko = NAMA_TOKO[session.tokoKode];
-    await kirim(chatId, '📊 _Membuat laporan & Excel gabungan..._');
+    await kirim(chatId, '📊 _Membuat laporan & Excel gabungan (dengan foto)..._\n_Ini mungkin memakan waktu jika banyak foto._');
     try {
       const laporan = generateLaporanSOGabungan(session.tokoKode, namaToko);
       await kirim(chatId, laporan);
-      const excelPath = generateExcelSOGabungan(session.tokoKode, namaToko);
+      const excelPath = await generateExcelSOGabungan(session.tokoKode, namaToko);
       await bot.sendDocument(chatId, excelPath, {}, { filename: `SO_Gabungan_${session.tokoKode.toUpperCase()}_${getTanggalSlash(false).replace(/\//g, '-')}.xlsx` });
       try { fs.unlinkSync(excelPath); } catch(e) {}
-      await kirim(chatId, '✅ *Excel gabungan terkirim!*\n💡 Data SO tetap tersimpan.', { reply_markup: kbSOAktif() });
+      await kirim(chatId, '✅ *Excel gabungan terkirim!*\n📸 Foto barang baru sudah embedded di Excel.', { reply_markup: kbSOAktif() });
     } catch(err) {
       log.error('SO-EXPORT', err.message);
       await kirim(chatId, '❌ Gagal: ' + err.message);
@@ -9770,16 +9600,16 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     if (!session.tokoKode) return;
     const namaToko = NAMA_TOKO[session.tokoKode];
-    await kirim(chatId, '📊 _Membuat Excel gabungan..._');
+    await kirim(chatId, '📊 _Membuat Excel gabungan (dengan foto)..._');
     try {
       const laporan = generateLaporanSOGabungan(session.tokoKode, namaToko);
       await kirim(chatId, laporan);
-      const excelPath = generateExcelSOGabungan(session.tokoKode, namaToko);
+      const excelPath = await generateExcelSOGabungan(session.tokoKode, namaToko);
       await bot.sendDocument(chatId, excelPath, {}, { filename: `SO_Gabungan_${session.tokoKode.toUpperCase()}_${getTanggalSlash(false).replace(/\//g, '-')}.xlsx` });
       try { fs.unlinkSync(excelPath); } catch(e) {}
       if (typeof leaveSesiSO === 'function') leaveSesiSO(session.tokoKode, userId);
       resetSesi(userId);
-      await kirim(chatId, '✅ *SO Anda selesai!*\n📥 Excel terkirim.\n💡 Data tetap tersimpan untuk user lain.', { reply_markup: kbMainMenu(userId) });
+      await kirim(chatId, '✅ *SO Anda selesai!*\n📥 Excel terkirim (dengan foto).\n💡 Data tetap tersimpan untuk user lain.', { reply_markup: kbMainMenu(userId) });
     } catch(err) {
       log.error('SO-FINISH', err.message);
       await kirim(chatId, '❌ Gagal: ' + err.message);
@@ -9799,7 +9629,7 @@ bot.on('callback_query', async (query) => {
   if (data === 'so:scanrak:pakai') {
     const session = getSesi(userId);
     const namaRak = session.soScanRakPending;
-    if (!namaRak) return kirim(chatId, '⚠️ Data scan hilang. Coba lagi.');
+    if (!namaRak) return kirim(chatId, '⚠️ Data scan hilang.');
     const tokoKode = session.tokoKode;
     if (session.soSetupStep === 'rak' || session.soSetupStep === 'rak_input') {
       session.soInfo.rakAktif = namaRak;
@@ -9845,50 +9675,6 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     if (session.soSetupStep) await kirim(chatId, '🔙 Batal. Kirim foto lagi atau ketik nama manual.');
     else await kirim(chatId, '🔙 Batal.', { reply_markup: kbSOAktif() });
-    return;
-  }
-
-  // ════════════ STOCK OPNAME: TAMBAH BARANG BARU ════════════
-  
-  if (data === 'so:tambahbaru') {
-    const session = getSesi(userId);
-    await handleStockOpnameMode(chatId, userId, 'tambahbaru', session);
-    return;
-  }
-  
-  if (data === 'so:konfirmtambahbaru') {
-    const session = getSesi(userId);
-    const namaBarang = session.soBaruNama;
-    if (!namaBarang) {
-      await kirim(chatId, '⚠️ Data hilang, coba lagi.', { reply_markup: kbSOAktif() });
-      return;
-    }
-    
-    updateSesi(userId, { soTambahBaruStep: 'qty' });
-    
-    await kirim(chatId,
-      `✅ *Nama: ${escapeMd(namaBarang)}*\n${GARIS_TIPIS}\n\n` +
-      `📝 *STEP 2/3: Jumlah Barang*\n\n` +
-      `Ketik:\n` +
-      `• \`TOKO 15\` — stok di toko/rak\n` +
-      `• \`GUDANG 20\` — stok di gudang\n\n` +
-      `📍 Rak: ${session.soInfo?.rakAktif || '-'}`
-    );
-    return;
-  }
-  
-  if (data === 'so:skipfoto') {
-    const session = getSesi(userId);
-    
-    updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null, soBaruKode: null });
-    
-    const totalBaru = (session.soBarangBaru || []).length;
-    await kirim(chatId,
-      `✅ *Barang baru ditambahkan (tanpa foto)*\n\n` +
-      `📦 Total barang baru: *${totalBaru}*\n\n` +
-      `💬 Lanjutkan input barang:`,
-      { reply_markup: kbSOAktif() }
-    );
     return;
   }
   
@@ -9969,7 +9755,7 @@ bot.on('callback_query', async (query) => {
   if (data === 'admin:listkontak' && isAdmin(userId)) {
     let m = `📒 *KONTAK TERSIMPAN (${Object.keys(KONTAK).length})*\n${GARIS_TEBAL}\n\n`;
     const kontakEntries = Object.entries(KONTAK);
-    if (kontakEntries.length === 0) m += '_Belum ada kontak._';
+    if (kontakEntries.length === 0) m += '_Belum ada._';
     else {
       kontakEntries.slice(0, 25).forEach(([id, nama], i) => {
         const isMemberStatus = MEMBERS.includes(id) ? '✅' : '⚠️';
@@ -9977,15 +9763,9 @@ bot.on('callback_query', async (query) => {
       });
       if (kontakEntries.length > 25) m += `_... +${kontakEntries.length - 25} lainnya_\n\n`;
     }
-    m += `${GARIS_TIPIS}\n💡 *Cara Kelola:*\n`;
-    m += `• Ubah nama: \`/setnama [ID] [nama baru]\`\n`;
-    m += `• Cari member: \`/carimember [nama/ID]\`\n`;
-    m += `• Hapus kontak: \`/hapuskontak [ID]\`\n`;
-    try {
-      await bot.editMessageText(m, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } });
-    } catch(e) {
-      await kirim(chatId, m, { reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } });
-    }
+    m += `${GARIS_TIPIS}\n💡 *Kelola:*\n• \`/setnama [ID] [nama]\`\n• \`/carimember [nama]\`\n• \`/hapuskontak [ID]\``;
+    try { await bot.editMessageText(m, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } }); }
+    catch(e) { await kirim(chatId, m, { reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } }); }
     return;
   }
   
@@ -10039,8 +9819,6 @@ bot.on('callback_query', async (query) => {
     try { await bot.editMessageReplyMarkup({ inline_keyboard: [[{ text: '❌ Rejected', callback_data: 'noop' }]] }, { chat_id: chatId, message_id: msgId }); } catch(e) {}
     return;
   }
-  
-  // ════════════ NOOP (dummy callback) ════════════
   
   if (data === 'noop') return;
   
