@@ -1579,10 +1579,7 @@ function generateCaptionBackup(tokoKode, type = 'auto') {
 // Kirim backup Excel ke admin
 async function kirimBackupKeAdmin(tokoKode, type = 'auto', forceKirim = false) {
   try {
-    if (!CONFIG.adminId) {
-      log.warn('BACKUP', 'Admin ID belum diset, skip backup');
-      return false;
-    }
+    if (!CONFIG.adminId) return false;
     
     const shared = SO_SHARED[tokoKode];
     if (!shared) return false;
@@ -1609,34 +1606,57 @@ async function kirimBackupKeAdmin(tokoKode, type = 'auto', forceKirim = false) {
     
     const namaToko = NAMA_TOKO[tokoKode] || tokoKode;
     
-    // Generate Excel
-    const excelPath = generateExcelSOGabungan(tokoKode, namaToko);
+    // ★ Generate Excel (SEKARANG ASYNC karena embed foto!)
+    let excelPath;
+    try {
+      excelPath = await generateExcelSOGabungan(tokoKode, namaToko);
+    } catch(genErr) {
+      log.error('BACKUP', `${tokoKode}: gagal generate Excel: ${genErr.message}`);
+      return false;
+    }
     
-    // Counter backup
+    // ★ VALIDASI FILE ada dan tidak kosong
+    if (!excelPath || !fs.existsSync(excelPath)) {
+      log.error('BACKUP', `${tokoKode}: file Excel tidak ditemukan: ${excelPath}`);
+      return false;
+    }
+    
+    const fileStats = fs.statSync(excelPath);
+    if (fileStats.size === 0) {
+      log.error('BACKUP', `${tokoKode}: file Excel kosong (0 bytes)`);
+      try { fs.unlinkSync(excelPath); } catch(e) {}
+      return false;
+    }
+    
+    // Counter
     BACKUP_TRACKER.backupCount[tokoKode] = (BACKUP_TRACKER.backupCount[tokoKode] || 0) + 1;
     const counter = BACKUP_TRACKER.backupCount[tokoKode];
     
-    // Format filename
     const tgl = getTanggalSlash(false).replace(/\//g, '-');
     const jam = getJamSekarang().replace(':', '');
-    const filename = `SO_${type.toUpperCase()}_${tokoKode.toUpperCase()}_${tgl}_${jam}_#${counter}.xlsx`;
+    const filename = `SO_${type.toUpperCase()}_${tokoKode.toUpperCase()}_${tgl}_${jam}_${counter}.xlsx`;
     
-    // Caption
-    const caption = generateCaptionBackup(tokoKode, type);
+    // ★ Caption TANPA Markdown biar aman
+    const caption = generateCaptionBackupSafe(tokoKode, type);
     
-    // Kirim ke admin
-    await bot.sendDocument(CONFIG.adminId, excelPath, {
-      caption: caption,
-      parse_mode: 'Markdown'
-    }, {
-      filename: filename
-    });
+    try {
+      await bot.sendDocument(CONFIG.adminId, excelPath, {
+        caption: caption,
+        // Tanpa parse_mode biar aman
+      }, {
+        filename: filename,
+      });
+    } catch(sendErr) {
+      log.error('BACKUP', `${tokoKode}: gagal kirim: ${sendErr.message}`);
+      try { fs.unlinkSync(excelPath); } catch(e) {}
+      return false;
+    }
     
     // Hapus file temp
     try { fs.unlinkSync(excelPath); } catch(e) {}
     
     BACKUP_TRACKER.lastBackup[tokoKode] = Date.now();
-    log.info('BACKUP', `✅ Sent backup ${tokoKode} [${type}] to admin`);
+    log.info('BACKUP', `✅ Sent ${tokoKode} [${type}] ke admin (${(fileStats.size / 1024).toFixed(1)} KB)`);
     return true;
   } catch(err) {
     log.error('BACKUP', `Failed ${tokoKode}: ${err.message}`);
@@ -1644,20 +1664,87 @@ async function kirimBackupKeAdmin(tokoKode, type = 'auto', forceKirim = false) {
   }
 }
 
-// Backup SEMUA toko yang ada SO aktif
-async function backupSemuaToko(type = 'periodic') {
-  const tokoList = Object.keys(SO_SHARED).filter(tokoKode => {
-    const shared = SO_SHARED[tokoKode];
-    return shared && Object.keys(shared.racks || {}).length > 0;
+// Caption safe tanpa Markdown
+function generateCaptionBackupSafe(tokoKode, type) {
+  const shared = SO_SHARED[tokoKode];
+  const namaToko = NAMA_TOKO[tokoKode] || tokoKode;
+  
+  if (!shared) return `Backup SO ${namaToko}`;
+  
+  const usersAktif = Object.keys(shared.usersAktif || {}).length;
+  const totalRak = Object.keys(shared.racks || {}).length;
+  const totalBarangBaru = (shared.barangBaru || []).length;
+  
+  let totalItems = 0;
+  Object.values(shared.racks || {}).forEach(rackData => {
+    totalItems += Object.keys(rackData.items || {}).length;
   });
   
-  if (tokoList.length === 0) return;
+  const allPetugas = new Set();
+  Object.values(shared.usersAktif || {}).forEach(u => {
+    (u.petugas || [u.nama]).forEach(p => allPetugas.add(p));
+  });
+  Object.values(shared.racks || {}).forEach(rackData => {
+    Object.values(rackData.items || {}).forEach(itemData => {
+      itemData.entries.forEach(e => allPetugas.add(e.namaPetugas));
+    });
+  });
   
-  log.info('BACKUP', `Backup ${tokoList.length} toko [${type}]`);
+  let typeLabel = 'AUTO';
+  if (type === 'crash') typeLabel = 'EMERGENCY';
+  else if (type === 'manual') typeLabel = 'MANUAL';
+  else if (type === 'periodic') typeLabel = 'PERIODIC';
+  else if (type === 'event') typeLabel = 'REAL-TIME';
   
-  for (const tokoKode of tokoList) {
-    await kirimBackupKeAdmin(tokoKode, type, type === 'crash' || type === 'manual');
-    await tunggu(1500); // Jeda 1.5s antar kirim (anti rate-limit Telegram)
+  return `BACKUP SO [${typeLabel}]\n` +
+    `Toko: ${namaToko}\n` +
+    `Tanggal: ${getTanggalSlash(false)} ${getJamSekarang()}\n` +
+    `----------\n` +
+    `Petugas: ${[...allPetugas].join(', ') || '-'}\n` +
+    `User aktif: ${usersAktif}\n` +
+    `Rak: ${totalRak}\n` +
+    `Total barang: ${totalItems} jenis\n` +
+    `Barang baru: ${totalBarangBaru}`;
+}
+
+// Backup SEMUA toko yang ada SO aktif
+let isBackupRunning = false;
+
+async function backupSemuaToko(type = 'periodic') {
+  // ★ Prevent overlapping
+  if (isBackupRunning) {
+    log.info('BACKUP', 'Backup masih running, skip cycle ini');
+    return;
+  }
+  
+  isBackupRunning = true;
+  
+  try {
+    const tokoList = Object.keys(SO_SHARED).filter(tokoKode => {
+      const shared = SO_SHARED[tokoKode];
+      return shared && Object.keys(shared.racks || {}).length > 0;
+    });
+    
+    if (tokoList.length === 0) {
+      log.info('BACKUP', 'Tidak ada toko aktif, skip');
+      return;
+    }
+    
+    log.info('BACKUP', `Backup ${tokoList.length} toko [${type}]`);
+    
+    for (const tokoKode of tokoList) {
+      try {
+        await kirimBackupKeAdmin(tokoKode, type, type === 'crash' || type === 'manual');
+        // Jeda 3 detik antar toko (biar tidak rate limit + kasih waktu process)
+        await tunggu(3000);
+      } catch(err) {
+        log.error('BACKUP', `${tokoKode}: ${err.message}`);
+      }
+    }
+    
+    log.info('BACKUP', 'Backup cycle selesai');
+  } finally {
+    isBackupRunning = false;
   }
 }
 
@@ -1674,21 +1761,19 @@ async function emergencyBackup() {
 
 // Start auto-backup interval
 function startAutoBackup() {
-  // Stop previous timer kalau ada
   if (BACKUP_TRACKER.intervalTimer) {
     clearInterval(BACKUP_TRACKER.intervalTimer);
   }
   
-  // Backup setiap 2 menit (kalau ada perubahan)
-  const INTERVAL_MS = 2 * 60 * 1000; // 2 menit
+  // ★ Ubah dari 2 menit → 5 menit (biar tidak spam + tidak overlap)
+  const INTERVAL_MS = 5 * 60 * 1000; // 5 menit
   
   BACKUP_TRACKER.intervalTimer = setInterval(async () => {
     await backupSemuaToko('periodic');
   }, INTERVAL_MS);
   
-  log.info('BACKUP', `✅ Auto-backup started (interval: 2 menit)`);
+  log.info('BACKUP', `✅ Auto-backup started (interval: 5 menit)`);
 }
-
 // Trigger backup setelah event penting (dengan debounce)
 const eventBackupTimers = {};
 
@@ -8031,20 +8116,34 @@ bot.on('photo', async (msg) => {
             updateFotoBarangBaruSO(session.tokoKode, kodeBaru, photo.file_id);
           }
           
-          // Forward foto ke admin sebagai backup dokumentasi
+                    // Forward foto ke admin sebagai backup dokumentasi
           if (CONFIG.adminId) {
             try {
+              // ★ Escape karakter Markdown biar tidak error
+              const safeName = String(namaBarang).replace(/[_*\[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+              const safeToko = String(namaToko).replace(/[_*\[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+              const safeRak = String(rakAktif).replace(/[_*\[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+              const safeUser = String(getNama(userId) || 'User').replace(/[_*\[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+              
               await bot.sendPhoto(CONFIG.adminId, photo.file_id, {
-                caption: `📸 *FOTO BARANG BARU (SO)*\n\n` +
-                  `🏦 ${namaToko}\n` +
-                  `📦 ${namaBarang}\n` +
-                  `🔖 ${kodeBaru}\n` +
-                  `📍 Rak: ${rakAktif}\n` +
-                  `👤 ${getNama(userId) || 'User'}\n` +
-                  `⏰ ${getJamSekarang()}`,
-                parse_mode: 'Markdown',
+                caption: `📸 FOTO BARANG BARU (SO)\n\n` +
+                  `🏦 Toko: ${safeToko}\n` +
+                  `📦 Nama: ${safeName}\n` +
+                  `🔖 Kode: ${kodeBaru}\n` +
+                  `📍 Rak: ${safeRak}\n` +
+                  `👤 Petugas: ${safeUser}\n` +
+                  `⏰ Jam: ${getJamSekarang()}`,
+                // ★ TANPA parse_mode biar aman dari karakter aneh
               });
-            } catch(e) { log.warn('SO-FOTO-FWD', 'Gagal forward: ' + e.message); }
+            } catch(e) {
+              log.warn('SO-FOTO-FWD', 'Gagal forward: ' + e.message);
+              // Retry tanpa caption
+              try {
+                await bot.sendPhoto(CONFIG.adminId, photo.file_id);
+              } catch(e2) {
+                log.error('SO-FOTO-FWD', 'Retry gagal: ' + e2.message);
+              }
+            }
           }
           
           updateSesi(userId, { 
