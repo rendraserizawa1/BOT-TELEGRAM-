@@ -74,6 +74,58 @@
           }
         ]
       }
+    },
+    {
+      "timestamp": 1785319287420,
+      "tanggal": "27/07/2026",
+      "sharedData": {
+        "tanggal": "27/07/2026",
+        "sesiAktif": true,
+        "racks": {
+          "Rak plastik": {
+            "items": {
+              "NEW_MS2UGAKK": {
+                "entries": [
+                  {
+                    "userId": "8997270739",
+                    "namaPetugas": "Budi",
+                    "qty": 12,
+                    "jenis": "fisik",
+                    "jamInput": "14:26",
+                    "timestamp": 1785133596548
+                  }
+                ]
+              }
+            },
+            "createdBy": "8997270739",
+            "createdAt": 1785133584455
+          }
+        },
+        "usersAktif": {
+          "8997270739": {
+            "nama": "Budi",
+            "petugas": [
+              "Budi"
+            ],
+            "rakAktif": "Rak plastik",
+            "jamMulai": "14:26",
+            "lastActive": 1785133596548
+          }
+        },
+        "barangBaru": [
+          {
+            "kode": "NEW_MS2UGAKK",
+            "nama": "BAJU BOLA",
+            "rak": "Rak plastik",
+            "jenis": "fisik",
+            "qty": 12,
+            "petugas": "Budi",
+            "jam": "14:26",
+            "fotoFileId": "AgACAgUAAxkBAAIzImpm-iVEkcaKf0WXM_zq2Zun92URAAL-FGsbcos5V6AXQ_Duc16xAQADAgADeQADPQQ",
+            "timestamp": 1785133596549
+          }
+        ]
+      }
     }
   ]
 }
