@@ -23,6 +23,14 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Download data from private repo
+        run: |
+          git clone --depth 1 --branch ${{ secrets.GH_BRANCH }} https://x-access-token:${{ secrets.GH_STORAGE_TOKEN }}@github.com/${{ secrets.GH_USERNAME }}/${{ secrets.GH_REPO }}.git _data
+          cp -r _data/harga_toko ./
+          cp -r _data/data-storage ./data-storage
+          cp -r _data/data ./data || true
+          rm -rf _data
+
       - name: Start bot
         run: node index.js
         env:
