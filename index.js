@@ -7377,6 +7377,27 @@ bot.onText(/\/info/, (msg) => {
   );
 });
 
+bot.onText(/\/gambar (.+)/, async (msg, match) => {
+  const userId = msg.from.id;
+  const chatId = msg.chat.id;
+  if (!isMember(userId)) return kirim(chatId, '⚠️ Anda belum jadi member. Ketik /request <nama> dulu.');
+  
+  const prompt = match[1].trim();
+  if (!prompt) return kirim(chatId, '⚠️ Format: /gambar <deskripsi gambar>');
+  
+  const status = await kirim(chatId, '🎨 _Sedang menggambar... (bisa 10-30 detik)_');
+  try {
+    const url = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt) + '?width=1024&height=1024&nologo=true&seed=' + Math.floor(Math.random()*100000);
+    const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000 });
+    if (!resp.data || resp.data.length < 1000) throw new Error('Gambar kosong');
+    await bot.sendPhoto(chatId, Buffer.from(resp.data), { caption: `🎨 *${escapeMd(prompt)}*` });
+    try { await bot.deleteMessage(chatId, status.message_id); } catch(e) {}
+  } catch(err) {
+    log.error('GAMBAR', err.message);
+    await kirim(chatId, '❌ Gagal generate gambar: ' + (err.message || 'unknown error'));
+  }
+});
+
 bot.onText(/\/approve (\d+)/, (msg, match) => {
   if (!isAdmin(msg.from.id)) return;
   approveUser(msg.chat.id, match[1]);
