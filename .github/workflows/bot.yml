@@ -28,6 +28,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          BOT_USERNAME: ${{ secrets.BOT_USERNAME }}
           GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
           GEMINI_KEY2: ${{ secrets.GEMINI_KEY2 }}
           GEMINI_KEY3: ${{ secrets.GEMINI_KEY3 }}
@@ -36,7 +37,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_STORAGE_TOKEN }}
           GITHUB_USERNAME: ${{ secrets.GH_USERNAME }}
           GITHUB_REPO: ${{ secrets.GH_REPO }}
+          GITHUB_BRANCH: ${{ secrets.GH_BRANCH }}
+          ENCRYPT_PASSWORD: ${{ secrets.ENCRYPT_PASSWORD }}
           DASHBOARD_USER: ${{ secrets.DASHBOARD_USER }}
           DASHBOARD_PASS: ${{ secrets.DASHBOARD_PASS }}
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          PORT: ${{ secrets.PORT }}
           MAX_MEMBER: ${{ secrets.MAX_MEMBER }}
