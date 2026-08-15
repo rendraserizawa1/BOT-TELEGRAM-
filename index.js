@@ -1880,7 +1880,7 @@ async function visionGemini(imageBuffer, prompt) {
 
 async function visionGroq(imageBuffer, prompt) {
   if (!CONFIG.groqKey || !Buffer.isBuffer(imageBuffer)) return null;
-  const MODELS = ['meta-llama/llama-4-scout-17b-16e-instruct', 'llama-3.3-70b-versatile'];
+  const MODELS = ['qwen/qwen3.6-27b'];
   const imageBase64 = imageBuffer.toString('base64');
   
   for (const model of MODELS) {
@@ -1916,8 +1916,8 @@ async function visionGroq(imageBuffer, prompt) {
 async function visionOpenRouter(imageBuffer, prompt) {
   if (!CONFIG.openrouterKey || !Buffer.isBuffer(imageBuffer)) return null;
   const MODELS = [
-    'meta-llama/llama-3.2-b-vision-instruct:free',
-    'qwen/qwen-2-vl-7b-instruct:free',
+    'google/gemini-3.1-flash-lite',
+    'google/gemini-3.5-flash',
   ];
   const imageBase64 = imageBuffer.toString('base64');
   
