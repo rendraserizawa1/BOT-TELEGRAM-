@@ -1,9 +1,9 @@
 'use strict';
 
-// ════════════════════════════════════════════════════════════════
-//   🤖 BOT TELEGRAM TOKO PERABOT v4.0 - FULL REFACTORED
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+//   ðŸ¤– BOT TELEGRAM TOKO PERABOT v4.0 - FULL REFACTORED
 //   Fitur: Cari, AI Chat, Voice, Scan Foto, SO Multi-User, BA, Laporan
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
@@ -16,9 +16,9 @@ const ExcelJS = require('exceljs');
 const express = require('express');
 const session = require('express-session');
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   1. KONFIGURASI
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const CONFIG = {
   appName: 'Bot Telegram Toko Perabot v4.0',
@@ -65,12 +65,12 @@ const CONFIG = {
 };
 
 if (!CONFIG.botToken) {
-  console.error('\n❌ ERROR: BOT_TOKEN tidak ada!\n');
+  console.error('\nâŒ ERROR: BOT_TOKEN tidak ada!\n');
   process.exit(1);
 }
 
 if (!CONFIG.geminiKey) {
-  console.warn('⚠️ WARNING: GEMINI_KEY belum diisi, AI scan tidak optimal');
+  console.warn('âš ï¸ WARNING: GEMINI_KEY belum diisi, AI scan tidak optimal');
 }
 
 // Buat folder yang dibutuhkan
@@ -78,19 +78,19 @@ if (!CONFIG.geminiKey) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   2. EMOJI & DATA TOKO
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-const EMOJI_NUM = ['0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
+const EMOJI_NUM = ['0ï¸âƒ£','1ï¸âƒ£','2ï¸âƒ£','3ï¸âƒ£','4ï¸âƒ£','5ï¸âƒ£','6ï¸âƒ£','7ï¸âƒ£','8ï¸âƒ£','9ï¸âƒ£','ðŸ”Ÿ'];
 function emojiNum(n) { return (n >= 0 && n <= 10) ? EMOJI_NUM[n] : String(n); }
 
 const TOKO_LIST = [
-  { kode: 'nk',     nama: 'Nasional Kitchen',          icon: '🏬', alias: ['nk','nasional','kitchen'] },
-  { kode: 'tdm',    nama: 'Perabot Mama TDM',          icon: '🏪', alias: ['tdm','mama tdm'] },
-  { kode: 'oesapa', nama: 'Perabot Mama Oesapa',       icon: '🏬', alias: ['oesapa','mama oesapa'] },
-  { kode: 'kefa',   nama: 'Perabot Mamaku Kefamenanu', icon: '🏪', alias: ['kefa','mamaku','kefamenanu'] },
-  { kode: 'cp',     nama: 'Central Perabot',           icon: '🏢', alias: ['cp','central','alak'] },
+  { kode: 'nk',     nama: 'Nasional Kitchen',          icon: 'ðŸ¬', alias: ['nk','nasional','kitchen'] },
+  { kode: 'tdm',    nama: 'Perabot Mama TDM',          icon: 'ðŸª', alias: ['tdm','mama tdm'] },
+  { kode: 'oesapa', nama: 'Perabot Mama Oesapa',       icon: 'ðŸ¬', alias: ['oesapa','mama oesapa'] },
+  { kode: 'kefa',   nama: 'Perabot Mamaku Kefamenanu', icon: 'ðŸª', alias: ['kefa','mamaku','kefamenanu'] },
+  { kode: 'cp',     nama: 'Central Perabot',           icon: 'ðŸ¢', alias: ['cp','central','alak'] },
 ];
 
 const TOKO_COLS = {
@@ -164,7 +164,7 @@ const SCAN_PROMPTS = {
   parkir_luar: 'Baca gambar laporan PARKIR STOR LUAR. Ambil total nominal. Jawab HANYA angka.',
   
   barang_baru_only: `Baca gambar daftar BARANG BARU dengan SANGAT TELITI.
-⚠️ PENTING: Ambil SEMUA nama barang TANPA TERPOTONG! Jangan cuma 5 item!
+âš ï¸ PENTING: Ambil SEMUA nama barang TANPA TERPOTONG! Jangan cuma 5 item!
 Kalau ada 50 barang, tulis SEMUA 50 barang.
 
 Jawab dengan format:
@@ -182,7 +182,7 @@ ATURAN:
 Sekarang baca SEMUA barang di foto:`,
   
   barang_naik_only: `Baca gambar daftar BARANG NAIK HARGA dengan SANGAT TELITI.
-⚠️ PENTING: Ambil SEMUA nama barang TANPA TERPOTONG!
+âš ï¸ PENTING: Ambil SEMUA nama barang TANPA TERPOTONG!
 Kalau ada 50 barang, tulis SEMUA 50 barang.
 
 Format:
@@ -200,7 +200,7 @@ ATURAN:
 Sekarang baca SEMUA:`,
   
   barang_turun_only: `Baca gambar daftar BARANG TURUN HARGA dengan SANGAT TELITI.
-⚠️ PENTING: Ambil SEMUA nama barang TANPA TERPOTONG!
+âš ï¸ PENTING: Ambil SEMUA nama barang TANPA TERPOTONG!
 
 Format:
 - Nama Barang 1
@@ -222,16 +222,16 @@ ATURAN: HURUF BESAR, qty tanpa koma, hanya JSON.`,
 };
 
 const KATA_RESET = ['batal','mulai','start','keluar','exit','stop','reset','/start','/menu','/batal'];
-const GARIS_TEBAL = '━━━━━━━━━━━━━━━━━━';
-const GARIS_TIPIS = '──────────────────';
+const GARIS_TEBAL = 'â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”';
+const GARIS_TIPIS = 'â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€';
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   3. LOGGER
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function timestamp() {
   const formatter = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Makassar', // ← WITA
+    timeZone: 'Asia/Makassar', // â† WITA
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
   });
@@ -251,9 +251,9 @@ const log = {
   },
 };
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   4. STORAGE HELPERS
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function loadJSON(filePath, def) {
   try {
@@ -310,9 +310,9 @@ function decrypt(text) {
     return decrypted;
   } catch(e) { return text; }
 }
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   4B. GITHUB STORAGE - Data Permanent (FIXED - Reliable Sync)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const GITHUB_CONFIG = {
   token: process.env.GITHUB_TOKEN || '',
@@ -324,7 +324,7 @@ const GITHUB_CONFIG = {
 
 // Safety check
 if (GITHUB_CONFIG.branch === 'main' || GITHUB_CONFIG.branch === 'master') {
-  console.error('🚨 CRITICAL: GITHUB_BRANCH tidak boleh "main" atau "master"! Set ke "data-storage"');
+  console.error('ðŸš¨ CRITICAL: GITHUB_BRANCH tidak boleh "main" atau "master"! Set ke "data-storage"');
   GITHUB_CONFIG.token = '';
 }
 
@@ -340,17 +340,17 @@ if (isGitHubEnabled) {
   try {
     const { Octokit } = require('@octokit/rest');
     githubClient = new Octokit({ auth: GITHUB_CONFIG.token });
-    console.log('═'.repeat(60));
-    console.log(`✅ [GITHUB] Storage aktif`);
-    console.log(`   📁 Repo: ${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}`);
-    console.log(`   🌿 Branch: ${GITHUB_CONFIG.branch}`);
-    console.log(`   📂 Folder: ${GITHUB_CONFIG.folder}/`);
-    console.log('═'.repeat(60));
+    console.log('â•'.repeat(60));
+    console.log(`âœ… [GITHUB] Storage aktif`);
+    console.log(`   ðŸ“ Repo: ${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}`);
+    console.log(`   ðŸŒ¿ Branch: ${GITHUB_CONFIG.branch}`);
+    console.log(`   ðŸ“‚ Folder: ${GITHUB_CONFIG.folder}/`);
+    console.log('â•'.repeat(60));
   } catch(e) {
-    console.error('❌ [GITHUB] Gagal init:', e.message);
+    console.error('âŒ [GITHUB] Gagal init:', e.message);
   }
 } else {
-  console.warn('⚠️ [GITHUB] Storage NONAKTIF - Data hanya di memory!');
+  console.warn('âš ï¸ [GITHUB] Storage NONAKTIF - Data hanya di memory!');
   console.warn('   Set GITHUB_TOKEN, GITHUB_USERNAME, GITHUB_REPO di Railway Variables');
 }
 
@@ -358,7 +358,7 @@ const githubFileSHA = {};
 const lastCommitTime = {};
 const MIN_COMMIT_INTERVAL = 60 * 1000; // 1 menit (dulu 2 menit, dipercepat)
 
-// ═══ LOAD dari GitHub ═══
+// â•â•â• LOAD dari GitHub â•â•â•
 async function loadFromGitHub(fileName) {
   if (!isGitHubEnabled) return null;
   
@@ -376,21 +376,21 @@ async function loadFromGitHub(fileName) {
       const content = Buffer.from(response.data.content, 'base64').toString('utf8');
       const parsed = JSON.parse(content);
       const size = Array.isArray(parsed) ? parsed.length : Object.keys(parsed).length;
-      console.log(`✅ [GITHUB] Loaded ${fileName}.json (${size} items)`);
+      console.log(`âœ… [GITHUB] Loaded ${fileName}.json (${size} items)`);
       return parsed;
     }
     return null;
   } catch(err) {
     if (err.status === 404) {
-      console.log(`ℹ️ [GITHUB] ${fileName}.json belum ada (akan dibuat)`);
+      console.log(`â„¹ï¸ [GITHUB] ${fileName}.json belum ada (akan dibuat)`);
     } else {
-      console.warn(`⚠️ [GITHUB] Load ${fileName}: ${err.message}`);
+      console.warn(`âš ï¸ [GITHUB] Load ${fileName}: ${err.message}`);
     }
     return null;
   }
 }
 
-// ═══ SAVE ke GitHub (dengan retry) ═══
+// â•â•â• SAVE ke GitHub (dengan retry) â•â•â•
 async function saveToGitHub(fileName, data, retryCount = 0) {
   if (!isGitHubEnabled) return false;
   
@@ -431,30 +431,30 @@ async function saveToGitHub(fileName, data, retryCount = 0) {
     
     lastCommitTime[fileName] = Date.now();
     const size = Array.isArray(data) ? data.length : Object.keys(data).length;
-    console.log(`✅ [GITHUB] Saved ${fileName}.json (${size} items)`);
+    console.log(`âœ… [GITHUB] Saved ${fileName}.json (${size} items)`);
     return true;
   } catch(err) {
     // Retry kalau conflict (SHA lama)
     if (err.status === 409 && retryCount < 3) {
-      console.warn(`⚠️ [GITHUB] ${fileName}: Conflict, retry ${retryCount + 1}...`);
+      console.warn(`âš ï¸ [GITHUB] ${fileName}: Conflict, retry ${retryCount + 1}...`);
       delete githubFileSHA[fileName]; // Reset SHA, ambil terbaru
       await new Promise(r => setTimeout(r, 1000));
       return saveToGitHub(fileName, data, retryCount + 1);
     }
     
-    console.error(`❌ [GITHUB] Save ${fileName} FAIL: ${err.message}`);
+    console.error(`âŒ [GITHUB] Save ${fileName} FAIL: ${err.message}`);
     return false;
   }
 }
 
-// ═══ LOAD SEMUA saat startup (PENTING!) ═══
+// â•â•â• LOAD SEMUA saat startup (PENTING!) â•â•â•
 async function loadAllFromGitHubSync() {
   if (!isGitHubEnabled) {
-    console.warn('⚠️ [GITHUB] Skip startup sync: GitHub tidak aktif');
+    console.warn('âš ï¸ [GITHUB] Skip startup sync: GitHub tidak aktif');
     return;
   }
   
-  console.log('🔄 [GITHUB] Loading data dari GitHub branch: ' + GITHUB_CONFIG.branch);
+  console.log('ðŸ”„ [GITHUB] Loading data dari GitHub branch: ' + GITHUB_CONFIG.branch);
   
   let loadedCount = 0;
   
@@ -515,37 +515,37 @@ async function loadAllFromGitHubSync() {
       // Jeda 300ms antar request biar tidak rate-limit
       await new Promise(r => setTimeout(r, 300));
     } catch(err) {
-      console.error(`❌ [GITHUB] Error load ${fileName}: ${err.message}`);
+      console.error(`âŒ [GITHUB] Error load ${fileName}: ${err.message}`);
     }
   }
   
-  console.log('═'.repeat(60));
-  console.log(`✅ [GITHUB] Startup sync complete: ${loadedCount}/${GITHUB_SYNC_FILES.length} files loaded`);
-  console.log(`   👥 Members: ${MEMBERS.length}`);
-  console.log(`   📒 Kontak: ${Object.keys(KONTAK).length}`);
-  console.log(`   🔔 Pending: ${Object.keys(PENDING).length}`);
-  console.log(`   📊 Staff: ${ROLE_LAPORAN.length}`);
-  console.log('═'.repeat(60));
+  console.log('â•'.repeat(60));
+  console.log(`âœ… [GITHUB] Startup sync complete: ${loadedCount}/${GITHUB_SYNC_FILES.length} files loaded`);
+  console.log(`   ðŸ‘¥ Members: ${MEMBERS.length}`);
+  console.log(`   ðŸ“’ Kontak: ${Object.keys(KONTAK).length}`);
+  console.log(`   ðŸ”” Pending: ${Object.keys(PENDING).length}`);
+  console.log(`   ðŸ“Š Staff: ${ROLE_LAPORAN.length}`);
+  console.log('â•'.repeat(60));
 }
 
-// ═══ DEBOUNCED SAVE (biar tidak spam commit) ═══
+// â•â•â• DEBOUNCED SAVE (biar tidak spam commit) â•â•â•
 const githubSaveTimers = {};
 const DEBOUNCE_DELAY = 30000; // 30 detik (lebih cepat dari 60)
 
 function saveToGitHubDebounced(fileName, data) {
   if (!isGitHubEnabled) {
-    console.log(`⚠️ [GITHUB] Skip save ${fileName}: GitHub tidak aktif`);
+    console.log(`âš ï¸ [GITHUB] Skip save ${fileName}: GitHub tidak aktif`);
     return;
   }
   
-  console.log(`⏳ [GITHUB] Queue save ${fileName} (debounce ${DEBOUNCE_DELAY/1000}s)`);
+  console.log(`â³ [GITHUB] Queue save ${fileName} (debounce ${DEBOUNCE_DELAY/1000}s)`);
   
   if (githubSaveTimers[fileName]) {
     clearTimeout(githubSaveTimers[fileName]);
   }
   
   githubSaveTimers[fileName] = setTimeout(() => {
-    saveToGitHub(fileName, data).catch(e => console.error(`❌ [GITHUB] ${e.message}`));
+    saveToGitHub(fileName, data).catch(e => console.error(`âŒ [GITHUB] ${e.message}`));
     delete githubSaveTimers[fileName];
   }, DEBOUNCE_DELAY);
 }
@@ -553,7 +553,7 @@ function saveToGitHubDebounced(fileName, data) {
 // Save reference SEBELUM override
 const _origSaveJSON = saveJSON;
 
-// ═══ OVERRIDE saveJSON supaya auto-sync ke GitHub ═══
+// â•â•â• OVERRIDE saveJSON supaya auto-sync ke GitHub â•â•â•
 saveJSON = function(filePath, data) {
   // Save ke lokal dulu (cepat)
   const result = _origSaveJSON(filePath, data);
@@ -563,16 +563,16 @@ saveJSON = function(filePath, data) {
   
   // Sync ke GitHub kalau termasuk file yang perlu di-sync
   if (GITHUB_SYNC_FILES.includes(fileName)) {
-    console.log(`💾 [SAVE] ${fileName}.json → memory + local + GitHub queue`);
+    console.log(`ðŸ’¾ [SAVE] ${fileName}.json â†’ memory + local + GitHub queue`);
     saveToGitHubDebounced(fileName, data);
   }
   
   return result;
 };
 
-// ═══ FORCE FLUSH sebelum shutdown ═══
+// â•â•â• FORCE FLUSH sebelum shutdown â•â•â•
 async function flushGitHubSaves() {
-  console.log('🔄 [GITHUB] Flushing pending saves...');
+  console.log('ðŸ”„ [GITHUB] Flushing pending saves...');
   const pending = Object.keys(githubSaveTimers);
   
   for (const fileName of pending) {
@@ -594,40 +594,40 @@ async function flushGitHubSaves() {
     if (data) {
       try {
         await saveToGitHub(fileName, data);
-        console.log(`✅ [FLUSH] ${fileName}.json`);
+        console.log(`âœ… [FLUSH] ${fileName}.json`);
       } catch(e) {
-        console.error(`❌ [FLUSH] ${fileName}: ${e.message}`);
+        console.error(`âŒ [FLUSH] ${fileName}: ${e.message}`);
       }
     }
   }
 }
 
-// ═══ AUTO-LOAD SAAT STARTUP ═══
+// â•â•â• AUTO-LOAD SAAT STARTUP â•â•â•
 // PENTING: Load dari GitHub SEBELUM bot terima command!
 if (isGitHubEnabled) {
-  console.log('🚀 [GITHUB] Auto-load enabled. Loading in 2 seconds...');
+  console.log('ðŸš€ [GITHUB] Auto-load enabled. Loading in 2 seconds...');
   
   // Delay 2 detik biar bot ready dulu, tapi sebelum users mulai chat
   setTimeout(() => {
-    loadAllFromGitHubSync().catch(e => console.error('❌ [GITHUB] Startup fail:', e.message));
+    loadAllFromGitHubSync().catch(e => console.error('âŒ [GITHUB] Startup fail:', e.message));
   }, 2000);
 }
 
 // Flush pending saves saat shutdown
 process.on('SIGTERM', async () => {
-  console.log('🛑 SIGTERM received, flushing GitHub saves...');
+  console.log('ðŸ›‘ SIGTERM received, flushing GitHub saves...');
   await flushGitHubSaves();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
-  console.log('🛑 SIGINT received, flushing GitHub saves...');
+  console.log('ðŸ›‘ SIGINT received, flushing GitHub saves...');
   await flushGitHubSaves();
   process.exit(0);
 });
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   5. ROLE & MEMBER HELPERS
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function isAdmin(userId) {
   return parseInt(userId) === CONFIG.adminId;
@@ -648,10 +648,10 @@ function getNama(userId) {
 }
 
 function getUserRole(userId) {
-  if (isAdmin(userId)) return '👑 Admin';
-  if (bisaAksesLaporan(userId)) return '📊 Staff Laporan';
-  if (isMember(userId)) return '✅ Member';
-  return '👤 Guest';
+  if (isAdmin(userId)) return 'ðŸ‘‘ Admin';
+  if (bisaAksesLaporan(userId)) return 'ðŸ“Š Staff Laporan';
+  if (isMember(userId)) return 'âœ… Member';
+  return 'ðŸ‘¤ Guest';
 }
 
 function tambahMember(id) {
@@ -700,9 +700,9 @@ function hapusRoleLaporan(id) {
   return { ok: true };
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   6. SESSION MANAGEMENT
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const TIMEOUT_MS = CONFIG.sesiTimeoutMenit * 60 * 1000;
 let sesiSaveTimer = null;
@@ -744,9 +744,9 @@ setInterval(() => {
   if (buang > 0) saveJSON(CONFIG.paths.sesi, SESI);
 }, 5 * 60 * 1000);
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   7. UTILITY FUNCTIONS
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function tunggu(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -755,7 +755,7 @@ function getJakartaDate(kemarin) {
   const now = new Date();
   
   const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Makassar', // ← WITA
+    timeZone: 'Asia/Makassar', // â† WITA
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
   });
@@ -802,7 +802,7 @@ function getWaktuKapital() {
 
 function getJamSekarang() {
   const formatter = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Makassar', // ← WITA (Kupang, Makassar, Bali)
+    timeZone: 'Asia/Makassar', // â† WITA (Kupang, Makassar, Bali)
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -849,9 +849,9 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   8. BERITA ACARA & STOCK OPNAME HELPERS
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function simpanStockOpname(tokoKode, data) {
   if (!STOCKOPNAME[tokoKode]) STOCKOPNAME[tokoKode] = [];
@@ -890,9 +890,9 @@ function generateNomorBA(tokoKode) {
   return `BA-${yyyy}${mm}-${dd}${urutan > 1 ? '-' + urutan : ''}`;
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   8B. SHARED STOCK OPNAME HELPERS (Multi-User + Barang Baru + Foto)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function getSOShared(tokoKode) {
   const tanggalHariIni = getTanggalSlash(false);
@@ -1190,21 +1190,21 @@ function formatInfoBarangDiRakLain(tokoKode, kodeBarang, currentRak, currentUser
   
   if (info.length === 0) return '';
   
-  let m = `\n⚠️ *BARANG INI SUDAH ADA DI:*\n──────────────────\n`;
+  let m = `\nâš ï¸ *BARANG INI SUDAH ADA DI:*\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
   info.forEach((inp, i) => {
-    const jenisIcon = inp.jenis === 'fisik' ? '🏪' : '🏭';
+    const jenisIcon = inp.jenis === 'fisik' ? 'ðŸª' : 'ðŸ­';
     m += `${i+1}. *${inp.namaPetugas}* di *${inp.rak}*\n`;
-    m += `   ⏰ ${inp.jamInput} | ${jenisIcon} ${inp.jenis.toUpperCase()}: ${inp.qty}\n`;
+    m += `   â° ${inp.jamInput} | ${jenisIcon} ${inp.jenis.toUpperCase()}: ${inp.qty}\n`;
   });
   
   let totalLain = 0;
   info.forEach(inp => totalLain += inp.qty);
-  m += `\n📦 *Total di rak/user lain:* ${totalLain}\n`;
+  m += `\nðŸ“¦ *Total di rak/user lain:* ${totalLain}\n`;
   
   return m;
 }
 
-// ═══ BARANG BARU (tidak ada di database) ═══
+// â•â•â• BARANG BARU (tidak ada di database) â•â•â•
 
 function tambahBarangBaruSO(tokoKode, data) {
   const shared = getSOShared(tokoKode);
@@ -1242,14 +1242,14 @@ function updateFotoBarangBaruSO(tokoKode, kode, fotoFileId) {
   return false;
 }
 
-// ═══ GENERATE LAPORAN SO GABUNGAN (Text) ═══
+// â•â•â• GENERATE LAPORAN SO GABUNGAN (Text) â•â•â•
 
 function generateLaporanSOGabungan(tokoKode, namaToko) {
   const shared = getSOShared(tokoKode);
   const gabungan = getSOGabunganData(tokoKode);
   const barangBaru = getBarangBaruSO(tokoKode);
   
-  let m = `📋 *LAPORAN STOCK OPNAME GABUNGAN*\n🏦 ${namaToko}\n📅 ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n`;
+  let m = `ðŸ“‹ *LAPORAN STOCK OPNAME GABUNGAN*\nðŸ¦ ${namaToko}\nðŸ“… ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n`;
   
   const allPetugas = new Set();
   Object.values(shared.racks || {}).forEach(rackData => {
@@ -1261,16 +1261,16 @@ function generateLaporanSOGabungan(tokoKode, namaToko) {
     (u.petugas || [u.nama]).forEach(p => allPetugas.add(p));
   });
   
-  m += `👥 *PETUGAS:* ${[...allPetugas].join(', ')}\n\n`;
+  m += `ðŸ‘¥ *PETUGAS:* ${[...allPetugas].join(', ')}\n\n`;
   
-  m += `📦 *RAK DIOPNAME:*\n${GARIS_TIPIS}\n`;
+  m += `ðŸ“¦ *RAK DIOPNAME:*\n${GARIS_TIPIS}\n`;
   Object.entries(shared.racks || {}).forEach(([rakName, rackData], i) => {
     const totalItems = Object.keys(rackData.items || {}).length;
-    m += `${i+1}. *${rakName}* — ${totalItems} jenis barang\n`;
+    m += `${i+1}. *${rakName}* â€” ${totalItems} jenis barang\n`;
   });
   m += '\n';
   
-  m += `${GARIS_TEBAL}\n📊 *HASIL OPNAME:*\n${GARIS_TEBAL}\n\n`;
+  m += `${GARIS_TEBAL}\nðŸ“Š *HASIL OPNAME:*\n${GARIS_TEBAL}\n\n`;
   
   const allKodes = new Set([
     ...Object.keys(gabungan.fisik),
@@ -1299,44 +1299,44 @@ function generateLaporanSOGabungan(tokoKode, namaToko) {
   sesuai.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
   
   if (kurang.length) {
-    m += `➖ *KURANG (${kurang.length})*\n${GARIS_TIPIS}\n`;
+    m += `âž– *KURANG (${kurang.length})*\n${GARIS_TIPIS}\n`;
     kurang.forEach((d, i) => {
-      m += `${i+1}. ${d.nama}\n   💻 ${d.sistem} | 📦 ${d.fisik} | 🏭 ${d.gudang} = ${d.total} (${d.selisih})\n`;
+      m += `${i+1}. ${d.nama}\n   ðŸ’» ${d.sistem} | ðŸ“¦ ${d.fisik} | ðŸ­ ${d.gudang} = ${d.total} (${d.selisih})\n`;
     });
     m += '\n';
   }
   if (lebih.length) {
-    m += `➕ *LEBIH (${lebih.length})*\n${GARIS_TIPIS}\n`;
+    m += `âž• *LEBIH (${lebih.length})*\n${GARIS_TIPIS}\n`;
     lebih.forEach((d, i) => {
-      m += `${i+1}. ${d.nama}\n   💻 ${d.sistem} | 📦 ${d.fisik} | 🏭 ${d.gudang} = ${d.total} (+${d.selisih})\n`;
+      m += `${i+1}. ${d.nama}\n   ðŸ’» ${d.sistem} | ðŸ“¦ ${d.fisik} | ðŸ­ ${d.gudang} = ${d.total} (+${d.selisih})\n`;
     });
     m += '\n';
   }
   if (sesuai.length) {
-    m += `✅ *SESUAI (${sesuai.length})*\n`;
+    m += `âœ… *SESUAI (${sesuai.length})*\n`;
     sesuai.slice(0, 10).forEach((d, i) => m += `${i+1}. ${d.nama} (${d.total})\n`);
     if (sesuai.length > 10) m += `_+${sesuai.length - 10} lainnya_\n`;
   }
   
   // Barang baru
   if (barangBaru.length > 0) {
-    m += `\n🆕 *BARANG BARU (${barangBaru.length}):*\n${GARIS_TIPIS}\n`;
+    m += `\nðŸ†• *BARANG BARU (${barangBaru.length}):*\n${GARIS_TIPIS}\n`;
     m += `_(Tidak ada di database Excel)_\n\n`;
     barangBaru.forEach((b, i) => {
-      m += `${i+1}. *${b.nama}*\n   📍 ${b.rak} | ${b.jenis === 'fisik' ? '🏪' : '🏭'} ${b.jenis}: ${b.qty} | 👤 ${b.petugas}\n   📸 ${b.fotoFileId ? 'Ada foto ✅' : 'Tanpa foto'}\n\n`;
+      m += `${i+1}. *${b.nama}*\n   ðŸ“ ${b.rak} | ${b.jenis === 'fisik' ? 'ðŸª' : 'ðŸ­'} ${b.jenis}: ${b.qty} | ðŸ‘¤ ${b.petugas}\n   ðŸ“¸ ${b.fotoFileId ? 'Ada foto âœ…' : 'Tanpa foto'}\n\n`;
     });
   }
   
-  m += `\n${GARIS_TEBAL}\n📊 *RINGKASAN:*\n`;
-  m += `   📦 Rak: ${Object.keys(shared.racks || {}).length} | 📊 Barang: ${allKodes.size}\n`;
-  m += `   ✅ ${sesuai.length} | ➕ ${lebih.length} | ➖ ${kurang.length}\n`;
-  m += `   🆕 Barang baru: ${barangBaru.length}\n`;
-  m += `   👥 Petugas: ${allPetugas.size}\n`;
+  m += `\n${GARIS_TEBAL}\nðŸ“Š *RINGKASAN:*\n`;
+  m += `   ðŸ“¦ Rak: ${Object.keys(shared.racks || {}).length} | ðŸ“Š Barang: ${allKodes.size}\n`;
+  m += `   âœ… ${sesuai.length} | âž• ${lebih.length} | âž– ${kurang.length}\n`;
+  m += `   ðŸ†• Barang baru: ${barangBaru.length}\n`;
+  m += `   ðŸ‘¥ Petugas: ${allPetugas.size}\n`;
   
   return m;
 }
 
-// ═══ GENERATE EXCEL SO GABUNGAN (ExcelJS + Foto Embedded) ═══
+// â•â•â• GENERATE EXCEL SO GABUNGAN (ExcelJS + Foto Embedded) â•â•â•
 
 async function generateExcelSOGabungan(tokoKode, namaToko) {
   const shared = getSOShared(tokoKode);
@@ -1345,7 +1345,7 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
   
   const wb = new ExcelJS.Workbook();
   
-  // ═══ SHEET 1: INFO ═══
+  // â•â•â• SHEET 1: INFO â•â•â•
   const wsInfo = wb.addWorksheet('Info Opname');
   wsInfo.columns = [{ width: 30 }, { width: 55 }];
   
@@ -1371,7 +1371,7 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
   wsInfo.addRow(['Total Barang', allKodes.size]);
   wsInfo.addRow(['Barang Baru', barangBaru.length]);
   
-  // ═══ SHEET 2: REKAP ═══
+  // â•â•â• SHEET 2: REKAP â•â•â•
   const wsRekap = wb.addWorksheet('Rekap Gabungan');
   wsRekap.columns = [
     { header: 'Kode', width: 14 }, { header: 'Nama Item', width: 45 },
@@ -1404,7 +1404,7 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
     else c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'CCFFCC' } };
   });
   
-  // ═══ SHEET PER RAK ═══
+  // â•â•â• SHEET PER RAK â•â•â•
   Object.entries(shared.racks || {}).forEach(([rakName, rackData], idx) => {
     const rakRows = [];
     Object.entries(rackData.items || {}).forEach(([kode, itemData]) => {
@@ -1435,7 +1435,7 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
     });
   });
   
-  // ═══ SHEET BARANG BARU (dengan FOTO!) ═══
+  // â•â•â• SHEET BARANG BARU (dengan FOTO!) â•â•â•
   if (barangBaru.length > 0) {
     const wsNew = wb.addWorksheet('Barang Baru');
     wsNew.columns = [
@@ -1475,7 +1475,7 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
     }
   }
   
-  // ═══ SHEET PETUGAS ═══
+  // â•â•â• SHEET PETUGAS â•â•â•
   const petugasMap = {};
   Object.entries(shared.racks || {}).forEach(([rn, rd]) => {
     Object.entries(rd.items || {}).forEach(([kode, id]) => {
@@ -1506,9 +1506,9 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
   return filePath;
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   8C. AUTO BACKUP SO KE ADMIN (Real-time Safety Net)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 // Track backup terakhir per toko (cegah spam)
 const BACKUP_TRACKER = {
@@ -1539,7 +1539,7 @@ function generateCaptionBackup(tokoKode, type = 'auto') {
   const shared = SO_SHARED[tokoKode];
   const namaToko = NAMA_TOKO[tokoKode] || tokoKode;
   
-  if (!shared) return `📦 Backup SO ${namaToko}`;
+  if (!shared) return `ðŸ“¦ Backup SO ${namaToko}`;
   
   const usersAktif = Object.keys(shared.usersAktif || {}).length;
   const totalRak = Object.keys(shared.racks || {}).length;
@@ -1559,21 +1559,21 @@ function generateCaptionBackup(tokoKode, type = 'auto') {
     });
   });
   
-  let typeIcon = '🔄';
+  let typeIcon = 'ðŸ”„';
   let typeLabel = 'AUTO';
-  if (type === 'crash') { typeIcon = '🚨'; typeLabel = 'EMERGENCY'; }
-  else if (type === 'manual') { typeIcon = '👤'; typeLabel = 'MANUAL'; }
-  else if (type === 'periodic') { typeIcon = '⏰'; typeLabel = 'PERIODIC'; }
-  else if (type === 'event') { typeIcon = '⚡'; typeLabel = 'REAL-TIME'; }
+  if (type === 'crash') { typeIcon = 'ðŸš¨'; typeLabel = 'EMERGENCY'; }
+  else if (type === 'manual') { typeIcon = 'ðŸ‘¤'; typeLabel = 'MANUAL'; }
+  else if (type === 'periodic') { typeIcon = 'â°'; typeLabel = 'PERIODIC'; }
+  else if (type === 'event') { typeIcon = 'âš¡'; typeLabel = 'REAL-TIME'; }
   
   return `${typeIcon} *BACKUP SO [${typeLabel}]*\n` +
-    `🏦 ${namaToko}\n` +
-    `📅 ${getTanggalSlash(false)} ${getJamSekarang()}\n` +
+    `ðŸ¦ ${namaToko}\n` +
+    `ðŸ“… ${getTanggalSlash(false)} ${getJamSekarang()}\n` +
     `${GARIS_TIPIS}\n` +
-    `👥 Petugas: ${[...allPetugas].join(', ') || '-'}\n` +
-    `🟢 Aktif: ${usersAktif} user\n` +
-    `📦 Rak: ${totalRak}\n` +
-    `📊 Total Barang: ${totalItems} jenis`;
+    `ðŸ‘¥ Petugas: ${[...allPetugas].join(', ') || '-'}\n` +
+    `ðŸŸ¢ Aktif: ${usersAktif} user\n` +
+    `ðŸ“¦ Rak: ${totalRak}\n` +
+    `ðŸ“Š Total Barang: ${totalItems} jenis`;
 }
 
 // Kirim backup Excel ke admin
@@ -1606,7 +1606,7 @@ async function kirimBackupKeAdmin(tokoKode, type = 'auto', forceKirim = false) {
     
     const namaToko = NAMA_TOKO[tokoKode] || tokoKode;
     
-    // ★ Generate Excel (SEKARANG ASYNC karena embed foto!)
+    // â˜… Generate Excel (SEKARANG ASYNC karena embed foto!)
     let excelPath;
     try {
       excelPath = await generateExcelSOGabungan(tokoKode, namaToko);
@@ -1615,7 +1615,7 @@ async function kirimBackupKeAdmin(tokoKode, type = 'auto', forceKirim = false) {
       return false;
     }
     
-    // ★ VALIDASI FILE ada dan tidak kosong
+    // â˜… VALIDASI FILE ada dan tidak kosong
     if (!excelPath || !fs.existsSync(excelPath)) {
       log.error('BACKUP', `${tokoKode}: file Excel tidak ditemukan: ${excelPath}`);
       return false;
@@ -1636,7 +1636,7 @@ async function kirimBackupKeAdmin(tokoKode, type = 'auto', forceKirim = false) {
     const jam = getJamSekarang().replace(':', '');
     const filename = `SO_${type.toUpperCase()}_${tokoKode.toUpperCase()}_${tgl}_${jam}_${counter}.xlsx`;
     
-    // ★ Caption TANPA Markdown biar aman
+    // â˜… Caption TANPA Markdown biar aman
     const caption = generateCaptionBackupSafe(tokoKode, type);
     
     try {
@@ -1656,7 +1656,7 @@ async function kirimBackupKeAdmin(tokoKode, type = 'auto', forceKirim = false) {
     try { fs.unlinkSync(excelPath); } catch(e) {}
     
     BACKUP_TRACKER.lastBackup[tokoKode] = Date.now();
-    log.info('BACKUP', `✅ Sent ${tokoKode} [${type}] ke admin (${(fileStats.size / 1024).toFixed(1)} KB)`);
+    log.info('BACKUP', `âœ… Sent ${tokoKode} [${type}] ke admin (${(fileStats.size / 1024).toFixed(1)} KB)`);
     return true;
   } catch(err) {
     log.error('BACKUP', `Failed ${tokoKode}: ${err.message}`);
@@ -1711,7 +1711,7 @@ function generateCaptionBackupSafe(tokoKode, type) {
 let isBackupRunning = false;
 
 async function backupSemuaToko(type = 'periodic') {
-  // ★ Prevent overlapping
+  // â˜… Prevent overlapping
   if (isBackupRunning) {
     log.info('BACKUP', 'Backup masih running, skip cycle ini');
     return;
@@ -1750,10 +1750,10 @@ async function backupSemuaToko(type = 'periodic') {
 
 // Emergency backup - dipanggil saat crash/shutdown
 async function emergencyBackup() {
-  log.warn('BACKUP', '🚨 EMERGENCY BACKUP triggered!');
+  log.warn('BACKUP', 'ðŸš¨ EMERGENCY BACKUP triggered!');
   try {
     await backupSemuaToko('crash');
-    log.info('BACKUP', '🚨 Emergency backup completed');
+    log.info('BACKUP', 'ðŸš¨ Emergency backup completed');
   } catch(err) {
     log.error('BACKUP', 'Emergency backup failed: ' + err.message);
   }
@@ -1765,14 +1765,14 @@ function startAutoBackup() {
     clearInterval(BACKUP_TRACKER.intervalTimer);
   }
   
-  // ★ Ubah dari 2 menit → 5 menit (biar tidak spam + tidak overlap)
+  // â˜… Ubah dari 2 menit â†’ 5 menit (biar tidak spam + tidak overlap)
   const INTERVAL_MS = 5 * 60 * 1000; // 5 menit
   
   BACKUP_TRACKER.intervalTimer = setInterval(async () => {
     await backupSemuaToko('periodic');
   }, INTERVAL_MS);
   
-  log.info('BACKUP', `✅ Auto-backup started (interval: 5 menit)`);
+  log.info('BACKUP', `âœ… Auto-backup started (interval: 5 menit)`);
 }
 // Trigger backup setelah event penting (dengan debounce)
 const eventBackupTimers = {};
@@ -1789,9 +1789,9 @@ function triggerBackupAfterEvent(tokoKode, delay = 30000) {
   }, delay);
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   9. ANALYTICS
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const STATS = {
   chats: 0, searches: 0, voiceNotes: 0, photos: 0, aiQueries: 0,
@@ -1818,15 +1818,15 @@ function trackSearch(keyword) {
   STATS.topSearches[k] = (STATS.topSearches[k] || 0) + 1;
 }
 
-console.log('\n' + '═'.repeat(60));
-console.log(`🤖 ${CONFIG.appName}`);
-console.log('═'.repeat(60));
-console.log(`👑 Admin ID: ${CONFIG.adminId}`);
-console.log(`👥 Members: ${MEMBERS.length}/${CONFIG.maxMember}`);
-console.log('═'.repeat(60));
-// ════════════════════════════════════════════════════════════════
+console.log('\n' + 'â•'.repeat(60));
+console.log(`ðŸ¤– ${CONFIG.appName}`);
+console.log('â•'.repeat(60));
+console.log(`ðŸ‘‘ Admin ID: ${CONFIG.adminId}`);
+console.log(`ðŸ‘¥ Members: ${MEMBERS.length}/${CONFIG.maxMember}`);
+console.log('â•'.repeat(60));
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   10. AI VISION PROVIDERS
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async function visionGemini(imageBuffer, prompt) {
   if (!CONFIG.geminiKey || !Buffer.isBuffer(imageBuffer)) return null;
@@ -1840,37 +1840,46 @@ async function visionGemini(imageBuffer, prompt) {
   
   const imageBase64 = imageBuffer.toString('base64');
   const keys = [CONFIG.geminiKey, CONFIG.geminiKey2, CONFIG.geminiKey3].filter(Boolean);
-  const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-001'];
+  const MODELS = ['gemini-2.5-flash'];
+  const MAX_RETRY = 3;
   
   for (const key of keys) {
     for (const model of MODELS) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-        const response = await axios.post(url, {
-          contents: [{
-            role: 'user',
-            parts: [
-              { text: prompt },
-              { inline_data: { mime_type: mimeType, data: imageBase64 }}
-            ]
-          }],
-          generationConfig: { 
-            temperature: 0.1, 
-            maxOutputTokens: 8192,
-            topK: 40,
-            topP: 0.95,
+      let attempt = 0;
+      while (attempt < MAX_RETRY) {
+        attempt++;
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+          const response = await axios.post(url, {
+            contents: [{
+              role: 'user',
+              parts: [
+                { text: prompt },
+                { inline_data: { mime_type: mimeType, data: imageBase64 }}
+              ]
+            }],
+            generationConfig: { 
+              temperature: 0.1, 
+              maxOutputTokens: 8192,
+              topK: 40,
+              topP: 0.95,
+            }
+          }, { timeout: 90000 });
+          
+          const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            console.log(`âœ… [GEMINI ${model}] Response: ${text.length} chars`);
+            return { provider: 'GEMINI', model, text };
           }
-        }, { timeout: 90000 });
-        
-        const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-          console.log(`✅ [GEMINI ${model}] Response: ${text.length} chars`);
-          return { provider: 'GEMINI', model, text };
-        }
-      } catch(err) {
-        const status = err.response?.status;
-        if (status !== 429 && status !== 503) {
+        } catch(err) {
+          const status = err.response?.status;
+          if (status === 429 || status === 503) {
+            console.warn(`[GEMINI ${model}] ${status}, retry ${attempt}/${MAX_RETRY}...`);
+            await new Promise(r => setTimeout(r, 4000 * attempt));
+            continue;
+          }
           console.warn(`[GEMINI ${model}]`, status || err.message);
+          break;
         }
       }
     }
@@ -1903,7 +1912,7 @@ async function visionGroq(imageBuffer, prompt) {
       
       const text = response.data?.choices?.[0]?.message?.content;
       if (text) {
-        console.log(`✅ [GROQ ${model}] Response: ${text.length} chars`);
+        console.log(`âœ… [GROQ ${model}] Response: ${text.length} chars`);
         return { provider: 'GROQ', model, text };
       }
     } catch(err) {
@@ -1957,12 +1966,12 @@ async function analisaGambarBuffer(imageBuffer, prompt) {
     throw new Error('Image buffer invalid');
   }
   
-  console.log('📸 Image:', (imageBuffer.length / 1024).toFixed(1), 'KB');
+  console.log('ðŸ“¸ Image:', (imageBuffer.length / 1024).toFixed(1), 'KB');
   
   const providers = [
     { name: 'GEMINI', fn: visionGemini, enabled: !!CONFIG.geminiKey },
-    { name: 'GROQ', fn: visionGroq, enabled: !!CONFIG.groqKey },
-    { name: 'OPENROUTER', fn: visionOpenRouter, enabled: !!CONFIG.openrouterKey },
+    { name: 'GROQ', fn: visionGroq, enabled: false },
+    { name: 'OPENROUTER', fn: visionOpenRouter, enabled: false },
   ].filter(p => p.enabled);
   
   if (providers.length === 0) throw new Error('Tidak ada AI provider');
@@ -1974,19 +1983,19 @@ async function analisaGambarBuffer(imageBuffer, prompt) {
         return result.text;
       }
     } catch(err) {
-      console.error(`❌ ${provider.name}:`, err.message);
+      console.error(`âŒ ${provider.name}:`, err.message);
     }
   }
   throw new Error('Semua AI provider gagal');
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   11. AI CHAT - NATURAL CONVERSATION (Teman Ngobrol)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   11A. WEB SEARCH (Untuk pertanyaan real-time)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 /**
  * Deteksi: apakah pertanyaan butuh info terkini dari internet?
@@ -2049,21 +2058,21 @@ async function searchDuckDuckGo(query) {
     let result = '';
     
     if (data.AbstractText) {
-      result += `📝 ${data.AbstractText}\n`;
-      if (data.AbstractSource) result += `📰 Sumber: ${data.AbstractSource}\n`;
+      result += `ðŸ“ ${data.AbstractText}\n`;
+      if (data.AbstractSource) result += `ðŸ“° Sumber: ${data.AbstractSource}\n`;
     }
     
     if (data.Answer) {
-      result = `💡 ${data.Answer}\n` + result;
+      result = `ðŸ’¡ ${data.Answer}\n` + result;
     }
     
     if (data.Definition) {
-      result += `📖 ${data.Definition}\n`;
+      result += `ðŸ“– ${data.Definition}\n`;
     }
     
     if (data.RelatedTopics && data.RelatedTopics.length > 0) {
       const topTopic = data.RelatedTopics[0];
-      if (topTopic.Text) result += `🔗 Terkait: ${topTopic.Text}\n`;
+      if (topTopic.Text) result += `ðŸ”— Terkait: ${topTopic.Text}\n`;
     }
     
     return result.trim() || null;
@@ -2091,7 +2100,7 @@ async function searchWikipedia(query) {
     
     const data = response.data;
     if (data.extract) {
-      return `📚 ${data.extract.substring(0, 800)}\n\n🔗 Sumber: Wikipedia`;
+      return `ðŸ“š ${data.extract.substring(0, 800)}\n\nðŸ”— Sumber: Wikipedia`;
     }
     return null;
   } catch(err) {
@@ -2155,7 +2164,7 @@ async function getKursMataUang(from = 'USD', to = 'IDR') {
     if (rate) {
       return {
         from, to, rate,
-        text: `💱 1 ${from} = Rp ${rate.toLocaleString('id-ID')} (${response.data.date})`,
+        text: `ðŸ’± 1 ${from} = Rp ${rate.toLocaleString('id-ID')} (${response.data.date})`,
       };
     }
     return null;
@@ -2343,67 +2352,67 @@ function buildSystemPrompt(userId, userName, webContext = null) {
   
   let webInfo = '';
   if (webContext) {
-    webInfo = `\n═══════════════════════════════════════════
-📡 INFO DARI INTERNET (gunakan untuk jawab user):
-═══════════════════════════════════════════
+    webInfo = `\nâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ðŸ“¡ INFO DARI INTERNET (gunakan untuk jawab user):
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 ${webContext}
 
 INSTRUKSI: Gunakan info di atas untuk jawab pertanyaan user dengan natural.
 Sebutkan sumber kalau perlu (Wikipedia, dll).
-═══════════════════════════════════════════\n`;
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n`;
   }
   
   return `Kamu adalah Aiva, teman ngobrol AI di bot Telegram Toko Perabot.
 
-═══════════════════════════════════════════
-🚨 ATURAN MUTLAK (WAJIB DIPATUHI):
-═══════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ðŸš¨ ATURAN MUTLAK (WAJIB DIPATUHI):
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-1. ❌ JANGAN PERNAH karang data PRODUK TOKO (harga/stok/spek barang)
+1. âŒ JANGAN PERNAH karang data PRODUK TOKO (harga/stok/spek barang)
    - JANGAN bilang "ada 3 pcs di TDM"
    - JANGAN bilang "harganya 250 ribu"
    - Kalau ditanya produk toko, jawab: "Bentar aku cek di database..."
 
-2. ✅ KALAU USER MINTA BUKA MENU/FITUR TERTENTU:
+2. âœ… KALAU USER MINTA BUKA MENU/FITUR TERTENTU:
    Contoh: "buka stock opname", "mau ke menu utama", "menu admin dong"
    
    Jawab dengan: "Oke aku bukain menu [nama menu] ya kak!"
    JANGAN dijawab dengan ngobrol biasa. Sistem otomatis akan handle.
 
-3. ✅ BOLEH JAWAB pertanyaan umum dengan info yang KAMU TAHU:
+3. âœ… BOLEH JAWAB pertanyaan umum dengan info yang KAMU TAHU:
    - Sejarah, geografi, sains
    - Pengetahuan umum
    - Tips & saran
    - Bercanda & ngobrol bebas
 
-4. ✅ KALAU ADA INFO DARI INTERNET (di atas), GUNAKAN itu untuk jawab.
+4. âœ… KALAU ADA INFO DARI INTERNET (di atas), GUNAKAN itu untuk jawab.
 
-5. ❌ JANGAN jawab "saya tidak tahu" untuk info umum.
+5. âŒ JANGAN jawab "saya tidak tahu" untuk info umum.
    Coba jawab dengan pengetahuan yang ada, atau bilang "kayaknya sih..."
 
-═══════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 KARAKTER:
-═══════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 - Nama: Aiva (AI Virtual Assistant)
 - Ramah, hangat, empati seperti teman dekat
 - Bahasa santai Indonesia (aku/kamu/kak)
 - Respon SINGKAT (2-4 kalimat)
 - Pakai emoji secukupnya (max 2-3)
 
-═══════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 MENU YANG TERSEDIA DI BOT:
-═══════════════════════════════════════════
-- 📋 Menu Utama (main menu)
-- 🔍 Cari Barang (search produk)
-- 📦 Stock Opname (SO)
-- 📊 Laporan Penjualan
-- 🏷️ Laporan Harga
-- 🛒 Laporan Marketplace
-- 📋 Berita Acara
-- 🤖 AI Chat (kamu sendiri)
-- 👑 Menu Admin (khusus admin)
-- ℹ️ Info Bot
-- ❓ Bantuan/Panduan
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+- ðŸ“‹ Menu Utama (main menu)
+- ðŸ” Cari Barang (search produk)
+- ðŸ“¦ Stock Opname (SO)
+- ðŸ“Š Laporan Penjualan
+- ðŸ·ï¸ Laporan Harga
+- ðŸ›’ Laporan Marketplace
+- ðŸ“‹ Berita Acara
+- ðŸ¤– AI Chat (kamu sendiri)
+- ðŸ‘‘ Menu Admin (khusus admin)
+- â„¹ï¸ Info Bot
+- â“ Bantuan/Panduan
 
 KALAU USER NYEBUT NAMA MENU, sarankan dia ketik nama menu itu langsung,
 contoh: "Ketik 'stock opname' untuk buka SO" atau pakai tombol.
@@ -2413,34 +2422,34 @@ KONTEKS USER:
 - Waktu: ${jam} (${waktu})
 - Tanggal: ${tanggal}
 ${webInfo}
-═══════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 CONTOH BENAR vs SALAH:
-═══════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 User: "Siapa presiden Indonesia sekarang?"
 [Dengan info web]
-✅ "Presiden Indonesia saat ini adalah Prabowo Subianto kak, dilantik Oktober 2024 😊"
+âœ… "Presiden Indonesia saat ini adalah Prabowo Subianto kak, dilantik Oktober 2024 ðŸ˜Š"
 
 User: "1 dolar berapa rupiah?"
 [Dengan info kurs]
-✅ "Sekarang 1 USD = Rp 16.250 kak (kurs real-time) 💱"
+âœ… "Sekarang 1 USD = Rp 16.250 kak (kurs real-time) ðŸ’±"
 
 User: "saya capek"
-✅ "Aduh kak ${nama}, capek ya 🥺 Cerita dong, kenapa?"
+âœ… "Aduh kak ${nama}, capek ya ðŸ¥º Cerita dong, kenapa?"
 
 User: "harga panci eagle 20"
-✅ "Bentar aku cek di database ya kak 🔍"
+âœ… "Bentar aku cek di database ya kak ðŸ”"
 
 User: "apa itu blockchain?"
-✅ "Blockchain itu kayak buku besar digital yang nyimpen transaksi, kak. 
-   Datanya gak bisa diubah karena tersebar di banyak komputer 🔗"
+âœ… "Blockchain itu kayak buku besar digital yang nyimpen transaksi, kak. 
+   Datanya gak bisa diubah karena tersebar di banyak komputer ðŸ”—"
 
 User: "buka stock opname dong"
-✅ "Oke aku bukain menu Stock Opname ya kak! 📦"
+âœ… "Oke aku bukain menu Stock Opname ya kak! ðŸ“¦"
 
 User: "kapan piala dunia 2026?"
 [Dengan info web]
-✅ "Piala Dunia 2026 bakal digelar di USA, Kanada, Meksiko bulan Juni-Juli 2026 ⚽"
+âœ… "Piala Dunia 2026 bakal digelar di USA, Kanada, Meksiko bulan Juni-Juli 2026 âš½"
 
 Sekarang respon dengan natural sesuai konteks!`;
 }
@@ -2472,7 +2481,7 @@ async function chatGeminiNatural(userId, userMessage, userName) {
   
   for (const key of keys) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
       const resp = await axios.post(url, {
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: contents,
@@ -2576,7 +2585,7 @@ async function chatAINatural(userId, userMessage, userName) {
   let provider = null;
   let webContext = null;
   
-  // ★ STEP 1: Cek apakah butuh web search
+  // â˜… STEP 1: Cek apakah butuh web search
   const webNeed = butuhWebSearch(userMessage);
   if (webNeed.butuh) {
     log.info('AI-WEB', `Butuh web search: ${webNeed.alasan}`);
@@ -2584,7 +2593,7 @@ async function chatAINatural(userId, userMessage, userName) {
     try {
       webContext = await cariInfoInternet(userMessage);
       if (webContext) {
-        log.info('AI-WEB', `✅ Got web info: ${webContext.substring(0, 100)}`);
+        log.info('AI-WEB', `âœ… Got web info: ${webContext.substring(0, 100)}`);
       } else {
         log.info('AI-WEB', 'Web search no result, AI jawab dari knowledge');
       }
@@ -2593,7 +2602,7 @@ async function chatAINatural(userId, userMessage, userName) {
     }
   }
   
-  // ★ STEP 2: Panggil AI dengan/tanpa web context
+  // â˜… STEP 2: Panggil AI dengan/tanpa web context
   if (CONFIG.groqKey) {
     response = await chatGroqNaturalWithContext(userId, userMessage, userName, webContext);
     if (response && response.length >= 5) provider = 'GROQ';
@@ -2666,7 +2675,7 @@ async function chatGeminiNaturalWithContext(userId, userMessage, userName, webCo
   
   for (const key of keys) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
       const resp = await axios.post(url, {
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: contents,
@@ -2741,7 +2750,7 @@ async function chatGemini(prompt) {
   const keys = [CONFIG.geminiKey, CONFIG.geminiKey2, CONFIG.geminiKey3].filter(Boolean);
   for (const key of keys) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
       const resp = await axios.post(url, { contents: [{ parts: [{ text: prompt }] }] }, { timeout: 30000 });
       const text = resp.data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (text) return text.trim();
@@ -2792,9 +2801,9 @@ setInterval(() => {
   });
 }, 15 * 60 * 1000); // Cek setiap 15 menit
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   12. VOICE NOTE - SPEECH TO TEXT
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async function voiceToText(audioBuffer) {
   if (!CONFIG.groqKey || !Buffer.isBuffer(audioBuffer)) return null;
@@ -2807,7 +2816,7 @@ async function voiceToText(audioBuffer) {
     form.append('response_format', 'text');
     form.append('temperature', '0');
     
-    // ★ PROMPT untuk kasih context ke Whisper (biar lebih akurat)
+    // â˜… PROMPT untuk kasih context ke Whisper (biar lebih akurat)
     form.append('prompt', 
       'Toko perabot rumah tangga. Barang: panci, dandang, wajan, kompor, dispenser, ' +
       'setrika, kipas angin, magic com, blender, mixer, rice cooker, termos, ' +
@@ -2841,18 +2850,18 @@ async function koreksiVoiceText(rawText) {
   
   let corrected = rawText.toLowerCase();
   
-  // ═══ CLEANUP KARAKTER ANEH DULU ═══
+  // â•â•â• CLEANUP KARAKTER ANEH DULU â•â•â•
   corrected = corrected.replace(/\\/g, ''); // Hapus backslash
   corrected = corrected.replace(/[.,!?;:]+$/g, ''); // Hapus tanda baca di akhir
   corrected = corrected.replace(/\s+/g, ' ').trim();
   
   const KOREKSI = {
-    // ═══ FIX PISAH KATA (Whisper sering split) ═══
+    // â•â•â• FIX PISAH KATA (Whisper sering split) â•â•â•
     'fero na': 'ferona',
     'fero nah': 'ferona',
     'perro na': 'ferona',
     'vero na': 'ferona',
-    'verona': 'ferona',      // ← Verona = Ferona
+    'verona': 'ferona',      // â† Verona = Ferona
     'perona': 'ferona',
     'ferrona': 'ferona',
     
@@ -2888,7 +2897,7 @@ async function koreksiVoiceText(rawText) {
     'rice cook er': 'rice cooker',
     'ricecoo ker': 'rice cooker',
     
-    // ═══ TOKO (yang sering salah) ═══
+    // â•â•â• TOKO (yang sering salah) â•â•â•
     'keva': 'kefa', 'kafa': 'kefa', 'kepa': 'kefa', 'kepha': 'kefa',
     'kefa menanu': 'kefa', 'kefamenanu': 'kefa',
     'oesafa': 'oesapa', 'usapa': 'oesapa', 'osapa': 'oesapa',
@@ -2899,7 +2908,7 @@ async function koreksiVoiceText(rawText) {
     'central': 'cp', 'central perabot': 'cp',
     'nasional kitchen': 'nk', 'na sional': 'nasional',
     
-    // ═══ KATA BARANG (yang sering salah) ═══
+    // â•â•â• KATA BARANG (yang sering salah) â•â•â•
     'pantji': 'panci', 'panchi': 'panci', 'pancy': 'panci',
     'wadjan': 'wajan', 'wajen': 'wajan', 'wa jan': 'wajan',
     'komper': 'kompor', 'kompur': 'kompor', 'kom por': 'kompor',
@@ -2915,7 +2924,7 @@ async function koreksiVoiceText(rawText) {
     'termusd': 'termos', 'ter mos': 'termos',
     'ki pas': 'kipas', 'kipas an gin': 'kipas angin',
     
-    // ═══ KATA UMUM ═══
+    // â•â•â• KATA UMUM â•â•â•
     'grocer': 'grosir', 'groser': 'grosir', 'gerosir': 'grosir',
     'echer': 'ecer', 'eyecer': 'ecer', 'e cer': 'ecer',
     'har ga': 'harga', 'har ga nya': 'harganya',
@@ -2932,7 +2941,7 @@ async function koreksiVoiceText(rawText) {
     corrected = corrected.replace(regex, KOREKSI[salah]);
   });
   
-  // Format kode barang: "NK 8 WD" → "NK 8 WD" (biarkan spasi untuk search)
+  // Format kode barang: "NK 8 WD" â†’ "NK 8 WD" (biarkan spasi untuk search)
   corrected = corrected.replace(/([a-z])(\d+)([a-z])/gi, '$1 $2 $3');
   corrected = corrected.replace(/([a-z])(\d+)/gi, '$1 $2');
   corrected = corrected.replace(/(\d+)([a-z])/gi, '$1 $2');
@@ -2947,9 +2956,9 @@ async function koreksiVoiceText(rawText) {
   return corrected.toLowerCase();
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   13. EXCEL ENGINE (Multi-File Per Toko + Auto-Detect Header)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 let DATA_BARANG = [];
 
@@ -2957,17 +2966,17 @@ let DATA_BARANG = [];
  * Load Excel per toko dengan format:
  * - Header auto-detect (bisa di baris berapapun)
  * - Kolom fleksibel (support banyak variasi nama)
- * - Format angka Indonesia (25.000 → 25000)
+ * - Format angka Indonesia (25.000 â†’ 25000)
  * 
  * Mapping kolom:
- * - Kode Item → kode barang
- * - Nama Item → nama barang
- * - Jenis → jenis material
- * - Stok → stok fisik
- * - Satuan → satuan (PCS, PACK, DZ, dll)
- * - Harga Price → HARGA ECER (retail 1-5 pcs)
- * - Harga Jual → HARGA AMBIL/GROSIR (6+ pcs)
- * - HPP (optional) → Harga Pokok/Modal
+ * - Kode Item â†’ kode barang
+ * - Nama Item â†’ nama barang
+ * - Jenis â†’ jenis material
+ * - Stok â†’ stok fisik
+ * - Satuan â†’ satuan (PCS, PACK, DZ, dll)
+ * - Harga Price â†’ HARGA ECER (retail 1-5 pcs)
+ * - Harga Jual â†’ HARGA AMBIL/GROSIR (6+ pcs)
+ * - HPP (optional) â†’ Harga Pokok/Modal
  */
 function loadExcelPerToko(tokoKode) {
   const filePath = CONFIG.paths.excelPerToko[tokoKode];
@@ -2986,7 +2995,7 @@ function loadExcelPerToko(tokoKode) {
       return [];
     }
     
-    // ═══ AUTO-DETECT HEADER ═══
+    // â•â•â• AUTO-DETECT HEADER â•â•â•
     // Header biasanya di baris 1-15 (karena ada logo/info toko di atas)
     let headerRowIdx = -1;
     let headers = [];
@@ -3013,7 +3022,7 @@ function loadExcelPerToko(tokoKode) {
     
     log.info('EXCEL', `File ${tokoKode}: Header di baris ${headerRowIdx + 1}`);
     
-    // ═══ FLEXIBLE COLUMN MATCHING ═══
+    // â•â•â• FLEXIBLE COLUMN MATCHING â•â•â•
     const findCol = (...names) => {
       // Exact match dulu
       for (const name of names) {
@@ -3040,11 +3049,11 @@ function loadExcelPerToko(tokoKode) {
       stok: findCol('Stok', 'Stock', 'Qty Stok'),
       satuan: findCol('Satuan', 'Unit', 'Sat'),
       qtyPaket: findCol('Qty / Paket', 'Qty/Paket', 'Paket'),
-      // ★ Harga Price = ECER (retail 1-5 pcs) - harga lebih mahal
+      // â˜… Harga Price = ECER (retail 1-5 pcs) - harga lebih mahal
       hargaEcer: findCol('Harga Price', 'Price', 'Ecer', 'Retail', 'Harga Ecer'),
-      // ★ Harga Jual = AMBIL/GROSIR (6+ pcs) - harga lebih murah
+      // â˜… Harga Jual = AMBIL/GROSIR (6+ pcs) - harga lebih murah
       hargaAmbil: findCol('Harga Jual', 'Jual', 'Ambil', 'Grosir', 'Wholesale'),
-      // ★ HPP = Harga Pokok/Modal (opsional)
+      // â˜… HPP = Harga Pokok/Modal (opsional)
       hargaHPP: findCol('HPP', 'Harga Beli', 'Harga Pokok', 'Harga Modal', 'Modal'),
       merek: findCol('Merek', 'Merk', 'Brand'),
     };
@@ -3058,7 +3067,7 @@ function loadExcelPerToko(tokoKode) {
     
     log.info('EXCEL', `${tokoKode} mapping: kode=${colMap.kode}, nama=${colMap.nama}, stok=${colMap.stok}, satuan=${colMap.satuan}, ecer=${colMap.hargaEcer}, ambil=${colMap.hargaAmbil}, hpp=${colMap.hargaHPP}`);
     
-    // ═══ PARSER ANGKA FORMAT INDONESIA ═══
+    // â•â•â• PARSER ANGKA FORMAT INDONESIA â•â•â•
     const parseNum = (val) => {
       if (!val && val !== 0) return 0;
       if (typeof val === 'number') return Math.floor(val);
@@ -3069,14 +3078,14 @@ function loadExcelPerToko(tokoKode) {
       if (!str) return 0;
       
       // Handle format Indonesia:
-      // "25.000" → 25000 (titik = ribuan)
-      // "25,000" → 25000 (koma = ribuan)
+      // "25.000" â†’ 25000 (titik = ribuan)
+      // "25,000" â†’ 25000 (koma = ribuan)
       // Hapus semua titik & koma (asumsi = pemisah ribuan)
       const cleaned = str.replace(/[.,]/g, '');
       return parseInt(cleaned) || 0;
     };
     
-    // ═══ PARSE DATA (baris setelah header) ═══
+    // â•â•â• PARSE DATA (baris setelah header) â•â•â•
     const items = [];
     for (let i = headerRowIdx + 1; i < allRows.length; i++) {
       const row = allRows[i];
@@ -3088,8 +3097,8 @@ function loadExcelPerToko(tokoKode) {
       const nama = String(row[colMap.nama] || '').trim().toUpperCase();
       if (!nama || nama.length < 2) continue;
       
-      // ★ Harga Price = ECER (mahal, untuk 1-5 pcs)
-      // ★ Harga Jual = AMBIL/GROSIR (murah, untuk 6+ pcs)
+      // â˜… Harga Price = ECER (mahal, untuk 1-5 pcs)
+      // â˜… Harga Jual = AMBIL/GROSIR (murah, untuk 6+ pcs)
       const hargaEcer = colMap.hargaEcer >= 0 ? parseNum(row[colMap.hargaEcer]) : 0;
       const hargaAmbil = colMap.hargaAmbil >= 0 ? parseNum(row[colMap.hargaAmbil]) : 0;
       const hargaHPP = colMap.hargaHPP >= 0 ? parseNum(row[colMap.hargaHPP]) : 0;
@@ -3102,8 +3111,8 @@ function loadExcelPerToko(tokoKode) {
         satuan: colMap.satuan >= 0 ? String(row[colMap.satuan] || 'PCS').trim().toUpperCase() : 'PCS',
         toko: tokoKode,
         hpp: hargaHPP,
-        ecer: hargaEcer,                                    // ← Harga Price (retail)
-        ambil: hargaAmbil > 0 ? hargaAmbil : hargaEcer,    // ← Harga Jual (grosir), fallback ke ecer
+        ecer: hargaEcer,                                    // â† Harga Price (retail)
+        ambil: hargaAmbil > 0 ? hargaAmbil : hargaEcer,    // â† Harga Jual (grosir), fallback ke ecer
         stok: colMap.stok >= 0 ? parseNum(row[colMap.stok]) : 0,
       });
     }
@@ -3132,7 +3141,7 @@ function loadExcel() {
     totalPerToko[tokoKode] = items.length;
   });
   
-  // Merge: barang dengan kode SAMA di multi-toko → 1 entry
+  // Merge: barang dengan kode SAMA di multi-toko â†’ 1 entry
   const mergedMap = new Map();
   
   Object.entries(perTokoItems).forEach(([tokoKode, items]) => {
@@ -3181,14 +3190,14 @@ function loadExcel() {
   }
   
   // Log ringkasan
-  console.log('═'.repeat(60));
-  console.log(`📦 EXCEL LOADED (per toko):`);
+  console.log('â•'.repeat(60));
+  console.log(`ðŸ“¦ EXCEL LOADED (per toko):`);
   Object.entries(totalPerToko).forEach(([tk, count]) => {
-    const status = count > 0 ? '✅' : '⚠️';
+    const status = count > 0 ? 'âœ…' : 'âš ï¸';
     console.log(`   ${status} ${NAMA_TOKO[tk] || tk}: ${count} item`);
   });
-  console.log(`📦 TOTAL UNIQUE BARANG: ${DATA_BARANG.length}`);
-  console.log('═'.repeat(60));
+  console.log(`ðŸ“¦ TOTAL UNIQUE BARANG: ${DATA_BARANG.length}`);
+  console.log('â•'.repeat(60));
   
   return DATA_BARANG.length > 0;
 }
@@ -3196,9 +3205,9 @@ function loadExcel() {
 // Load saat startup
 loadExcel();
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   14. SEARCH ENGINE
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function levenshtein(a, b) {
   if (a.length > 50) a = a.substring(0, 50);
@@ -3406,11 +3415,11 @@ function isPertanyaanBanding(low) {
   return ['banding','bandingkan','compare','termurah','termahal','paling murah','paling mahal','selisih'].some(k => low.includes(k));
 }
 
-console.log(`📦 Data Barang: ${DATA_BARANG.length}`);
+console.log(`ðŸ“¦ Data Barang: ${DATA_BARANG.length}`);
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   15. PARSER
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function ambilAngka(str) {
   const angka = String(str || '').replace(/[^0-9]/g, '');
@@ -3466,7 +3475,7 @@ function parseListBarang(aiText) {
     if (lo === '(kosong)' || lo === 'kosong') return;
     if (lo.startsWith('baru:') || lo.startsWith('naik:') || lo.startsWith('turun:')) return;
     if (tr.startsWith('-') || tr.startsWith('*')) {
-      const item = tr.replace(/^[-*•]\s*/, '').trim();
+      const item = tr.replace(/^[-*â€¢]\s*/, '').trim();
       if (item && item.length > 2 && !hasil.includes(item) && !lo.includes('dst') && !lo.includes('dan lain')) {
         hasil.push(item);
       }
@@ -3498,17 +3507,17 @@ function toTitleCase(str) {
     w ? w.charAt(0).toUpperCase() + w.slice(1) : ''
   ).join(' ');
 }
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   15B. SCAN QR CODE + BARCODE RAK (MULTI-API + LIBRARY FALLBACK)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const jsQR = require('jsqr');
 const Jimp = require('jimp');
 const QrCode = require('qrcode-reader');
 
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // API 1: qrserver.com (PALING RELIABLE - upload form)
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function decodeQR_API_QRServer(imageBuffer) {
   try {
     const form = new FormData();
@@ -3532,7 +3541,7 @@ async function decodeQR_API_QRServer(imageBuffer) {
     if (Array.isArray(data) && data[0]?.symbol?.[0]?.data) {
       const result = data[0].symbol[0].data;
       if (result && result !== 'null' && result.trim().length > 0) {
-        log.info('QR', `✅ qrserver.com: ${result.substring(0, 60)}`);
+        log.info('QR', `âœ… qrserver.com: ${result.substring(0, 60)}`);
         return result.trim();
       }
     }
@@ -3543,9 +3552,9 @@ async function decodeQR_API_QRServer(imageBuffer) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // API 2: ZXing.org (alternatif - parsing HTML response)
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function decodeQR_API_ZXing(imageBuffer) {
   try {
     const form = new FormData();
@@ -3570,14 +3579,14 @@ async function decodeQR_API_ZXing(imageBuffer) {
       let match = html.match(/<td>Raw text<\/td>\s*<td[^>]*>\s*<pre[^>]*>([^<]+)<\/pre>/i);
       if (match && match[1]) {
         const result = match[1].trim();
-        log.info('QR', `✅ zxing.org: ${result.substring(0, 60)}`);
+        log.info('QR', `âœ… zxing.org: ${result.substring(0, 60)}`);
         return result;
       }
       // Pattern 2: Parsed Result
       match = html.match(/<td>Parsed Result<\/td>\s*<td[^>]*>\s*<pre[^>]*>([^<]+)<\/pre>/i);
       if (match && match[1]) {
         const result = match[1].trim();
-        log.info('QR', `✅ zxing.org (parsed): ${result.substring(0, 60)}`);
+        log.info('QR', `âœ… zxing.org (parsed): ${result.substring(0, 60)}`);
         return result;
       }
     }
@@ -3588,9 +3597,9 @@ async function decodeQR_API_ZXing(imageBuffer) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // LIBRARY 1: jsQR dengan MULTI-PREPROCESSING STRATEGY
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function decodeQR_Library_JsQR(imageBuffer) {
   try {
     const originalImage = await Jimp.read(imageBuffer);
@@ -3604,39 +3613,39 @@ async function decodeQR_Library_JsQR(imageBuffer) {
         const uint8 = new Uint8ClampedArray(data.buffer);
         const code = jsQR(uint8, width, height, { inversionAttempts: 'attemptBoth' });
         if (code && code.data) {
-          log.info('QR', `✅ jsQR [${label}]: ${code.data.substring(0, 60)}`);
+          log.info('QR', `âœ… jsQR [${label}]: ${code.data.substring(0, 60)}`);
           return code.data.trim();
         }
       } catch(e) {}
       return null;
     };
     
-    // ═══ Strategy 1: Original ═══
+    // â•â•â• Strategy 1: Original â•â•â•
     let result = tryDecode(originalImage.clone(), 'orig');
     if (result) return result;
     
-    // ═══ Strategy 2: Multiple sizes ═══
+    // â•â•â• Strategy 2: Multiple sizes â•â•â•
     for (const size of [800, 1000, 600, 1200, 400, 1500]) {
       const img = originalImage.clone().resize(size, Jimp.AUTO);
       result = tryDecode(img, `r${size}`);
       if (result) return result;
     }
     
-    // ═══ Strategy 3: Greyscale + contrast variations ═══
+    // â•â•â• Strategy 3: Greyscale + contrast variations â•â•â•
     for (const c of [0.3, 0.5, 0.7, 1.0]) {
       const img = originalImage.clone().greyscale().contrast(c);
       result = tryDecode(img, `gc${c}`);
       if (result) return result;
     }
     
-    // ═══ Strategy 4: Normalize + Greyscale + Contrast ═══
+    // â•â•â• Strategy 4: Normalize + Greyscale + Contrast â•â•â•
     try {
       const img = originalImage.clone().greyscale().normalize().contrast(0.6);
       result = tryDecode(img, 'norm-gc');
       if (result) return result;
     } catch(e) {}
     
-    // ═══ Strategy 5: Crop center + variations ═══
+    // â•â•â• Strategy 5: Crop center + variations â•â•â•
     const w = originalImage.bitmap.width;
     const h = originalImage.bitmap.height;
     for (const ratio of [0.5, 0.6, 0.7, 0.8]) {
@@ -3661,7 +3670,7 @@ async function decodeQR_Library_JsQR(imageBuffer) {
       } catch(e) {}
     }
     
-    // ═══ Strategy 6: Crop top half (QR sering di atas) ═══
+    // â•â•â• Strategy 6: Crop top half (QR sering di atas) â•â•â•
     try {
       const img = originalImage.clone().crop(0, 0, w, Math.floor(h * 0.7));
       result = tryDecode(img, 'crop-top');
@@ -3671,7 +3680,7 @@ async function decodeQR_Library_JsQR(imageBuffer) {
       if (result) return result;
     } catch(e) {}
     
-    // ═══ Strategy 7: Binary threshold ═══
+    // â•â•â• Strategy 7: Binary threshold â•â•â•
     try {
       const img = originalImage.clone().greyscale();
       img.scan(0, 0, img.bitmap.width, img.bitmap.height, function(x, y, idx) {
@@ -3685,7 +3694,7 @@ async function decodeQR_Library_JsQR(imageBuffer) {
       if (result) return result;
     } catch(e) {}
     
-    // ═══ Strategy 8: Adaptive threshold (per-pixel) ═══
+    // â•â•â• Strategy 8: Adaptive threshold (per-pixel) â•â•â•
     try {
       const img = originalImage.clone().greyscale();
       const data = img.bitmap.data;
@@ -3712,7 +3721,7 @@ async function decodeQR_Library_JsQR(imageBuffer) {
       if (result) return result;
     } catch(e) {}
     
-    // ═══ Strategy 9: Rotation ═══
+    // â•â•â• Strategy 9: Rotation â•â•â•
     for (const angle of [90, 180, 270, 45, -45, 15, -15, 30, -30]) {
       try {
         const img = originalImage.clone().rotate(angle);
@@ -3721,7 +3730,7 @@ async function decodeQR_Library_JsQR(imageBuffer) {
       } catch(e) {}
     }
     
-    // ═══ Strategy 10: Brightness + Contrast variations ═══
+    // â•â•â• Strategy 10: Brightness + Contrast variations â•â•â•
     for (const b of [-0.4, -0.2, 0.2, 0.4]) {
       try {
         const img = originalImage.clone().brightness(b).contrast(0.5);
@@ -3730,7 +3739,7 @@ async function decodeQR_Library_JsQR(imageBuffer) {
       } catch(e) {}
     }
     
-    // ═══ Strategy 11: Combined aggressive ═══
+    // â•â•â• Strategy 11: Combined aggressive â•â•â•
     try {
       const cw = Math.floor(w * 0.7);
       const ch = Math.floor(h * 0.7);
@@ -3755,9 +3764,9 @@ async function decodeQR_Library_JsQR(imageBuffer) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // LIBRARY 2: qrcode-reader (fallback)
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function decodeQR_Library_QRCodeReader(imageBuffer) {
   try {
     const image = await Jimp.read(imageBuffer);
@@ -3767,7 +3776,7 @@ async function decodeQR_Library_QRCodeReader(imageBuffer) {
       qr.callback = function(err, value) {
         if (err) { resolve(null); return; }
         if (value && value.result) {
-          log.info('QR', `✅ qrcode-reader: ${value.result.substring(0, 60)}`);
+          log.info('QR', `âœ… qrcode-reader: ${value.result.substring(0, 60)}`);
           resolve(value.result.trim());
         } else {
           resolve(null);
@@ -3782,45 +3791,45 @@ async function decodeQR_Library_QRCodeReader(imageBuffer) {
 }
 
 /**
- * ════════════════════════════════════════════════════════════
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * MAIN DECODER: Coba semua strategi dengan urutan prioritas
- * ════════════════════════════════════════════════════════════
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  */
 async function decodeQRFromBuffer(imageBuffer) {
   if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length < 100) {
     return null;
   }
   
-  log.info('QR', `📸 Mulai decode, image: ${(imageBuffer.length / 1024).toFixed(1)} KB`);
+  log.info('QR', `ðŸ“¸ Mulai decode, image: ${(imageBuffer.length / 1024).toFixed(1)} KB`);
   
-  // ═══ STRATEGY 1: API qrserver.com ═══
+  // â•â•â• STRATEGY 1: API qrserver.com â•â•â•
   log.info('QR', 'Try API #1: qrserver.com...');
   let result = await decodeQR_API_QRServer(imageBuffer);
   if (result) return result;
   
-  // ═══ STRATEGY 2: API ZXing.org ═══
+  // â•â•â• STRATEGY 2: API ZXing.org â•â•â•
   log.info('QR', 'Try API #2: zxing.org...');
   result = await decodeQR_API_ZXing(imageBuffer);
   if (result) return result;
   
-  // ═══ STRATEGY 3: Library jsQR (multi preprocessing) ═══
+  // â•â•â• STRATEGY 3: Library jsQR (multi preprocessing) â•â•â•
   log.info('QR', 'Try Library #1: jsQR (multi-strategy)...');
   result = await decodeQR_Library_JsQR(imageBuffer);
   if (result) return result;
   
-  // ═══ STRATEGY 4: Library qrcode-reader ═══
+  // â•â•â• STRATEGY 4: Library qrcode-reader â•â•â•
   log.info('QR', 'Try Library #2: qrcode-reader...');
   result = await decodeQR_Library_QRCodeReader(imageBuffer);
   if (result) return result;
   
-  log.warn('QR', '❌ Semua strategi gagal');
+  log.warn('QR', 'âŒ Semua strategi gagal');
   return null;
 }
 
 /**
- * ════════════════════════════════════════════════════════════
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * BERSIHKAN HASIL QR JADI NAMA RAK YANG VALID
- * ════════════════════════════════════════════════════════════
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  */
 function bersihkanHasilQR(qrText) {
   if (!qrText) return null;
@@ -3868,9 +3877,9 @@ function bersihkanHasilQR(qrText) {
 }
 
 /**
- * ════════════════════════════════════════════════════════════
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * AI VISION PROMPT untuk fallback baca tulisan rak
- * ════════════════════════════════════════════════════════════
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  */
 const SCAN_PROMPT_RAK = `Tugas: Ekstrak NAMA RAK dari gambar.
 
@@ -3925,9 +3934,9 @@ function parseHasilScanRak(aiText) {
 }
 
 /**
- * ════════════════════════════════════════════════════════════
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * CARI RAK EXISTING YANG MIRIP (toleran format)
- * ════════════════════════════════════════════════════════════
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  */
 function findRakMirip(tokoKode, namaRakScan) {
   const allRacks = Object.keys(getAllRacks(tokoKode));
@@ -3946,9 +3955,9 @@ function findRakMirip(tokoKode, namaRakScan) {
   return null;
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   16. GENERATOR LAPORAN PENJUALAN
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function genLapPenjualan(data, kemarin, tokoKode) {
   const t = getTanggal(kemarin);
@@ -3968,14 +3977,14 @@ function genLapPenjualan(data, kemarin, tokoKode) {
     let msg = `Laporan Penjualan Toko Central Perabot Periode ${t}\n\n`;
     msg += `Kassa 1 (${d.nk1}) ${fr(d.k1)}\nKassa 2 (${d.nk2}) ${fr(d.k2)}\n`;
     msg += `Kassa 3 (${d.nk3}) ${fr(d.k3)}\nKassa 4 (${d.nk4}) ${fr(d.k4)}\n\n`;
-    msg += `Total Penjualan Keseluruhan: ${fr(totalUtama)}\n${'─'.repeat(45)}\n\n`;
-    msg += `Tunai  ${fr(d.tunai)}\nDebit  ${fr(d.debit)}\nCredit ${fr(d.kredit)}\n${'─'.repeat(45)}\n\n`;
-    msg += `Ecer: ${fr(d.ecer)}\nGrosir : ${fr(d.grosir)}\n${'─'.repeat(45)}\n\n`;
+    msg += `Total Penjualan Keseluruhan: ${fr(totalUtama)}\n${'â”€'.repeat(45)}\n\n`;
+    msg += `Tunai  ${fr(d.tunai)}\nDebit  ${fr(d.debit)}\nCredit ${fr(d.kredit)}\n${'â”€'.repeat(45)}\n\n`;
+    msg += `Ecer: ${fr(d.ecer)}\nGrosir : ${fr(d.grosir)}\n${'â”€'.repeat(45)}\n\n`;
     msg += `Laporan Penjualan Kasir Promo\nPeriode ${t}\n\n`;
-    msg += `Total Penjualan Keseluruhan: ${fr(d.promo)}\n${'─'.repeat(45)}\n`;
-    msg += `Tunai  ${fr(d.promotunai)}\nDebit  ${fr(d.promodebit)}\nCredit ${fr(d.promokredit)}\n${'─'.repeat(45)}\n\n`;
+    msg += `Total Penjualan Keseluruhan: ${fr(d.promo)}\n${'â”€'.repeat(45)}\n`;
+    msg += `Tunai  ${fr(d.promotunai)}\nDebit  ${fr(d.promodebit)}\nCredit ${fr(d.promokredit)}\n${'â”€'.repeat(45)}\n\n`;
     msg += `Laporan Parkir\nPeriode ${t}\n\n`;
-    msg += `Parkir di Komputer : ${fr(d.parkirkomputer)}\nParkir Stor Luar : ${fr(d.parkirluar)}\n${'─'.repeat(45)}\n`;
+    msg += `Parkir di Komputer : ${fr(d.parkirkomputer)}\nParkir Stor Luar : ${fr(d.parkirluar)}\n${'â”€'.repeat(45)}\n`;
     msg += `Total Parkir  ${fr(d.parkirkomputer + d.parkirluar)}`;
     return msg;
   }
@@ -3983,8 +3992,8 @@ function genLapPenjualan(data, kemarin, tokoKode) {
   if (tokoKode === 'nk') {
     let msg = `Laporan Penjualan\nToko Nasional Kitchen\nPeriode ${t}\n\n`;
     msg += `Kassa 1 ${fr(d.k1)}\nKassa 2 ${fr(d.k2)}\n\n`;
-    msg += `Total Penjualan Keseluruhan\n${fr(totalUtama)}\n${'─'.repeat(45)}\n\n`;
-    msg += `Tunai  ${fr(d.tunai)}\nDebit  ${fr(d.debit)}\nCredit ${fr(d.kredit)}\n${'─'.repeat(45)}\n`;
+    msg += `Total Penjualan Keseluruhan\n${fr(totalUtama)}\n${'â”€'.repeat(45)}\n\n`;
+    msg += `Tunai  ${fr(d.tunai)}\nDebit  ${fr(d.debit)}\nCredit ${fr(d.kredit)}\n${'â”€'.repeat(45)}\n`;
     msg += `Ecer : ${fr(d.ecer)}\nGrosir : ${fr(d.grosir)}`;
     return msg;
   }
@@ -3993,21 +4002,21 @@ function genLapPenjualan(data, kemarin, tokoKode) {
   const namaToko = namaMap[tokoKode] || tokoKode;
   let msg = `Laporan Penjualan\nToko ${namaToko}\nPeriode ${t}\n\n`;
   msg += `Kassa 1 ${fr(d.k1)}\nKassa 2 ${fr(d.k2)}\n\n`;
-  msg += `Total Penjualan Keseluruhan\n${fr(totalUtama)}\n${'─'.repeat(45)}\n\n`;
+  msg += `Total Penjualan Keseluruhan\n${fr(totalUtama)}\n${'â”€'.repeat(45)}\n\n`;
   msg += `Tunai  ${fr(d.tunai)}\nDebit  ${fr(d.debit)}\nCredit ${fr(d.kredit)}`;
   return msg;
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   17. GENERATOR LAPORAN HARGA
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function genLapHargaDariData(dataHarga, namaToko, kemarin) {
   const tgl = getTanggalSlash(kemarin);
   const hari = kemarin ? 'Kemarin' : 'Ini';
   const waktu = getWaktuKapital();
   
-  const cat = 'Nota Semuanya Sudah Diinput Di Sistem, Bisa Langsung Di Print Barcodenya Ya.\n\nMohon Dicek Kembali Fisik Barang Dengan Yang Di Input Disistem, Jika Ada Yang Tidak Sesuai Mohon Di Konfirmasi Lagi. Terima Kasih🙏🏻';
+  const cat = 'Nota Semuanya Sudah Diinput Di Sistem, Bisa Langsung Di Print Barcodenya Ya.\n\nMohon Dicek Kembali Fisik Barang Dengan Yang Di Input Disistem, Jika Ada Yang Tidak Sesuai Mohon Di Konfirmasi Lagi. Terima KasihðŸ™ðŸ»';
   
   const kategoriAda = [];
   if (dataHarga.baru?.length > 0) kategoriAda.push('Baru');
@@ -4044,9 +4053,9 @@ function genLapHargaDariData(dataHarga, namaToko, kemarin) {
   return msg;
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   18. GENERATOR LAPORAN MARKETPLACE
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function genLapMarket(text, kemarin) {
   const t = getTanggal(kemarin);
@@ -4067,19 +4076,19 @@ function genLapMarket(text, kemarin) {
   let nt = '';
   if (d.nota.length) { nt = '\n'; d.nota.forEach(n => nt += `- Nomor Nota ${n}\n`); }
   
-  return `${GARIS_TEBAL}\n🛒 *Total Penjualan Marketplace*\n*Perabot Mama*\n📅 Periode ${t}\n${GARIS_TEBAL}\n` +
-    `🏦 *Per Toko*\n• Oesapa: ${fRp(d.oesapa)}\n• TDM: ${fRp(d.tdm)}\n• Central: ${fRp(d.central)}\n` +
-    `${GARIS_TIPIS}\n💰 *Total*: ${fRp(tT)}\n\n📱 *Per Channel*\n• WA: ${fRp(d.wa)}\n• Shopee: ${fRp(d.shopee)}\n` +
-    `• Tiktok: ${fRp(d.tiktok)}\n• Tokopedia: ${fRp(d.tokopedia)}\n${GARIS_TIPIS}\n💰 *Total*: ${fRp(tC)}\n\n` +
-    `💳 *Metode Bayar*\n• Tunai: ${fRp(d.tunai)}\n• Debit: ${fRp(d.debit)}\n• Credit: ${fRp(d.kredit)}\n` +
+  return `${GARIS_TEBAL}\nðŸ›’ *Total Penjualan Marketplace*\n*Perabot Mama*\nðŸ“… Periode ${t}\n${GARIS_TEBAL}\n` +
+    `ðŸ¦ *Per Toko*\nâ€¢ Oesapa: ${fRp(d.oesapa)}\nâ€¢ TDM: ${fRp(d.tdm)}\nâ€¢ Central: ${fRp(d.central)}\n` +
+    `${GARIS_TIPIS}\nðŸ’° *Total*: ${fRp(tT)}\n\nðŸ“± *Per Channel*\nâ€¢ WA: ${fRp(d.wa)}\nâ€¢ Shopee: ${fRp(d.shopee)}\n` +
+    `â€¢ Tiktok: ${fRp(d.tiktok)}\nâ€¢ Tokopedia: ${fRp(d.tokopedia)}\n${GARIS_TIPIS}\nðŸ’° *Total*: ${fRp(tC)}\n\n` +
+    `ðŸ’³ *Metode Bayar*\nâ€¢ Tunai: ${fRp(d.tunai)}\nâ€¢ Debit: ${fRp(d.debit)}\nâ€¢ Credit: ${fRp(d.kredit)}\n` +
     `${GARIS_TEBAL}\n${nt}_Laporan otomatis_`;
 }
 
 
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   20. GENERATOR EXCEL BERITA ACARA (LENGKAP)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async function generateExcelBA(baData, tokoKode, namaToko) {
   const wb = new ExcelJS.Workbook();
@@ -4305,55 +4314,55 @@ async function generateExcelBA(baData, tokoKode, namaToko) {
   return filePath;
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   21. INISIASI BOT TELEGRAM
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const bot = new TelegramBot(CONFIG.botToken, { polling: true });
 
-console.log(`🤖 AI: ${[CONFIG.geminiKey && 'Gemini', CONFIG.groqKey && 'Groq', CONFIG.openrouterKey && 'OpenRouter'].filter(Boolean).join(', ') || 'None'}`);
-console.log('═'.repeat(60));
-console.log('✅ Bot READY!\n');
+console.log(`ðŸ¤– AI: ${[CONFIG.geminiKey && 'Gemini', CONFIG.groqKey && 'Groq', CONFIG.openrouterKey && 'OpenRouter'].filter(Boolean).join(', ') || 'None'}`);
+console.log('â•'.repeat(60));
+console.log('âœ… Bot READY!\n');
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   22. INLINE KEYBOARD BUILDERS
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function kbMainMenu(userId) {
   const buttons = [];
   
   if (bisaAksesLaporan(userId)) {
     buttons.push([
-      { text: '📊 Laporan Penjualan', callback_data: 'menu:1' },
-      { text: '🏷️ Laporan Harga', callback_data: 'menu:2' },
+      { text: 'ðŸ“Š Laporan Penjualan', callback_data: 'menu:1' },
+      { text: 'ðŸ·ï¸ Laporan Harga', callback_data: 'menu:2' },
     ]);
     buttons.push([
-      { text: '🛒 Laporan Marketplace', callback_data: 'menu:3' },
-      { text: '📦 Stock Opname', callback_data: 'menu:5' },
+      { text: 'ðŸ›’ Laporan Marketplace', callback_data: 'menu:3' },
+      { text: 'ðŸ“¦ Stock Opname', callback_data: 'menu:5' },
     ]);
     buttons.push([
-      { text: '📋 Berita Acara', callback_data: 'menu:6' },
-      { text: '🔍 Cari Barang', callback_data: 'menu:4' },
+      { text: 'ðŸ“‹ Berita Acara', callback_data: 'menu:6' },
+      { text: 'ðŸ” Cari Barang', callback_data: 'menu:4' },
     ]);
         buttons.push([
-      { text: '🏠 Input Homebase', callback_data: 'menu:7' },
+      { text: 'ðŸ  Input Homebase', callback_data: 'menu:7' },
     ]);
   } else if (isMember(userId)) {
     buttons.push([
-      { text: '🔍 Cari Barang', callback_data: 'menu:4' },
-      { text: '🤖 AI Chat', callback_data: 'menu:ai' },
+      { text: 'ðŸ” Cari Barang', callback_data: 'menu:4' },
+      { text: 'ðŸ¤– AI Chat', callback_data: 'menu:ai' },
     ]);
   }
   
   if (isAdmin(userId)) {
     buttons.push([
-      { text: '👑 Menu Admin', callback_data: 'menu:9' },
+      { text: 'ðŸ‘‘ Menu Admin', callback_data: 'menu:9' },
     ]);
   }
   
   buttons.push([
-    { text: 'ℹ️ Info', callback_data: 'menu:info' },
-    { text: '❓ Bantuan', callback_data: 'menu:help' },
+    { text: 'â„¹ï¸ Info', callback_data: 'menu:info' },
+    { text: 'â“ Bantuan', callback_data: 'menu:help' },
   ]);
   
   return { inline_keyboard: buttons };
@@ -4365,7 +4374,7 @@ function kbPilihToko(menuType, excludeCp = false) {
     if (excludeCp && t.kode === 'cp') return;
     buttons.push([{ text: `${t.icon} ${t.nama}`, callback_data: `toko:${menuType}:${t.kode}` }]);
   });
-  buttons.push([{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]);
+  buttons.push([{ text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' }]);
   return { inline_keyboard: buttons };
 }
 
@@ -4373,13 +4382,13 @@ function kbPilihHari(menuType, tokoKode) {
   return {
     inline_keyboard: [
       [
-        { text: `📅 HARI INI (${getTanggal(false)})`, callback_data: `hari:${menuType}:${tokoKode}:0` },
+        { text: `ðŸ“… HARI INI (${getTanggal(false)})`, callback_data: `hari:${menuType}:${tokoKode}:0` },
       ],
       [
-        { text: `📅 KEMARIN (${getTanggal(true)})`, callback_data: `hari:${menuType}:${tokoKode}:1` },
+        { text: `ðŸ“… KEMARIN (${getTanggal(true)})`, callback_data: `hari:${menuType}:${tokoKode}:1` },
       ],
       [
-        { text: '🔙 Pilih Toko', callback_data: `menu:${menuType}` },
+        { text: 'ðŸ”™ Pilih Toko', callback_data: `menu:${menuType}` },
       ]
     ]
   };
@@ -4389,20 +4398,20 @@ function kbAdminMenu() {
   return {
     inline_keyboard: [
       [
-        { text: '👥 List Members', callback_data: 'admin:listmember' },
-        { text: '📒 List Kontak', callback_data: 'admin:listkontak' },
+        { text: 'ðŸ‘¥ List Members', callback_data: 'admin:listmember' },
+        { text: 'ðŸ“’ List Kontak', callback_data: 'admin:listkontak' },
       ],
       [
-        { text: '🔔 Pending Approval', callback_data: 'admin:pending' },
-        { text: '📊 Statistics', callback_data: 'admin:stats' },
+        { text: 'ðŸ”” Pending Approval', callback_data: 'admin:pending' },
+        { text: 'ðŸ“Š Statistics', callback_data: 'admin:stats' },
       ],
       [
-        { text: '🔄 Reload Excel', callback_data: 'admin:reload' },
-        { text: 'ℹ️ Info Sistem', callback_data: 'admin:info' },
+        { text: 'ðŸ”„ Reload Excel', callback_data: 'admin:reload' },
+        { text: 'â„¹ï¸ Info Sistem', callback_data: 'admin:info' },
       ],
       [
-        { text: '📢 Broadcast', callback_data: 'admin:broadcast' },
-        { text: '🔙 Menu Utama', callback_data: 'menu:main' },
+        { text: 'ðŸ“¢ Broadcast', callback_data: 'admin:broadcast' },
+        { text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' },
       ]
     ]
   };
@@ -4420,24 +4429,24 @@ function kbBaSection(baData) {
   
   return {
     inline_keyboard: [
-      [{ text: `1️⃣ Penambahan Stok Kasir (${c.s1})`, callback_data: 'ba:section:1' }],
-      [{ text: `2️⃣ Penyesuaian Tambah (${c.s2a})`, callback_data: 'ba:section:2' }],
-      [{ text: `3️⃣ Penyesuaian Kurangi (${c.s2b})`, callback_data: 'ba:section:3' }],
-      [{ text: `4️⃣ Salah Ketik/Retur (${c.s3})`, callback_data: 'ba:section:4' }],
-      [{ text: `5️⃣ Barang Masuk Fisik (${c.s4})`, callback_data: 'ba:section:5' }],
-      [{ text: `6️⃣ Dicoret Gudang (${c.s5})`, callback_data: 'ba:section:6' }],
+      [{ text: `1ï¸âƒ£ Penambahan Stok Kasir (${c.s1})`, callback_data: 'ba:section:1' }],
+      [{ text: `2ï¸âƒ£ Penyesuaian Tambah (${c.s2a})`, callback_data: 'ba:section:2' }],
+      [{ text: `3ï¸âƒ£ Penyesuaian Kurangi (${c.s2b})`, callback_data: 'ba:section:3' }],
+      [{ text: `4ï¸âƒ£ Salah Ketik/Retur (${c.s3})`, callback_data: 'ba:section:4' }],
+      [{ text: `5ï¸âƒ£ Barang Masuk Fisik (${c.s4})`, callback_data: 'ba:section:5' }],
+      [{ text: `6ï¸âƒ£ Dicoret Gudang (${c.s5})`, callback_data: 'ba:section:6' }],
       [
-        { text: '📊 Review', callback_data: 'ba:review' },
-        { text: '✅ Selesai', callback_data: 'ba:selesai' },
+        { text: 'ðŸ“Š Review', callback_data: 'ba:review' },
+        { text: 'âœ… Selesai', callback_data: 'ba:selesai' },
       ],
-      [{ text: '🔙 Batal', callback_data: 'menu:main' }],
+      [{ text: 'ðŸ”™ Batal', callback_data: 'menu:main' }],
     ]
   };
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   23. UTILITY KIRIM PESAN (AUTO-SPLIT PESAN PANJANG)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function splitMessage(text, maxLength = 4000) {
   if (!text) return [];
@@ -4501,7 +4510,7 @@ async function kirim(chatId, text, opts = {}) {
       const isLast = i === total - 1;
       
       if (total > 1) {
-        chunkText = `📄 _Bagian ${i + 1}/${total}_\n──────────────────\n\n` + chunkText;
+        chunkText = `ðŸ“„ _Bagian ${i + 1}/${total}_\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n\n` + chunkText;
       }
       
       const chunkOpts = isLast 
@@ -4545,59 +4554,59 @@ async function kirimDokumen(chatId, filePath, fileName) {
   }
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   24. UI MESSAGES
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function buildWelcome(userId, userName) {
   const waktu = getWaktu();
   const role = getUserRole(userId);
   
-  return `┌─────────────────────────┐
-│  🏪 *BOT TOKO PERABOT*
-│  Selamat ${waktu}!
-└─────────────────────────┘
+  return `â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  ðŸª *BOT TOKO PERABOT*
+â”‚  Selamat ${waktu}!
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
-👋 Halo *${escapeMd(userName)}*!
+ðŸ‘‹ Halo *${escapeMd(userName)}*!
 ${role}
 
-✨ *Fitur Lengkap:*
-🔍 Cari barang & harga (5 toko)
-🤖 AI Chat pintar
-🎙️ Voice note recognition
-📸 Scan foto AI
-📊 Stock Opname & Laporan
-📋 Berita Acara
+âœ¨ *Fitur Lengkap:*
+ðŸ” Cari barang & harga (5 toko)
+ðŸ¤– AI Chat pintar
+ðŸŽ™ï¸ Voice note recognition
+ðŸ“¸ Scan foto AI
+ðŸ“Š Stock Opname & Laporan
+ðŸ“‹ Berita Acara
 
-⚡ *Cara Cepat:*
+âš¡ *Cara Cepat:*
 Langsung ketik nama barang!
 
-📝 *Contoh:*
+ðŸ“ *Contoh:*
 \`dandang eagle 20\`
 \`harga panci di cp\`
 \`grosir kompor\`
 
-👇 Pilih menu di bawah:`;
+ðŸ‘‡ Pilih menu di bawah:`;
 }
 
 function buildGuestWelcome(userName, userId) {
-  return `🔐 *AKSES TERBATAS*\n${GARIS_TEBAL}\n\n` +
-    `👋 Halo *${escapeMd(userName)}*!\n\n` +
+  return `ðŸ” *AKSES TERBATAS*\n${GARIS_TEBAL}\n\n` +
+    `ðŸ‘‹ Halo *${escapeMd(userName)}*!\n\n` +
     `Anda belum terverifikasi sebagai member.\n\n` +
-    `📝 *Cara request akses:*\n` +
+    `ðŸ“ *Cara request akses:*\n` +
     `Ketik: \`/request Nama Lengkap\`\n\n` +
     `*Contoh:* \`/request Pak Budi\`\n\n` +
-    `🆔 Telegram ID Anda: \`${userId}\`\n\n` +
+    `ðŸ†” Telegram ID Anda: \`${userId}\`\n\n` +
     `Admin akan review permintaan Anda.`;
 }
 
 function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
-  let msg = `📦 *DETAIL BARANG*\n${GARIS_TEBAL}\n`;
-  msg += `🔖 *Kode:* \`${item.kode}\`\n`;
-  msg += `📦 *Nama:* ${escapeMd(item.nama)}\n`;
-  msg += `🏷️ *Jenis:* ${escapeMd(item.jenis || '-')}\n`;
-  msg += `🏗️ *Merek:* ${escapeMd(item.merek || '-')}\n`;
-  msg += `📏 *Satuan:* ${escapeMd(item.satuan)}\n`;
+  let msg = `ðŸ“¦ *DETAIL BARANG*\n${GARIS_TEBAL}\n`;
+  msg += `ðŸ”– *Kode:* \`${item.kode}\`\n`;
+  msg += `ðŸ“¦ *Nama:* ${escapeMd(item.nama)}\n`;
+  msg += `ðŸ·ï¸ *Jenis:* ${escapeMd(item.jenis || '-')}\n`;
+  msg += `ðŸ—ï¸ *Merek:* ${escapeMd(item.merek || '-')}\n`;
+  msg += `ðŸ“ *Satuan:* ${escapeMd(item.satuan)}\n`;
   msg += `${GARIS_TEBAL}\n\n`;
   
   if (tokoKode && tokoKode !== 'all') {
@@ -4605,40 +4614,40 @@ function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
     const h = item.harga[tokoKode];
     msg += `${t.icon} *${t.nama}*\n`;
     if (tipeHarga === 'grosir') {
-      msg += `📦 Ambil (6+): ${formatRp(h.ambil)}\n`;
+      msg += `ðŸ“¦ Ambil (6+): ${formatRp(h.ambil)}\n`;
     } else if (tipeHarga === 'ecer') {
-      msg += `💵 Ecer (1-5): ${formatRp(h.ecer)}\n`;
+      msg += `ðŸ’µ Ecer (1-5): ${formatRp(h.ecer)}\n`;
     } else {
-      msg += `💵 Ecer: ${formatRp(h.ecer)}\n📦 Ambil: ${formatRp(h.ambil)}\n`;
+      msg += `ðŸ’µ Ecer: ${formatRp(h.ecer)}\nðŸ“¦ Ambil: ${formatRp(h.ambil)}\n`;
     }
-    msg += `📊 Stok: ${h.stok} ${h.stok > 0 ? '✅' : '⚠️'}`;
+    msg += `ðŸ“Š Stok: ${h.stok} ${h.stok > 0 ? 'âœ…' : 'âš ï¸'}`;
   } else {
-    msg += `💰 *HARGA 5 TOKO:*\n\n`;
+    msg += `ðŸ’° *HARGA 5 TOKO:*\n\n`;
     TOKO_LIST.forEach(t => {
       const h = item.harga[t.kode];
-      const stokIcon = h.stok > 0 ? '🟢' : '🔴';
+      const stokIcon = h.stok > 0 ? 'ðŸŸ¢' : 'ðŸ”´';
       msg += `${stokIcon} *${t.nama}*\n`;
       if (tipeHarga === 'grosir') {
-        msg += `   📦 Ambil: ${formatRp(h.ambil)}\n`;
+        msg += `   ðŸ“¦ Ambil: ${formatRp(h.ambil)}\n`;
       } else if (tipeHarga === 'ecer') {
-        msg += `   💵 Ecer: ${formatRp(h.ecer)}\n`;
+        msg += `   ðŸ’µ Ecer: ${formatRp(h.ecer)}\n`;
       } else {
-        msg += `   💵 Ecer: ${formatRp(h.ecer)} | 📦 Ambil: ${formatRp(h.ambil)}\n`;
+        msg += `   ðŸ’µ Ecer: ${formatRp(h.ecer)} | ðŸ“¦ Ambil: ${formatRp(h.ambil)}\n`;
       }
-      msg += `   📊 Stok: ${h.stok} ${item.satuan}\n\n`;
+      msg += `   ðŸ“Š Stok: ${h.stok} ${item.satuan}\n\n`;
     });
   }
   return msg;
 }
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   25. PROSES CARI BARANG (dengan Pagination)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-const HASIL_PER_HALAMAN = 15; // ★ Item per halaman (bisa disesuaikan)
+const HASIL_PER_HALAMAN = 15; // â˜… Item per halaman (bisa disesuaikan)
 
 async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
   trackSearch(keyword);
-  const loading = await kirim(chatId, '🔍 _Sedang mencari di database..._');
+  const loading = await kirim(chatId, 'ðŸ” _Sedang mencari di database..._');
   
   const tokoDisebut = deteksiTokoDariTeks(keyword);
   const tipeHarga = detectTipeHarga(keyword);
@@ -4653,31 +4662,31 @@ async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
   // === TIDAK ADA HASIL ===
   if (results.hasil.length === 0) {
     if (results.saran && results.saran.length > 0) {
-      let msg = `🤔 *Tidak Ditemukan Persis*\n${GARIS_TEBAL}\n\n`;
+      let msg = `ðŸ¤” *Tidak Ditemukan Persis*\n${GARIS_TEBAL}\n\n`;
       msg += `Pencarian: _"${escapeMd(keyword)}"_\n\n`;
-      msg += `💡 *Mungkin yang kamu maksud:*\n\n`;
+      msg += `ðŸ’¡ *Mungkin yang kamu maksud:*\n\n`;
       
       const buttons = [];
       results.saran.forEach((d, i) => {
-        msg += `*${i+1}. ${escapeMd(d.nama)}*\n   🔖 \`${d.kode}\`\n\n`;
+        msg += `*${i+1}. ${escapeMd(d.nama)}*\n   ðŸ”– \`${d.kode}\`\n\n`;
         buttons.push([{
           text: `${i+1}. ${d.nama}`,
           callback_data: `detail:${d.kode}:${tokoKode || 'all'}`
         }]);
       });
       
-      buttons.push([{ text: '🔄 Cari Lagi', callback_data: 'menu:4' }]);
-      buttons.push([{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]);
+      buttons.push([{ text: 'ðŸ”„ Cari Lagi', callback_data: 'menu:4' }]);
+      buttons.push([{ text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' }]);
       
       await kirim(chatId, msg, { reply_markup: { inline_keyboard: buttons }});
     } else {
       await kirim(chatId,
-        `❌ *Barang tidak ditemukan*\n${GARIS_TEBAL}\n\n` +
+        `âŒ *Barang tidak ditemukan*\n${GARIS_TEBAL}\n\n` +
         `Pencarian: _${escapeMd(keyword)}_\n\n` +
-        `💡 *Tips:*\n• Coba nama lebih spesifik\n• Atau pakai kode barang`,
+        `ðŸ’¡ *Tips:*\nâ€¢ Coba nama lebih spesifik\nâ€¢ Atau pakai kode barang`,
         { reply_markup: { inline_keyboard: [
-          [{ text: '🔄 Cari Lagi', callback_data: 'menu:4' }],
-          [{ text: '🔙 Menu Utama', callback_data: 'menu:main' }],
+          [{ text: 'ðŸ”„ Cari Lagi', callback_data: 'menu:4' }],
+          [{ text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' }],
         ]}}
       );
     }
@@ -4694,7 +4703,7 @@ async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
         buttons.push([{ text: `${t.icon} Lihat di ${t.nama}`, callback_data: `detail:${item.kode}:${t.kode}` }]);
       });
     }
-    buttons.push([{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]);
+    buttons.push([{ text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' }]);
     
     await kirim(chatId, buildDetailBarang(item, tokoKode || 'all', tipeHarga), {
       reply_markup: { inline_keyboard: buttons }
@@ -4728,13 +4737,13 @@ async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
   });
   
   // Build header pesan
-  let msg = `🔍 *Ditemukan ${sortedResults.length} barang (A-Z)*\n`;
+  let msg = `ðŸ” *Ditemukan ${sortedResults.length} barang (A-Z)*\n`;
   if (tokoKode) {
     const t = TOKO_LIST.find(x => x.kode === tokoKode);
-    msg += `🏪 ${t.nama}\n`;
+    msg += `ðŸª ${t.nama}\n`;
   }
   if (totalPages > 1) {
-    msg += `📄 Halaman ${currentPage + 1}/${totalPages} (item ${startIdx + 1}-${endIdx})\n`;
+    msg += `ðŸ“„ Halaman ${currentPage + 1}/${totalPages} (item ${startIdx + 1}-${endIdx})\n`;
   }
   msg += `${GARIS_TEBAL}\n\n`;
   
@@ -4742,11 +4751,11 @@ async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
   const buttons = [];
   pageItems.forEach((item, i) => {
     const globalIdx = startIdx + i + 1;
-    msg += `*${globalIdx}. ${escapeMd(item.nama)}*\n   🔖 \`${item.kode}\`\n`;
+    msg += `*${globalIdx}. ${escapeMd(item.nama)}*\n   ðŸ”– \`${item.kode}\`\n`;
     if (tokoKode) {
       const h = item.harga[tokoKode];
       const harga = tipeHarga === 'grosir' ? h.ambil : h.ecer;
-      msg += `   💰 ${formatRp(harga)} | 📊 ${h.stok} ${h.stok > 0 ? '✅' : '⚠️'}\n`;
+      msg += `   ðŸ’° ${formatRp(harga)} | ðŸ“Š ${h.stok} ${h.stok > 0 ? 'âœ…' : 'âš ï¸'}\n`;
     }
     msg += '\n';
     buttons.push([{ 
@@ -4755,24 +4764,24 @@ async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
     }]);
   });
   
-  // ═══ TOMBOL PAGINATION ═══
+  // â•â•â• TOMBOL PAGINATION â•â•â•
   if (totalPages > 1) {
     const navRow = [];
     
     // Previous
     if (currentPage > 0) {
-      navRow.push({ text: '⬅️ Sebelumnya', callback_data: `caripage:${currentPage - 1}` });
+      navRow.push({ text: 'â¬…ï¸ Sebelumnya', callback_data: `caripage:${currentPage - 1}` });
     }
     
     // Info halaman (info only)
     navRow.push({ 
-      text: `📄 ${currentPage + 1}/${totalPages}`, 
+      text: `ðŸ“„ ${currentPage + 1}/${totalPages}`, 
       callback_data: `caripageinfo` 
     });
     
     // Next
     if (currentPage < totalPages - 1) {
-      navRow.push({ text: 'Berikutnya ➡️', callback_data: `caripage:${currentPage + 1}` });
+      navRow.push({ text: 'Berikutnya âž¡ï¸', callback_data: `caripage:${currentPage + 1}` });
     }
     
     buttons.push(navRow);
@@ -4781,31 +4790,31 @@ async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
     if (totalPages > 3) {
       const jumpRow = [];
       if (currentPage > 1) {
-        jumpRow.push({ text: '⏮️ Awal', callback_data: `caripage:0` });
+        jumpRow.push({ text: 'â®ï¸ Awal', callback_data: `caripage:0` });
       }
       if (currentPage < totalPages - 2) {
-        jumpRow.push({ text: 'Akhir ⏭️', callback_data: `caripage:${totalPages - 1}` });
+        jumpRow.push({ text: 'Akhir â­ï¸', callback_data: `caripage:${totalPages - 1}` });
       }
       if (jumpRow.length > 0) buttons.push(jumpRow);
     }
   }
   
   // Tombol aksi
-  buttons.push([{ text: '🔄 Cari Lagi', callback_data: 'menu:4' }]);
-  buttons.push([{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]);
+  buttons.push([{ text: 'ðŸ”„ Cari Lagi', callback_data: 'menu:4' }]);
+  buttons.push([{ text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' }]);
   
   await kirim(chatId, msg, { reply_markup: { inline_keyboard: buttons }});
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   26. AI CHAT HANDLER - SMART ROUTING (Anti Halusinasi)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 // Deteksi intent: apakah ini pertanyaan barang/harga/stok?
 function deteksiIntentBarang(text) {
   const low = text.toLowerCase().trim();
   
-  // ★ FILTER DULU: Kalau jelas-jelas pertanyaan NON-PRODUK, skip
+  // â˜… FILTER DULU: Kalau jelas-jelas pertanyaan NON-PRODUK, skip
   const nonProductPatterns = [
     /\b(siapa|kapan|dimana|apa itu|apa sih|mengapa|kenapa|bagaimana)\b/i,
     /\b(presiden|menteri|gubernur|walikota|bupati|raja|ratu|pemimpin)\b/i,
@@ -4836,7 +4845,7 @@ function deteksiIntentBarang(text) {
     return { isProduct: true, confidence: 'high', reason: 'kode barang' };
   }
   
-  // 2. ★ NEW: Pattern generik "SINGKATAN + ANGKA" (contoh: DLP 21, LP 15, GK 200)
+  // 2. â˜… NEW: Pattern generik "SINGKATAN + ANGKA" (contoh: DLP 21, LP 15, GK 200)
   // Ini pattern umum untuk nama produk dengan singkatan
   if (/\b[a-z]{2,4}\s*\d{1,4}\b/i.test(low) && low.length <= 30) {
     // Cek panjang total pesan (kalau pendek, kemungkinan besar nama barang)
@@ -4906,7 +4915,7 @@ function deteksiIntentBarang(text) {
     }
   }
   
-  // 7. ★ NEW: Kata pendek yang bukan sapaan/kata umum → kemungkinan nama barang
+  // 7. â˜… NEW: Kata pendek yang bukan sapaan/kata umum â†’ kemungkinan nama barang
   const wordCount = low.split(/\s+/).length;
   const isPendek = low.length <= 20 && wordCount <= 3;
   const bukanKalimat = !/\b(saya|aku|kamu|dia|mereka|kita|adalah|itu|ini|dan|atau|tapi|karena|jika)\b/i.test(low);
@@ -4967,11 +4976,11 @@ async function prosesAI(chatId, userId, pertanyaan) {
   const nama = getNama(userId) || 'Kakak';
   const low = pertanyaan.toLowerCase().trim();
   
-  // ═══ COMMAND KHUSUS ═══
+  // â•â•â• COMMAND KHUSUS â•â•â•
   if (low === 'reset chat' || low === 'lupakan' || low === 'mulai lagi' || low === 'clear memory') {
     clearMemory(userId);
     await kirim(chatId, 
-      `Oke kak ${escapeMd(nama)}, aku reset memori ngobrol kita ya 🔄\n\nMulai dari awal lagi nih! Mau ngobrol apa? 😊`
+      `Oke kak ${escapeMd(nama)}, aku reset memori ngobrol kita ya ðŸ”„\n\nMulai dari awal lagi nih! Mau ngobrol apa? ðŸ˜Š`
     );
     return;
   }
@@ -4979,12 +4988,12 @@ async function prosesAI(chatId, userId, pertanyaan) {
   if (low === 'lihat memory' || low === 'show memory') {
     const memory = getChatMemory(userId);
     if (memory.length === 0) {
-      await kirim(chatId, `Belum ada percakapan tersimpan kak 😊`);
+      await kirim(chatId, `Belum ada percakapan tersimpan kak ðŸ˜Š`);
       return;
     }
-    let m = `🧠 *Memori Percakapan*\n${GARIS_TIPIS}\n\n`;
+    let m = `ðŸ§  *Memori Percakapan*\n${GARIS_TIPIS}\n\n`;
     memory.slice(-5).forEach((msg) => {
-      const role = msg.role === 'user' ? '👤 Kamu' : '🤖 Aku';
+      const role = msg.role === 'user' ? 'ðŸ‘¤ Kamu' : 'ðŸ¤– Aku';
       m += `${role}: _${msg.content.substring(0, 80)}${msg.content.length > 80 ? '...' : ''}_\n\n`;
     });
     m += `\nTotal: ${memory.length} pesan tersimpan`;
@@ -4992,7 +5001,7 @@ async function prosesAI(chatId, userId, pertanyaan) {
     return;
   }
   
-  // ═══ ROUTER PINTAR ═══
+  // â•â•â• ROUTER PINTAR â•â•â•
   
   // 1. Cek lanjutan dari pertanyaan barang sebelumnya
   const memory = getChatMemory(userId);
@@ -5011,7 +5020,7 @@ async function prosesAI(chatId, userId, pertanyaan) {
   const intent = deteksiIntentBarang(pertanyaan);
   log.info('AI-ROUTER', `Intent: ${intent.isProduct ? 'PRODUK' : 'NON-PRODUK'} (${intent.confidence}) - ${intent.reason}`);
   
-  // 3. Confidence HIGH untuk PRODUK → langsung cari
+  // 3. Confidence HIGH untuk PRODUK â†’ langsung cari
   if (intent.isProduct && intent.confidence === 'high') {
     await prosesCari(chatId, userId, pertanyaan, null);
     addToMemory(userId, 'user', pertanyaan);
@@ -5019,17 +5028,17 @@ async function prosesAI(chatId, userId, pertanyaan) {
     return;
   }
   
-   // 4. Confidence MEDIUM → LANGSUNG CARI (tidak perlu tanya)
+   // 4. Confidence MEDIUM â†’ LANGSUNG CARI (tidak perlu tanya)
   // Karena user kasih input singkat, kemungkinan besar itu memang nama barang
   if (intent.isProduct && intent.confidence === 'medium') {
-    log.info('AI-ROUTER', `Medium confidence → langsung cari: "${pertanyaan}"`);
+    log.info('AI-ROUTER', `Medium confidence â†’ langsung cari: "${pertanyaan}"`);
     await prosesCari(chatId, userId, pertanyaan, null);
     addToMemory(userId, 'user', pertanyaan);
     addToMemory(userId, 'assistant', `[Sistem mencari barang: ${pertanyaan}]`);
     return;
   }
   
-  // 5. NON-PRODUK → ngobrol natural dengan AI (with web search jika perlu)
+  // 5. NON-PRODUK â†’ ngobrol natural dengan AI (with web search jika perlu)
 
   const result = await chatAINatural(userId, pertanyaan, nama);
   
@@ -5040,17 +5049,17 @@ async function prosesAI(chatId, userId, pertanyaan) {
     let finalResponse = result.jawaban;
     
     if (result.webUsed) {
-      finalResponse += `\n\n_💡 Info dari internet_`;
+      finalResponse += `\n\n_ðŸ’¡ Info dari internet_`;
     }
     
-    // Cek apakah AI bilang "bentar aku cek" → berarti AI kira ini produk
+    // Cek apakah AI bilang "bentar aku cek" â†’ berarti AI kira ini produk
     const aiTriggersSearch = /\b(bentar|sebentar|tunggu|wait)\b.*(cek|cari|carikan|check|lihat).*(database|sistem|data|stok|toko)/i.test(result.jawaban) 
       || /(cek|cari|carikan|check|lihat).*(database|sistem|data|stok|toko).*(ya|dulu)/i.test(result.jawaban)
       || /\bbentar\b.*(kak|ya|dulu)/i.test(result.jawaban.toLowerCase().substring(0, 100));
     
     await kirim(chatId, finalResponse);
     
-    // ★ Kalau AI bilang mau cek, LANGSUNG trigger pencarian
+    // â˜… Kalau AI bilang mau cek, LANGSUNG trigger pencarian
     if (aiTriggersSearch) {
       log.info('AI-TRIGGER', `AI meminta cari: "${pertanyaan}"`);
       await tunggu(800);
@@ -5058,35 +5067,35 @@ async function prosesAI(chatId, userId, pertanyaan) {
     }
   } else {
     const fallbackResponses = [
-      `Hmm, aku lagi blank nih kak 😅 Coba tanya lagi?`,
-      `Aduh maaf, lagi loading 🤖💭 Coba lagi ya?`,
-      `Lho, kok aku gak bisa mikir 😆 Coba ulang kak`,
+      `Hmm, aku lagi blank nih kak ðŸ˜… Coba tanya lagi?`,
+      `Aduh maaf, lagi loading ðŸ¤–ðŸ’­ Coba lagi ya?`,
+      `Lho, kok aku gak bisa mikir ðŸ˜† Coba ulang kak`,
     ];
     const random = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
     await kirim(chatId, random);
   }
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   27. STOCK OPNAME HANDLER (Lengkap + Tambah Barang Baru + Foto)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function kbSOAktif() {
   return { inline_keyboard: [
     [
-      { text: '👥 User Lain', callback_data: 'so:userlain' },
-      { text: '📊 Review', callback_data: 'so:review' },
+      { text: 'ðŸ‘¥ User Lain', callback_data: 'so:userlain' },
+      { text: 'ðŸ“Š Review', callback_data: 'so:review' },
     ],
     [
-      { text: '📦 Pindah Rak', callback_data: 'so:pindahrak' },
-      { text: '✏️ Edit Rak', callback_data: 'so:editrak' },
+      { text: 'ðŸ“¦ Pindah Rak', callback_data: 'so:pindahrak' },
+      { text: 'âœï¸ Edit Rak', callback_data: 'so:editrak' },
     ],
     [
-      { text: '➕ Tambah Barang Baru', callback_data: 'so:tambahbaru' },
+      { text: 'âž• Tambah Barang Baru', callback_data: 'so:tambahbaru' },
     ],
     [
-      { text: '📊 Export Gabungan', callback_data: 'so:exportgabungan' },
-      { text: '✅ Selesai', callback_data: 'so:selesai' },
+      { text: 'ðŸ“Š Export Gabungan', callback_data: 'so:exportgabungan' },
+      { text: 'âœ… Selesai', callback_data: 'so:selesai' },
     ],
   ]};
 }
@@ -5094,8 +5103,8 @@ function kbSOAktif() {
 function tampilkanBarangPilihan(item, tokoKode, userId, rakAktif) {
   const h = item.harga[tokoKode];
   
-  let m = `📦 *Barang ditemukan!*\n${GARIS_TEBAL}\n`;
-  m += `🔖 ${item.kode}\n📦 ${escapeMd(item.nama)}\n📏 ${item.satuan}\n💻 Stok Sistem: ${h.stok}\n`;
+  let m = `ðŸ“¦ *Barang ditemukan!*\n${GARIS_TEBAL}\n`;
+  m += `ðŸ”– ${item.kode}\nðŸ“¦ ${escapeMd(item.nama)}\nðŸ“ ${item.satuan}\nðŸ’» Stok Sistem: ${h.stok}\n`;
   
   if (userId) {
     const infoLain = formatInfoBarangDiRakLain(tokoKode, item.kode, rakAktif, userId);
@@ -5104,17 +5113,17 @@ function tampilkanBarangPilihan(item, tokoKode, userId, rakAktif) {
   
   const totalAll = getTotalBarangSemuaRak(tokoKode, item.kode);
   if (totalAll.total > 0) {
-    m += `\n📊 *Total semua rak:*\n`;
-    if (totalAll.totalFisik > 0) m += `   🏪 Fisik: ${totalAll.totalFisik}\n`;
-    if (totalAll.totalGudang > 0) m += `   🏭 Gudang: ${totalAll.totalGudang}\n`;
-    m += `   📦 TOTAL: ${totalAll.total}\n`;
+    m += `\nðŸ“Š *Total semua rak:*\n`;
+    if (totalAll.totalFisik > 0) m += `   ðŸª Fisik: ${totalAll.totalFisik}\n`;
+    if (totalAll.totalGudang > 0) m += `   ðŸ­ Gudang: ${totalAll.totalGudang}\n`;
+    m += `   ðŸ“¦ TOTAL: ${totalAll.total}\n`;
     
     const selisih = totalAll.total - h.stok;
-    const icon = selisih === 0 ? '✅' : selisih > 0 ? '➕' : '➖';
+    const icon = selisih === 0 ? 'âœ…' : selisih > 0 ? 'âž•' : 'âž–';
     m += `   ${icon} Selisih: ${selisih}\n`;
   }
   
-  m += `${GARIS_TEBAL}\n\n💬 *Ketik:*\n• \`TOKO 15\` — stok fisik toko\n• \`GUDANG 20\` — stok gudang`;
+  m += `${GARIS_TEBAL}\n\nðŸ’¬ *Ketik:*\nâ€¢ \`TOKO 15\` â€” stok fisik toko\nâ€¢ \`GUDANG 20\` â€” stok gudang`;
   return m;
 }
 
@@ -5137,50 +5146,50 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
   if (low === 'batal' || low === '/batal') {
     if (typeof leaveSesiSO === 'function') leaveSesiSO(tokoKode, userId);
     resetSesi(userId);
-    await kirim(chatId, '✅ Stock opname dibatalkan.', { reply_markup: kbMainMenu(userId) });
+    await kirim(chatId, 'âœ… Stock opname dibatalkan.', { reply_markup: kbMainMenu(userId) });
     return;
   }
   
-  // ════════ WIZARD SETUP ════════
+  // â•â•â•â•â•â•â•â• WIZARD SETUP â•â•â•â•â•â•â•â•
   
   if (session.soSetupStep === 'petugas') {
-    if (!message || message.length < 2) return kirim(chatId, '⚠️ Minimal 2 karakter.');
+    if (!message || message.length < 2) return kirim(chatId, 'âš ï¸ Minimal 2 karakter.');
     const petugas = message.split(',').map(n => n.trim()).filter(n => n.length >= 2);
-    if (!petugas.length) return kirim(chatId, '⚠️ Contoh: `Budi` atau `Budi, Sari`');
+    if (!petugas.length) return kirim(chatId, 'âš ï¸ Contoh: `Budi` atau `Budi, Sari`');
     
     soInfo.petugas = petugas;
     updateSesi(userId, { soInfo, soSetupStep: 'rak' });
     
     const existingRacks = Object.keys(getAllRacks(tokoKode));
-    let rakMsg = `✅ *Petugas:* ${petugas.join(', ')}\n${GARIS_TIPIS}\n\n📦 *STEP 2/3: Pilih/Buat Rak*\n\n`;
+    let rakMsg = `âœ… *Petugas:* ${petugas.join(', ')}\n${GARIS_TIPIS}\n\nðŸ“¦ *STEP 2/3: Pilih/Buat Rak*\n\n`;
     
     if (existingRacks.length > 0) {
-      rakMsg += `📚 *Rak yang sudah ada:*\n`;
+      rakMsg += `ðŸ“š *Rak yang sudah ada:*\n`;
       const buttons = [];
       existingRacks.forEach((rak, i) => {
         const items = Object.keys(getBarangDiRak(tokoKode, rak)).length;
         rakMsg += `${i+1}. ${rak} (${items} barang)\n`;
-        buttons.push([{ text: `📦 ${rak} (${items} barang)`, callback_data: `so:pilihrak:${rak}` }]);
+        buttons.push([{ text: `ðŸ“¦ ${rak} (${items} barang)`, callback_data: `so:pilihrak:${rak}` }]);
       });
-      buttons.push([{ text: '🆕 Buat Rak Baru', callback_data: 'so:rakbaru' }]);
-      rakMsg += `\n💡 *3 cara input rak:*\n   1. Pilih dari tombol\n   2. 📸 Kirim FOTO barcode rak\n   3. Ketik nama manual`;
+      buttons.push([{ text: 'ðŸ†• Buat Rak Baru', callback_data: 'so:rakbaru' }]);
+      rakMsg += `\nðŸ’¡ *3 cara input rak:*\n   1. Pilih dari tombol\n   2. ðŸ“¸ Kirim FOTO barcode rak\n   3. Ketik nama manual`;
       await kirim(chatId, rakMsg, { reply_markup: { inline_keyboard: buttons }});
     } else {
-      rakMsg += `💡 *2 cara input rak:*\n   1. 📸 Kirim FOTO barcode rak\n   2. Ketik manual\n\n*Contoh:* \`Rak A1\``;
+      rakMsg += `ðŸ’¡ *2 cara input rak:*\n   1. ðŸ“¸ Kirim FOTO barcode rak\n   2. Ketik manual\n\n*Contoh:* \`Rak A1\``;
       await kirim(chatId, rakMsg);
     }
     return;
   }
   
   if (session.soSetupStep === 'rak' || session.soSetupStep === 'rak_input') {
-    if (!message || message.length < 2) return kirim(chatId, '⚠️ Nama rak minimal 2 karakter.');
+    if (!message || message.length < 2) return kirim(chatId, 'âš ï¸ Nama rak minimal 2 karakter.');
     soInfo.rakAktif = message.trim();
     updateSesi(userId, { soInfo, soSetupStep: 'jam' });
     
     const jamSekarang = getJamSekarang();
     await kirim(chatId,
-      `✅ *Rak:* ${escapeMd(soInfo.rakAktif)}\n${GARIS_TIPIS}\n\n` +
-      `⏰ *STEP 3/3: Jam Mulai*\n\nFormat: \`HH:MM\`\n\n💡 Atau ketik *sekarang* (${jamSekarang})`
+      `âœ… *Rak:* ${escapeMd(soInfo.rakAktif)}\n${GARIS_TIPIS}\n\n` +
+      `â° *STEP 3/3: Jam Mulai*\n\nFormat: \`HH:MM\`\n\nðŸ’¡ Atau ketik *sekarang* (${jamSekarang})`
     );
     return;
   }
@@ -5191,9 +5200,9 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       jamMulai = getJamSekarang();
     } else {
       const match = message.trim().match(/^(\d{1,2})[:.](\d{2})$/);
-      if (!match) return kirim(chatId, '⚠️ Contoh: `08:30` atau `sekarang`');
+      if (!match) return kirim(chatId, 'âš ï¸ Contoh: `08:30` atau `sekarang`');
       const jam = parseInt(match[1]), menit = parseInt(match[2]);
-      if (jam < 0 || jam > 23 || menit < 0 || menit > 59) return kirim(chatId, '⚠️ Jam 0-23, menit 0-59.');
+      if (jam < 0 || jam > 23 || menit < 0 || menit > 59) return kirim(chatId, 'âš ï¸ Jam 0-23, menit 0-59.');
       jamMulai = `${String(jam).padStart(2,'0')}:${String(menit).padStart(2,'0')}`;
     }
     
@@ -5208,7 +5217,7 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     
     let infoLain = '';
     if (usersLain.length > 0) {
-      infoLain = `\n\n👥 *USER LAIN SEDANG SO:*\n──────────────────\n`;
+      infoLain = `\n\nðŸ‘¥ *USER LAIN SEDANG SO:*\nâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€\n`;
       usersLain.forEach(([, info], i) => {
         infoLain += `${i+1}. *${info.nama}* di *${info.rakAktif}* (mulai ${info.jamMulai})\n`;
       });
@@ -5217,41 +5226,41 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     const existingItems = Object.keys(getBarangDiRak(tokoKode, soInfo.rakAktif)).length;
     let infoRak = '';
     if (existingItems > 0) {
-      infoRak = `\n📊 Rak ini sudah punya *${existingItems}* jenis barang (dari user lain/sebelumnya).\n`;
+      infoRak = `\nðŸ“Š Rak ini sudah punya *${existingItems}* jenis barang (dari user lain/sebelumnya).\n`;
     }
     
     await kirim(chatId,
-      `🎉 *SETUP SELESAI!*\n${GARIS_TEBAL}\n\n` +
-      `🏦 ${namaToko}\n👥 ${soInfo.petugas.join(', ')}\n` +
-      `📦 Rak: *${escapeMd(soInfo.rakAktif)}*\n` +
-      `⏰ Mulai: *${jamMulai}*\n` +
+      `ðŸŽ‰ *SETUP SELESAI!*\n${GARIS_TEBAL}\n\n` +
+      `ðŸ¦ ${namaToko}\nðŸ‘¥ ${soInfo.petugas.join(', ')}\n` +
+      `ðŸ“¦ Rak: *${escapeMd(soInfo.rakAktif)}*\n` +
+      `â° Mulai: *${jamMulai}*\n` +
       infoRak + infoLain +
-      `\n${GARIS_TEBAL}\n\n📝 *INPUT BARANG:*\nKetik nama/kode → pilih → \`TOKO 15\` / \`GUDANG 20\`\n\n` +
+      `\n${GARIS_TEBAL}\n\nðŸ“ *INPUT BARANG:*\nKetik nama/kode â†’ pilih â†’ \`TOKO 15\` / \`GUDANG 20\`\n\n` +
       `*Perintah:* review | userlain | pindahrak | editrak | tambahbaru | selesai | batal`,
       { reply_markup: kbSOAktif() }
     );
     return;
   }
   
-  // ════════ PINDAH RAK ════════
+  // â•â•â•â•â•â•â•â• PINDAH RAK â•â•â•â•â•â•â•â•
   
   if (session.soSetupStep === 'pindahrak_namabaru' || session.soSetupStep === 'rak_input_pindah') {
-    if (!message || message.length < 2) return kirim(chatId, '⚠️ Nama rak minimal 2 karakter.');
+    if (!message || message.length < 2) return kirim(chatId, 'âš ï¸ Nama rak minimal 2 karakter.');
     soInfo.rakAktif = message.trim();
     updateSesi(userId, { soInfo, soSetupStep: null });
     updateUserRakSO(tokoKode, userId, soInfo.rakAktif);
     
     const existingItems = Object.keys(getBarangDiRak(tokoKode, soInfo.rakAktif)).length;
     await kirim(chatId,
-      `✅ *Pindah ke: ${escapeMd(soInfo.rakAktif)}*\n${GARIS_TIPIS}\n` +
-      (existingItems > 0 ? `📊 Rak ini sudah punya ${existingItems} jenis barang.\n` : '🆕 Rak baru, kosong.\n') +
-      `\n📝 Lanjutkan input barang...`,
+      `âœ… *Pindah ke: ${escapeMd(soInfo.rakAktif)}*\n${GARIS_TIPIS}\n` +
+      (existingItems > 0 ? `ðŸ“Š Rak ini sudah punya ${existingItems} jenis barang.\n` : 'ðŸ†• Rak baru, kosong.\n') +
+      `\nðŸ“ Lanjutkan input barang...`,
       { reply_markup: kbSOAktif() }
     );
     return;
   }
   
-  // ════════ EDIT ITEM QTY ════════
+  // â•â•â•â•â•â•â•â• EDIT ITEM QTY â•â•â•â•â•â•â•â•
   
   if (session.soEditMode) {
     const editInfo = session.soEditInfo;
@@ -5259,14 +5268,14 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     if (low === 'hapus' || low === 'delete') {
       hapusItemSO(tokoKode, editInfo.rak, editInfo.kode);
       updateSesi(userId, { soEditMode: false, soEditInfo: null });
-      await kirim(chatId, `🗑️ *Barang dihapus dari ${editInfo.rak}!*`, { reply_markup: kbSOAktif() });
+      await kirim(chatId, `ðŸ—‘ï¸ *Barang dihapus dari ${editInfo.rak}!*`, { reply_markup: kbSOAktif() });
       return;
     }
     
     const match = message.trim().match(/^([+-]?)(\d+)$/);
     if (!match) {
       await kirim(chatId,
-        `⚠️ Ketik angka baru, atau:\n• \`+5\` untuk tambah 5\n• \`-3\` untuk kurangi 3\n• \`0\` atau \`hapus\` untuk hapus`
+        `âš ï¸ Ketik angka baru, atau:\nâ€¢ \`+5\` untuk tambah 5\nâ€¢ \`-3\` untuk kurangi 3\nâ€¢ \`0\` atau \`hapus\` untuk hapus`
       );
       return;
     }
@@ -5279,7 +5288,7 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     
     if (entryIdx >= entries.length) {
       updateSesi(userId, { soEditMode: false, soEditInfo: null });
-      await kirim(chatId, '⚠️ Entry tidak ditemukan.', { reply_markup: kbSOAktif() });
+      await kirim(chatId, 'âš ï¸ Entry tidak ditemukan.', { reply_markup: kbSOAktif() });
       return;
     }
     
@@ -5299,33 +5308,33 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     }
     
     if (newQty <= 0) {
-      await kirim(chatId, `🗑️ *${escapeMd(namaBarang)}* dihapus dari ${editInfo.rak}!`, { reply_markup: kbSOAktif() });
+      await kirim(chatId, `ðŸ—‘ï¸ *${escapeMd(namaBarang)}* dihapus dari ${editInfo.rak}!`, { reply_markup: kbSOAktif() });
     } else {
       const totalAll = getTotalBarangSemuaRak(tokoKode, editInfo.kode);
       await kirim(chatId,
-        `✅ *Qty diubah!*\n${GARIS_TIPIS}\n` +
-        `📦 ${escapeMd(namaBarang)}\n📍 ${editInfo.rak}\n` +
-        `📊 Qty baru: *${newQty}*\n📊 Total semua rak: *${totalAll.total}*`,
+        `âœ… *Qty diubah!*\n${GARIS_TIPIS}\n` +
+        `ðŸ“¦ ${escapeMd(namaBarang)}\nðŸ“ ${editInfo.rak}\n` +
+        `ðŸ“Š Qty baru: *${newQty}*\nðŸ“Š Total semua rak: *${totalAll.total}*`,
         { reply_markup: kbSOAktif() }
       );
     }
     return;
   }
   
-  // ════════ TAMBAH BARANG BARU (Tidak Ada di Database) ════════
+  // â•â•â•â•â•â•â•â• TAMBAH BARANG BARU (Tidak Ada di Database) â•â•â•â•â•â•â•â•
   
   if (low === 'tambahbaru' || low === 'tambah barang' || low === 'barang baru' || low === 'add item') {
     updateSesi(userId, { soTambahBaruStep: 'nama' });
     await kirim(chatId,
-      `➕ *TAMBAH BARANG BARU*\n${GARIS_TEBAL}\n\n` +
-      `📦 Rak: *${soInfo.rakAktif}*\n\n` +
+      `âž• *TAMBAH BARANG BARU*\n${GARIS_TEBAL}\n\n` +
+      `ðŸ“¦ Rak: *${soInfo.rakAktif}*\n\n` +
       `Barang ini TIDAK ADA di database/Excel.\n` +
       `Data akan dicatat sebagai barang baru di laporan SO.\n\n` +
-      `📝 *STEP 1/3: Nama Barang*\n\n` +
+      `ðŸ“ *STEP 1/3: Nama Barang*\n\n` +
       `Ketik nama barang lengkap:\n\n` +
       `*Contoh:*\n` +
-      `• \`RAK PIRING STAINLESS 3 SUSUN\`\n` +
-      `• \`TEMPAT BUMBU KACA SET 6\`\n\n` +
+      `â€¢ \`RAK PIRING STAINLESS 3 SUSUN\`\n` +
+      `â€¢ \`TEMPAT BUMBU KACA SET 6\`\n\n` +
       `Ketik *batal* untuk keluar.`
     );
     return;
@@ -5334,12 +5343,12 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
   if (session.soTambahBaruStep === 'nama') {
     if (low === 'batal' || low === '/batal') {
       updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null });
-      await kirim(chatId, '✅ Dibatalkan.', { reply_markup: kbSOAktif() });
+      await kirim(chatId, 'âœ… Dibatalkan.', { reply_markup: kbSOAktif() });
       return;
     }
     
     if (!message || message.length < 3) {
-      await kirim(chatId, '⚠️ Nama barang minimal 3 karakter.');
+      await kirim(chatId, 'âš ï¸ Nama barang minimal 3 karakter.');
       return;
     }
     
@@ -5351,13 +5360,13 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     
     if (existing) {
       await kirim(chatId,
-        `⚠️ *Barang mirip ditemukan di database:*\n\n` +
-        `📦 ${escapeMd(existing.nama)}\n🔖 \`${existing.kode}\`\n\n` +
+        `âš ï¸ *Barang mirip ditemukan di database:*\n\n` +
+        `ðŸ“¦ ${escapeMd(existing.nama)}\nðŸ”– \`${existing.kode}\`\n\n` +
         `Mau pakai barang ini atau tetap tambah baru?`,
         { reply_markup: { inline_keyboard: [
-          [{ text: `✅ Pakai "${existing.nama.substring(0, 30)}"`, callback_data: `so:pick:${existing.kode}` }],
-          [{ text: '➕ Tetap Tambah Baru', callback_data: 'so:konfirmtambahbaru' }],
-          [{ text: '🔙 Batal', callback_data: 'so:kembali' }],
+          [{ text: `âœ… Pakai "${existing.nama.substring(0, 30)}"`, callback_data: `so:pick:${existing.kode}` }],
+          [{ text: 'âž• Tetap Tambah Baru', callback_data: 'so:konfirmtambahbaru' }],
+          [{ text: 'ðŸ”™ Batal', callback_data: 'so:kembali' }],
         ]}}
       );
       
@@ -5368,12 +5377,12 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     updateSesi(userId, { soBaruNama: namaBarang, soTambahBaruStep: 'qty' });
     
     await kirim(chatId,
-      `✅ *Nama: ${escapeMd(namaBarang)}*\n${GARIS_TIPIS}\n\n` +
-      `📝 *STEP 2/3: Jumlah Barang*\n\n` +
+      `âœ… *Nama: ${escapeMd(namaBarang)}*\n${GARIS_TIPIS}\n\n` +
+      `ðŸ“ *STEP 2/3: Jumlah Barang*\n\n` +
       `Ketik seperti biasa:\n` +
-      `• \`TOKO 15\` — stok di toko/rak\n` +
-      `• \`GUDANG 20\` — stok di gudang\n\n` +
-      `📍 Rak: ${soInfo.rakAktif}`
+      `â€¢ \`TOKO 15\` â€” stok di toko/rak\n` +
+      `â€¢ \`GUDANG 20\` â€” stok di gudang\n\n` +
+      `ðŸ“ Rak: ${soInfo.rakAktif}`
     );
     return;
   }
@@ -5381,7 +5390,7 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
   if (session.soTambahBaruStep === 'qty') {
     if (low === 'batal' || low === '/batal') {
       updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null });
-      await kirim(chatId, '✅ Dibatalkan.', { reply_markup: kbSOAktif() });
+      await kirim(chatId, 'âœ… Dibatalkan.', { reply_markup: kbSOAktif() });
       return;
     }
     
@@ -5389,10 +5398,10 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     if (!match) {
       const angka = message.replace(/[^0-9]/g, '');
       if (angka) {
-        await kirim(chatId, `⚠️ Ketik:\n• \`TOKO ${angka}\`\n• \`GUDANG ${angka}\``);
+        await kirim(chatId, `âš ï¸ Ketik:\nâ€¢ \`TOKO ${angka}\`\nâ€¢ \`GUDANG ${angka}\``);
         return;
       }
-      await kirim(chatId, '⚠️ Format: `TOKO 15` atau `GUDANG 20`');
+      await kirim(chatId, 'âš ï¸ Format: `TOKO 15` atau `GUDANG 20`');
       return;
     }
     
@@ -5427,20 +5436,20 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     });
     
     await kirim(chatId,
-      `✅ *Barang baru tersimpan!*\n${GARIS_TEBAL}\n\n` +
-      `📦 *${escapeMd(namaBarang)}*\n` +
-      `🔖 Kode: \`${kodeBaru}\` _(temporary)_\n` +
-      `📍 Rak: ${soInfo.rakAktif}\n` +
-      `${jenisKey === 'fisik' ? '🏪' : '🏭'} ${jenisKey.toUpperCase()}: ${jumlah}\n` +
-      `👤 ${namaPetugas}\n\n` +
+      `âœ… *Barang baru tersimpan!*\n${GARIS_TEBAL}\n\n` +
+      `ðŸ“¦ *${escapeMd(namaBarang)}*\n` +
+      `ðŸ”– Kode: \`${kodeBaru}\` _(temporary)_\n` +
+      `ðŸ“ Rak: ${soInfo.rakAktif}\n` +
+      `${jenisKey === 'fisik' ? 'ðŸª' : 'ðŸ­'} ${jenisKey.toUpperCase()}: ${jumlah}\n` +
+      `ðŸ‘¤ ${namaPetugas}\n\n` +
       `${GARIS_TIPIS}\n\n` +
-      `📸 *STEP 3/3: Foto Barang (Opsional)*\n\n` +
+      `ðŸ“¸ *STEP 3/3: Foto Barang (Opsional)*\n\n` +
       `Kirim FOTO barang untuk dokumentasi.\n` +
       `Foto akan MUNCUL di Excel!\n\n` +
       `Atau ketik *skip* untuk lewati.`,
       { reply_markup: { inline_keyboard: [
-        [{ text: '⏭️ Skip Foto', callback_data: 'so:skipfoto' }],
-        [{ text: '🔙 Kembali Input', callback_data: 'so:kembali' }],
+        [{ text: 'â­ï¸ Skip Foto', callback_data: 'so:skipfoto' }],
+        [{ text: 'ðŸ”™ Kembali Input', callback_data: 'so:kembali' }],
       ]}}
     );
     return;
@@ -5451,31 +5460,31 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null, soBaruKode: null });
       const totalBaru = getBarangBaruSO(tokoKode).length;
       await kirim(chatId,
-        `✅ *Barang baru ditambahkan tanpa foto*\n\n📦 Total barang baru di SO: *${totalBaru}*\n\n💬 Lanjutkan input barang atau pilih:`,
+        `âœ… *Barang baru ditambahkan tanpa foto*\n\nðŸ“¦ Total barang baru di SO: *${totalBaru}*\n\nðŸ’¬ Lanjutkan input barang atau pilih:`,
         { reply_markup: kbSOAktif() }
       );
       return;
     }
     
-    await kirim(chatId, '📸 Kirim foto barang, atau ketik *skip* untuk lewati.');
+    await kirim(chatId, 'ðŸ“¸ Kirim foto barang, atau ketik *skip* untuk lewati.');
     return;
   }
   
-  // ════════ COMMANDS ════════
+  // â•â•â•â•â•â•â•â• COMMANDS â•â•â•â•â•â•â•â•
   
   if (low === 'userlain' || low === 'lihatuser') {
     const usersAktif = getAllUsersAktif(tokoKode);
     const userLainList = Object.entries(usersAktif).filter(([uid]) => String(uid) !== String(userId));
     
     if (!userLainList.length) {
-      return kirim(chatId, `👥 Hanya kamu yang SO di ${namaToko} saat ini.`);
+      return kirim(chatId, `ðŸ‘¥ Hanya kamu yang SO di ${namaToko} saat ini.`);
     }
     
-    let m = `👥 *USER AKTIF SO DI ${namaToko}*\n${GARIS_TEBAL}\n\n`;
+    let m = `ðŸ‘¥ *USER AKTIF SO DI ${namaToko}*\n${GARIS_TEBAL}\n\n`;
     userLainList.forEach(([, info], i) => {
       const lastMin = Math.floor((Date.now() - info.lastActive) / 60000);
-      const st = lastMin < 5 ? '🟢' : lastMin < 15 ? '🟡' : '🔴';
-      m += `${i+1}. ${st} *${info.nama}* di *${info.rakAktif}*\n   ⏰ Mulai: ${info.jamMulai} | Aktif ${lastMin < 1 ? 'baru saja' : lastMin + 'm lalu'}\n\n`;
+      const st = lastMin < 5 ? 'ðŸŸ¢' : lastMin < 15 ? 'ðŸŸ¡' : 'ðŸ”´';
+      m += `${i+1}. ${st} *${info.nama}* di *${info.rakAktif}*\n   â° Mulai: ${info.jamMulai} | Aktif ${lastMin < 1 ? 'baru saja' : lastMin + 'm lalu'}\n\n`;
     });
     
     await kirim(chatId, m, { reply_markup: kbSOAktif() });
@@ -5488,13 +5497,13 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     existingRacks.forEach(rak => {
       if (rak === soInfo.rakAktif) return;
       const items = Object.keys(getBarangDiRak(tokoKode, rak)).length;
-      buttons.push([{ text: `📦 ${rak} (${items} barang)`, callback_data: `so:pilihrak:${rak}` }]);
+      buttons.push([{ text: `ðŸ“¦ ${rak} (${items} barang)`, callback_data: `so:pilihrak:${rak}` }]);
     });
-    buttons.push([{ text: '🆕 Buat Rak Baru', callback_data: 'so:rakbaru' }]);
-    buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
+    buttons.push([{ text: 'ðŸ†• Buat Rak Baru', callback_data: 'so:rakbaru' }]);
+    buttons.push([{ text: 'ðŸ”™ Kembali', callback_data: 'so:kembali' }]);
     
     await kirim(chatId,
-      `📦 *PINDAH RAK*\n${GARIS_TEBAL}\n\nRak aktif: *${escapeMd(soInfo.rakAktif)}*\n\n💡 *3 cara pindah:*\n   1. Pilih tombol\n   2. 📸 Kirim FOTO barcode rak\n   3. Buat rak baru + ketik`,
+      `ðŸ“¦ *PINDAH RAK*\n${GARIS_TEBAL}\n\nRak aktif: *${escapeMd(soInfo.rakAktif)}*\n\nðŸ’¡ *3 cara pindah:*\n   1. Pilih tombol\n   2. ðŸ“¸ Kirim FOTO barcode rak\n   3. Buat rak baru + ketik`,
       { reply_markup: { inline_keyboard: buttons }}
     );
     return;
@@ -5502,16 +5511,16 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
   
   if (low === 'editrak' || low === 'edit rak') {
     const existingRacks = Object.keys(getAllRacks(tokoKode));
-    if (!existingRacks.length) return kirim(chatId, '⚠️ Belum ada rak.');
+    if (!existingRacks.length) return kirim(chatId, 'âš ï¸ Belum ada rak.');
     
     const buttons = [];
     existingRacks.forEach(rak => {
       const items = Object.keys(getBarangDiRak(tokoKode, rak)).length;
-      buttons.push([{ text: `✏️ ${rak} (${items} barang)`, callback_data: `so:editrak:${rak}:0` }]);
+      buttons.push([{ text: `âœï¸ ${rak} (${items} barang)`, callback_data: `so:editrak:${rak}:0` }]);
     });
-    buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
+    buttons.push([{ text: 'ðŸ”™ Kembali', callback_data: 'so:kembali' }]);
     
-    await kirim(chatId, `✏️ *EDIT RAK*\nPilih rak yang ingin diedit:`, { reply_markup: { inline_keyboard: buttons }});
+    await kirim(chatId, `âœï¸ *EDIT RAK*\nPilih rak yang ingin diedit:`, { reply_markup: { inline_keyboard: buttons }});
     return;
   }
   
@@ -5521,14 +5530,14 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     const allKodes = new Set([...Object.keys(gabungan.fisik), ...Object.keys(gabungan.gudang)]);
     const barangBaru = getBarangBaruSO(tokoKode);
     
-    let m = `👁️ *REVIEW SO - ${namaToko}*\n${GARIS_TEBAL}\n\n`;
-    m += `📦 Rak aktif: *${soInfo.rakAktif}*\n`;
-    m += `📚 Total rak: ${Object.keys(allRacks).length}\n\n`;
+    let m = `ðŸ‘ï¸ *REVIEW SO - ${namaToko}*\n${GARIS_TEBAL}\n\n`;
+    m += `ðŸ“¦ Rak aktif: *${soInfo.rakAktif}*\n`;
+    m += `ðŸ“š Total rak: ${Object.keys(allRacks).length}\n\n`;
     
     Object.entries(allRacks).forEach(([rakName, rackData], i) => {
       const itemCount = Object.keys(rackData.items || {}).length;
       const isAktif = rakName === soInfo.rakAktif;
-      m += `${i+1}. ${isAktif ? '📍' : '📦'} *${rakName}* — ${itemCount} barang ${isAktif ? '(AKTIF)' : ''}\n`;
+      m += `${i+1}. ${isAktif ? 'ðŸ“' : 'ðŸ“¦'} *${rakName}* â€” ${itemCount} barang ${isAktif ? '(AKTIF)' : ''}\n`;
     });
     
     m += `\n${GARIS_TIPIS}\n`;
@@ -5551,14 +5560,14 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       allItems.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
       
       if (allItems.length > 0) {
-        m += `📋 *DAFTAR BARANG (A-Z):*\n${GARIS_TIPIS}\n\n`;
+        m += `ðŸ“‹ *DAFTAR BARANG (A-Z):*\n${GARIS_TIPIS}\n\n`;
         allItems.slice(0, 20).forEach((d, i) => {
-          const statusIcon = d.selisih === 0 ? '✅' : d.selisih > 0 ? '➕' : '➖';
-          m += `*${i+1}. ${escapeMd(d.nama)}*\n   🔖 \`${d.kode}\`\n`;
-          m += `   💻 Sistem: ${d.sistem}`;
-          if (d.fisik > 0) m += ` | 🏪 ${d.fisik}`;
-          if (d.gudang > 0) m += ` | 🏭 ${d.gudang}`;
-          m += ` | 📦 Total: ${d.total} ${statusIcon} ${d.selisih === 0 ? '' : (d.selisih > 0 ? '+' : '') + d.selisih}\n\n`;
+          const statusIcon = d.selisih === 0 ? 'âœ…' : d.selisih > 0 ? 'âž•' : 'âž–';
+          m += `*${i+1}. ${escapeMd(d.nama)}*\n   ðŸ”– \`${d.kode}\`\n`;
+          m += `   ðŸ’» Sistem: ${d.sistem}`;
+          if (d.fisik > 0) m += ` | ðŸª ${d.fisik}`;
+          if (d.gudang > 0) m += ` | ðŸ­ ${d.gudang}`;
+          m += ` | ðŸ“¦ Total: ${d.total} ${statusIcon} ${d.selisih === 0 ? '' : (d.selisih > 0 ? '+' : '') + d.selisih}\n\n`;
         });
         if (allItems.length > 20) m += `_... +${allItems.length - 20} lainnya_\n\n`;
         
@@ -5566,9 +5575,9 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
         const lebih = allItems.filter(d => d.selisih > 0).length;
         const sesuai = allItems.filter(d => d.selisih === 0).length;
         
-        m += `${GARIS_TEBAL}\n📊 *RINGKASAN:*\n`;
-        m += `   📦 Total: ${allItems.length} barang\n`;
-        m += `   ✅ Sesuai: ${sesuai} | ➕ Lebih: ${lebih} | ➖ Kurang: ${kurang}\n`;
+        m += `${GARIS_TEBAL}\nðŸ“Š *RINGKASAN:*\n`;
+        m += `   ðŸ“¦ Total: ${allItems.length} barang\n`;
+        m += `   âœ… Sesuai: ${sesuai} | âž• Lebih: ${lebih} | âž– Kurang: ${kurang}\n`;
       }
     } else {
       m += `\n_Belum ada barang diinput._\n`;
@@ -5576,23 +5585,23 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     
     // Barang baru
     if (barangBaru.length > 0) {
-      m += `\n🆕 *BARANG BARU (${barangBaru.length} item):*\n${GARIS_TIPIS}\n`;
+      m += `\nðŸ†• *BARANG BARU (${barangBaru.length} item):*\n${GARIS_TIPIS}\n`;
       m += `_(Tidak ada di database Excel)_\n\n`;
       barangBaru.forEach((b, i) => {
         m += `${i+1}. *${escapeMd(b.nama)}*\n`;
-        m += `   📍 ${b.rak} | ${b.jenis === 'fisik' ? '🏪' : '🏭'} ${b.jenis}: ${b.qty}\n`;
-        m += `   👤 ${b.petugas} | ⏰ ${b.jam}\n`;
-        m += `   📸 ${b.fotoFileId ? 'Ada foto ✅' : 'Tanpa foto'}\n\n`;
+        m += `   ðŸ“ ${b.rak} | ${b.jenis === 'fisik' ? 'ðŸª' : 'ðŸ­'} ${b.jenis}: ${b.qty}\n`;
+        m += `   ðŸ‘¤ ${b.petugas} | â° ${b.jam}\n`;
+        m += `   ðŸ“¸ ${b.fotoFileId ? 'Ada foto âœ…' : 'Tanpa foto'}\n\n`;
       });
     }
     
     await kirim(chatId, m, {
       reply_markup: { inline_keyboard: [
-        [{ text: '📊 Export Excel Gabungan', callback_data: 'so:exportgabungan' }],
-        [{ text: '✏️ Edit Rak', callback_data: 'so:editrak' }],
-        [{ text: '➕ Tambah Barang Baru', callback_data: 'so:tambahbaru' }],
-        [{ text: '✅ Selesai SO', callback_data: 'so:selesai' }],
-        [{ text: '🔙 Lanjut Input', callback_data: 'so:kembali' }],
+        [{ text: 'ðŸ“Š Export Excel Gabungan', callback_data: 'so:exportgabungan' }],
+        [{ text: 'âœï¸ Edit Rak', callback_data: 'so:editrak' }],
+        [{ text: 'âž• Tambah Barang Baru', callback_data: 'so:tambahbaru' }],
+        [{ text: 'âœ… Selesai SO', callback_data: 'so:selesai' }],
+        [{ text: 'ðŸ”™ Lanjut Input', callback_data: 'so:kembali' }],
       ]}
     });
     return;
@@ -5600,17 +5609,17 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
   
   if (low === 'selesai' || low === 'done') {
     await kirim(chatId,
-      `🤔 *Selesai Stock Opname?*\n${GARIS_TEBAL}\n\nPilih:`,
+      `ðŸ¤” *Selesai Stock Opname?*\n${GARIS_TEBAL}\n\nPilih:`,
       { reply_markup: { inline_keyboard: [
-        [{ text: '📊 Export & Keluar (Saya Saja)', callback_data: 'so:selesaisaya' }],
-        [{ text: '📊 Export Gabungan Semua User', callback_data: 'so:exportgabungan' }],
-        [{ text: '🔙 Kembali Input', callback_data: 'so:kembali' }],
+        [{ text: 'ðŸ“Š Export & Keluar (Saya Saja)', callback_data: 'so:selesaisaya' }],
+        [{ text: 'ðŸ“Š Export Gabungan Semua User', callback_data: 'so:exportgabungan' }],
+        [{ text: 'ðŸ”™ Kembali Input', callback_data: 'so:kembali' }],
       ]}}
     );
     return;
   }
   
-  // ════════ INPUT QTY BARANG BIASA ════════
+  // â•â•â•â•â•â•â•â• INPUT QTY BARANG BIASA â•â•â•â•â•â•â•â•
   
   if (session.pendingBarangKode) {
     const kode = session.pendingBarangKode;
@@ -5620,7 +5629,7 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     const match = message.trim().match(/^(toko|fisik|gudang)\s+(\d+)$/i);
     if (!match) {
       const angka = message.replace(/[^0-9]/g, '');
-      if (angka) return kirim(chatId, `⚠️ Ketik:\n• \`TOKO ${angka}\`\n• \`GUDANG ${angka}\``);
+      if (angka) return kirim(chatId, `âš ï¸ Ketik:\nâ€¢ \`TOKO ${angka}\`\nâ€¢ \`GUDANG ${angka}\``);
       return;
     }
     
@@ -5635,27 +5644,27 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     const totalAll = getTotalBarangSemuaRak(tokoKode, kode);
     const stockSistem = item.harga[tokoKode]?.stok || 0;
     const selisih = totalAll.total - stockSistem;
-    const statusIcon = selisih === 0 ? '✅' : selisih > 0 ? '➕' : '➖';
+    const statusIcon = selisih === 0 ? 'âœ…' : selisih > 0 ? 'âž•' : 'âž–';
     
-    let msgK = `✅ *Tersimpan!*\n${GARIS_TEBAL}\n`;
-    msgK += `📦 ${escapeMd(item.nama)}\n📍 ${soInfo.rakAktif} | ${jenisKey === 'fisik' ? '🏪' : '🏭'} ${jenisKey} +${jumlah}\n`;
-    msgK += `👤 ${namaPetugas} ⏰ ${getJamSekarang()}\n\n`;
+    let msgK = `âœ… *Tersimpan!*\n${GARIS_TEBAL}\n`;
+    msgK += `ðŸ“¦ ${escapeMd(item.nama)}\nðŸ“ ${soInfo.rakAktif} | ${jenisKey === 'fisik' ? 'ðŸª' : 'ðŸ­'} ${jenisKey} +${jumlah}\n`;
+    msgK += `ðŸ‘¤ ${namaPetugas} â° ${getJamSekarang()}\n\n`;
     
     if (totalAll.raks.length > 1) {
-      msgK += `📊 *Per rak:*\n`;
+      msgK += `ðŸ“Š *Per rak:*\n`;
       totalAll.raks.forEach(r => {
-        msgK += `   📦 ${r.rak}: 🏪 ${r.totalFisik} 🏭 ${r.totalGudang} = ${r.total}\n`;
+        msgK += `   ðŸ“¦ ${r.rak}: ðŸª ${r.totalFisik} ðŸ­ ${r.totalGudang} = ${r.total}\n`;
       });
       msgK += '\n';
     }
     
-    msgK += `💻 Sistem: ${stockSistem}\n📊 Total Opname: ${totalAll.total}\n${statusIcon} Selisih: ${selisih}\n`;
+    msgK += `ðŸ’» Sistem: ${stockSistem}\nðŸ“Š Total Opname: ${totalAll.total}\n${statusIcon} Selisih: ${selisih}\n`;
     
     await kirim(chatId, msgK, { reply_markup: kbSOAktif() });
     return;
   }
   
-  // ════════ CARI BARANG ════════
+  // â•â•â•â•â•â•â•â• CARI BARANG â•â•â•â•â•â•â•â•
   
   if (message && message.length >= 2) {
     const exactItem = DATA_BARANG.find(d => d.kode === message.trim().toUpperCase());
@@ -5674,38 +5683,38 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     
     if (hasil.hasil.length > 0) {
       const sortedHasil = [...hasil.hasil].sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
-      let m = `🔍 *${sortedHasil.length} ditemukan (A-Z):*\n${GARIS_TEBAL}\n\n`;
+      let m = `ðŸ” *${sortedHasil.length} ditemukan (A-Z):*\n${GARIS_TEBAL}\n\n`;
       const buttons = [];
       sortedHasil.slice(0, 10).forEach((d, i) => {
         const totalAll = getTotalBarangSemuaRak(tokoKode, d.kode);
         const adaDiTempatlain = totalAll.total > 0;
-        m += `*${i+1}. ${escapeMd(d.nama)}*\n   🔖 \`${d.kode}\` | Sistem: ${d.harga[tokoKode]?.stok || 0}`;
+        m += `*${i+1}. ${escapeMd(d.nama)}*\n   ðŸ”– \`${d.kode}\` | Sistem: ${d.harga[tokoKode]?.stok || 0}`;
         if (adaDiTempatlain) m += ` | SO: ${totalAll.total}`;
         m += '\n\n';
         buttons.push([{
-          text: `${adaDiTempatlain ? '⚠️ ' : ''}${i+1}. ${d.nama}`,
+          text: `${adaDiTempatlain ? 'âš ï¸ ' : ''}${i+1}. ${d.nama}`,
           callback_data: `so:pick:${d.kode}`
         }]);
       });
-      buttons.push([{ text: '➕ Tambah Barang Baru (Tidak Ada di List)', callback_data: 'so:tambahbaru' }]);
-      buttons.push([{ text: '🔙 Batal', callback_data: 'so:kembali' }]);
+      buttons.push([{ text: 'âž• Tambah Barang Baru (Tidak Ada di List)', callback_data: 'so:tambahbaru' }]);
+      buttons.push([{ text: 'ðŸ”™ Batal', callback_data: 'so:kembali' }]);
       await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons }});
       return;
     }
     
-    // Tidak ada hasil sama sekali → tawarkan tambah baru
+    // Tidak ada hasil sama sekali â†’ tawarkan tambah baru
     await kirim(chatId, 
-      `❌ "${message}" tidak ditemukan di database.\n\n💡 Mau tambah sebagai *barang baru*?`,
+      `âŒ "${message}" tidak ditemukan di database.\n\nðŸ’¡ Mau tambah sebagai *barang baru*?`,
       { reply_markup: { inline_keyboard: [
-        [{ text: '➕ Ya, Tambah Barang Baru', callback_data: 'so:tambahbaru' }],
-        [{ text: '🔍 Cari Lagi', callback_data: 'so:kembali' }],
+        [{ text: 'âž• Ya, Tambah Barang Baru', callback_data: 'so:tambahbaru' }],
+        [{ text: 'ðŸ” Cari Lagi', callback_data: 'so:kembali' }],
       ]}}
     );
   }
 }
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   28. BERITA ACARA HANDLER
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function parseBAInput(sectionNo, text) {
   const parts = text.split('|').map(p => p.trim());
@@ -5737,14 +5746,14 @@ async function handleBeritaAcaraMode(chatId, userId, message, session) {
   
   if (low === 'batal' || low === '/batal') {
     resetSesi(userId);
-    await kirim(chatId, '✅ Berita Acara dibatalkan.', { reply_markup: kbMainMenu(userId) });
+    await kirim(chatId, 'âœ… Berita Acara dibatalkan.', { reply_markup: kbMainMenu(userId) });
     return;
   }
   
   if (low === 'kembali' || low === 'menu') {
     updateSesi(userId, { baSection: null });
     await kirim(chatId, 
-      `📋 *MENU BERITA ACARA*\n🏦 ${namaToko}\n🆔 ${baData.nomorBA}`,
+      `ðŸ“‹ *MENU BERITA ACARA*\nðŸ¦ ${namaToko}\nðŸ†” ${baData.nomorBA}`,
       { reply_markup: kbBaSection(baData) }
     );
     return;
@@ -5752,15 +5761,15 @@ async function handleBeritaAcaraMode(chatId, userId, message, session) {
   
   if (low === 'review') {
     const sections = [
-      { no: 1, title: '📥 PENAMBAHAN STOK KASIR', field: 'penambahanKasir' },
-      { no: 2, title: '➕ PENYESUAIAN TAMBAH', field: 'penyesuaianTambah' },
-      { no: 3, title: '➖ PENYESUAIAN KURANGI', field: 'penyesuaianKurang' },
-      { no: 4, title: '🔄 SALAH KETIK/RETUR', field: 'salahKetikRetur' },
-      { no: 5, title: '📦 BARANG MASUK', field: 'barangMasuk' },
-      { no: 6, title: '✏️ DICORET GUDANG', field: 'dicoretGudang' },
+      { no: 1, title: 'ðŸ“¥ PENAMBAHAN STOK KASIR', field: 'penambahanKasir' },
+      { no: 2, title: 'âž• PENYESUAIAN TAMBAH', field: 'penyesuaianTambah' },
+      { no: 3, title: 'âž– PENYESUAIAN KURANGI', field: 'penyesuaianKurang' },
+      { no: 4, title: 'ðŸ”„ SALAH KETIK/RETUR', field: 'salahKetikRetur' },
+      { no: 5, title: 'ðŸ“¦ BARANG MASUK', field: 'barangMasuk' },
+      { no: 6, title: 'âœï¸ DICORET GUDANG', field: 'dicoretGudang' },
     ];
     
-    let m = `📊 *REVIEW BERITA ACARA*\n🏦 ${namaToko}\n🆔 ${baData.nomorBA}\n${GARIS_TEBAL}\n\n`;
+    let m = `ðŸ“Š *REVIEW BERITA ACARA*\nðŸ¦ ${namaToko}\nðŸ†” ${baData.nomorBA}\n${GARIS_TEBAL}\n\n`;
     let total = 0;
     sections.forEach(s => {
       const items = baData[s.field] || [];
@@ -5775,12 +5784,12 @@ async function handleBeritaAcaraMode(chatId, userId, message, session) {
       m += '\n';
     });
     if (total === 0) m += '_Belum ada data_';
-    else m += `${GARIS_TEBAL}\n📊 TOTAL: ${total} item`;
+    else m += `${GARIS_TEBAL}\nðŸ“Š TOTAL: ${total} item`;
     
     await kirim(chatId, m, {
       reply_markup: { inline_keyboard: [[
-        { text: '✅ Selesai', callback_data: 'ba:selesai' },
-        { text: '🔙 Menu BA', callback_data: 'ba:menu' },
+        { text: 'âœ… Selesai', callback_data: 'ba:selesai' },
+        { text: 'ðŸ”™ Menu BA', callback_data: 'ba:menu' },
       ]]}
     });
     return;
@@ -5791,11 +5800,11 @@ async function handleBeritaAcaraMode(chatId, userId, message, session) {
       .reduce((sum, f) => sum + (baData[f]?.length || 0), 0);
     
     if (total === 0) {
-      await kirim(chatId, '⚠️ Belum ada data. Input dulu!');
+      await kirim(chatId, 'âš ï¸ Belum ada data. Input dulu!');
       return;
     }
     
-    await kirim(chatId, '📊 _Membuat Excel..._');
+    await kirim(chatId, 'ðŸ“Š _Membuat Excel..._');
     try {
       const excelPath = await generateExcelBA(baData, tokoKode, namaToko);
       await bot.sendDocument(chatId, excelPath, {}, {
@@ -5804,10 +5813,10 @@ async function handleBeritaAcaraMode(chatId, userId, message, session) {
       simpanBeritaAcara(tokoKode, baData);
       try { fs.unlinkSync(excelPath); } catch(e) {}
       resetSesi(userId);
-      await kirim(chatId, `✅ *Berita Acara selesai!*\n🆔 ${baData.nomorBA}\n📥 File Excel terkirim.`, { reply_markup: kbMainMenu(userId) });
+      await kirim(chatId, `âœ… *Berita Acara selesai!*\nðŸ†” ${baData.nomorBA}\nðŸ“¥ File Excel terkirim.`, { reply_markup: kbMainMenu(userId) });
     } catch(err) {
       log.error('BA-EXCEL', err.message);
-      await kirim(chatId, '❌ Gagal buat Excel: ' + err.message);
+      await kirim(chatId, 'âŒ Gagal buat Excel: ' + err.message);
     }
     return;
   }
@@ -5838,10 +5847,10 @@ async function handleBeritaAcaraMode(chatId, userId, message, session) {
       updateSesi(userId, { baData: session.baData, baScanIndex: nextIdx });
       
       await kirim(chatId,
-        `✅ Tersimpan: ${escapeMd(item.nama.substring(0, 30))}\n${GARIS_TIPIS}\n\n` +
-        `📝 *Item ${nextIdx + 1} dari ${session.baScanPending.length}:*\n` +
-        `📦 ${escapeMd(nextItem.nama)}\n📊 ${nextItem.qty} ${nextItem.satuan}\n\n` +
-        `💬 Ketik keterangan atau *skip*`
+        `âœ… Tersimpan: ${escapeMd(item.nama.substring(0, 30))}\n${GARIS_TIPIS}\n\n` +
+        `ðŸ“ *Item ${nextIdx + 1} dari ${session.baScanPending.length}:*\n` +
+        `ðŸ“¦ ${escapeMd(nextItem.nama)}\nðŸ“Š ${nextItem.qty} ${nextItem.satuan}\n\n` +
+        `ðŸ’¬ Ketik keterangan atau *skip*`
       );
       return;
     }
@@ -5855,12 +5864,12 @@ async function handleBeritaAcaraMode(chatId, userId, message, session) {
     });
     
     await kirim(chatId,
-      `🎉 *Selesai input keterangan!*\n${GARIS_TEBAL}\n\n` +
-      `✅ ${totalScan} item tersimpan ke section ${session.baSection}\n` +
-      `📊 Total section: *${session.baData[sectionField].length} item*`,
+      `ðŸŽ‰ *Selesai input keterangan!*\n${GARIS_TEBAL}\n\n` +
+      `âœ… ${totalScan} item tersimpan ke section ${session.baSection}\n` +
+      `ðŸ“Š Total section: *${session.baData[sectionField].length} item*`,
       { reply_markup: { inline_keyboard: [[
-        { text: '🔙 Menu BA', callback_data: 'ba:menu' },
-        { text: '📊 Review', callback_data: 'ba:review' },
+        { text: 'ðŸ”™ Menu BA', callback_data: 'ba:menu' },
+        { text: 'ðŸ“Š Review', callback_data: 'ba:review' },
       ]]}}
     );
     return;
@@ -5875,7 +5884,7 @@ async function handleBeritaAcaraMode(chatId, userId, message, session) {
     
     const parsed = parseBAInput(session.baSection, message);
     if (!parsed) {
-      await kirim(chatId, `⚠️ *Format salah*\n\nGunakan \`|\` sebagai pemisah.\nLihat format dengan klik tombol section.`);
+      await kirim(chatId, `âš ï¸ *Format salah*\n\nGunakan \`|\` sebagai pemisah.\nLihat format dengan klik tombol section.`);
       return;
     }
     
@@ -5883,46 +5892,46 @@ async function handleBeritaAcaraMode(chatId, userId, message, session) {
     baData[sectionField].push(parsed);
     updateSesi(userId, { baData });
     
-    let k = `✅ *Item tersimpan!*\n${GARIS_TIPIS}\n`;
+    let k = `âœ… *Item tersimpan!*\n${GARIS_TIPIS}\n`;
     Object.entries(parsed).forEach(([key, val]) => { if (val) k += `${key}: ${val}\n`; });
-    k += `${GARIS_TIPIS}\n📊 Total section: *${baData[sectionField].length}*`;
+    k += `${GARIS_TIPIS}\nðŸ“Š Total section: *${baData[sectionField].length}*`;
     
     await kirim(chatId, k, {
       reply_markup: { inline_keyboard: [[
-        { text: '🔙 Menu BA', callback_data: 'ba:menu' },
-        { text: '📊 Review', callback_data: 'ba:review' },
+        { text: 'ðŸ”™ Menu BA', callback_data: 'ba:menu' },
+        { text: 'ðŸ“Š Review', callback_data: 'ba:review' },
       ]]}
     });
   }
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   29. WIZARD HARGA HANDLER
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async function kirimMintaFotoHarga(chatId, stepIdx, namaToko, hargaData) {
   const KATEGORI = [
-    { key: 'baru', label: 'BARANG BARU', icon: '🆕' },
-    { key: 'naik', label: 'BARANG NAIK HARGA', icon: '📈' },
-    { key: 'turun', label: 'BARANG TURUN HARGA', icon: '📉' },
+    { key: 'baru', label: 'BARANG BARU', icon: 'ðŸ†•' },
+    { key: 'naik', label: 'BARANG NAIK HARGA', icon: 'ðŸ“ˆ' },
+    { key: 'turun', label: 'BARANG TURUN HARGA', icon: 'ðŸ“‰' },
   ];
   const cat = KATEGORI[stepIdx];
   if (!cat) return;
   
   const currentList = hargaData[cat.key] || [];
-  let m = `🤖 *INPUT LAPORAN HARGA*\n🏦 ${namaToko}\n${GARIS_TEBAL}\n`;
-  m += `📊 Step ${stepIdx + 1}/3\n\n${cat.icon} *${cat.label}*\n\n`;
-  m += `📸 Kirim FOTO atau ketik manual (1 nama per baris)\n`;
+  let m = `ðŸ¤– *INPUT LAPORAN HARGA*\nðŸ¦ ${namaToko}\n${GARIS_TEBAL}\n`;
+  m += `ðŸ“Š Step ${stepIdx + 1}/3\n\n${cat.icon} *${cat.label}*\n\n`;
+  m += `ðŸ“¸ Kirim FOTO atau ketik manual (1 nama per baris)\n`;
   if (currentList.length > 0) {
-    m += `\n✅ Sudah terisi (${currentList.length}):\n`;
-    currentList.slice(0, 5).forEach(item => m += `• ${toTitleCase(item)}\n`);
+    m += `\nâœ… Sudah terisi (${currentList.length}):\n`;
+    currentList.slice(0, 5).forEach(item => m += `â€¢ ${toTitleCase(item)}\n`);
   }
   
   await kirim(chatId, m, {
     reply_markup: { inline_keyboard: [
-      [{ text: '⏭️ Skip Kategori', callback_data: 'harga:lanjut' }],
-      [{ text: '✅ Selesai Sekarang', callback_data: 'harga:selesai' }],
-      [{ text: '🔙 Batal', callback_data: 'menu:main' }],
+      [{ text: 'â­ï¸ Skip Kategori', callback_data: 'harga:lanjut' }],
+      [{ text: 'âœ… Selesai Sekarang', callback_data: 'harga:selesai' }],
+      [{ text: 'ðŸ”™ Batal', callback_data: 'menu:main' }],
     ]}
   });
 }
@@ -5930,7 +5939,7 @@ async function kirimMintaFotoHarga(chatId, stepIdx, namaToko, hargaData) {
 async function finalisasiLaporanHarga(chatId, userId, hargaData, namaToko, kemarin) {
   const total = (hargaData.baru?.length || 0) + (hargaData.naik?.length || 0) + (hargaData.turun?.length || 0);
   if (total === 0) {
-    await kirim(chatId, '⚠️ Tidak ada data!');
+    await kirim(chatId, 'âš ï¸ Tidak ada data!');
     resetSesi(userId);
     return;
   }
@@ -5943,17 +5952,17 @@ async function finalisasiLaporanHarga(chatId, userId, hargaData, namaToko, kemar
   const laporan = genLapHargaDariData(hargaData, namaToko, kemarin);
   
   await kirim(chatId, 
-    `📄 *Laporan siap!*\n${GARIS_TEBAL}\n\n` +
-    `🏪 ${namaToko}\n` +
-    `📦 Baru: ${hargaData.baru?.length || 0}\n` +
-    `📈 Naik: ${hargaData.naik?.length || 0}\n` +
-    `📉 Turun: ${hargaData.turun?.length || 0}`
+    `ðŸ“„ *Laporan siap!*\n${GARIS_TEBAL}\n\n` +
+    `ðŸª ${namaToko}\n` +
+    `ðŸ“¦ Baru: ${hargaData.baru?.length || 0}\n` +
+    `ðŸ“ˆ Naik: ${hargaData.naik?.length || 0}\n` +
+    `ðŸ“‰ Turun: ${hargaData.turun?.length || 0}`
   );
   
   await kirim(chatId, laporan);
   resetSesi(userId);
   await tunggu(1500);
-  await kirim(chatId, '✅ *Laporan harga selesai!*', { reply_markup: kbMainMenu(userId) });
+  await kirim(chatId, 'âœ… *Laporan harga selesai!*', { reply_markup: kbMainMenu(userId) });
 }
 
 async function handleHargaMode(chatId, userId, message, imageBuffer, session) {
@@ -5961,7 +5970,7 @@ async function handleHargaMode(chatId, userId, message, imageBuffer, session) {
   let namaToko = NAMA_TOKO[session.toko] || NAMA_TOKO[session.tokoKode];
   
   if (!namaToko) {
-    await kirim(chatId, '⚠️ Session error. Mulai ulang.', { reply_markup: kbMainMenu(userId) });
+    await kirim(chatId, 'âš ï¸ Session error. Mulai ulang.', { reply_markup: kbMainMenu(userId) });
     resetSesi(userId);
     return;
   }
@@ -5971,7 +5980,7 @@ async function handleHargaMode(chatId, userId, message, imageBuffer, session) {
   
   if (low === 'batal' || low === '/batal') {
     resetSesi(userId);
-    await kirim(chatId, '✅ Dibatalkan.', { reply_markup: kbMainMenu(userId) });
+    await kirim(chatId, 'âœ… Dibatalkan.', { reply_markup: kbMainMenu(userId) });
     return;
   }
   
@@ -5983,16 +5992,16 @@ async function handleHargaMode(chatId, userId, message, imageBuffer, session) {
     }
     
     if (!imageBuffer) {
-      await kirim(chatId, `📸 Kirim 1 foto berisi semua kategori barang.\n\n🏪 ${namaToko}\n\nKetik *batal* untuk keluar.`);
+      await kirim(chatId, `ðŸ“¸ Kirim 1 foto berisi semua kategori barang.\n\nðŸª ${namaToko}\n\nKetik *batal* untuk keluar.`);
       return;
     }
     
-    await kirim(chatId, '🤖 _Sedang scan semua kategori (bisa 30-60 detik)..._');
+    await kirim(chatId, 'ðŸ¤– _Sedang scan semua kategori (bisa 30-60 detik)..._');
     
     try {
       const promptGabung = `Kamu AI yang ahli baca foto laporan toko perabot.
 
-⚠️ INSTRUKSI WAJIB:
+âš ï¸ INSTRUKSI WAJIB:
 - Baca SEMUA barang di foto dengan TELITI
 - JANGAN TERPOTONG! Kalau ada 50 barang, tulis SEMUA 50 barang
 - JANGAN tulis "dan lain-lain" atau "dst"
@@ -6031,7 +6040,7 @@ Sekarang baca SEMUA isi foto:`;
         if (lo.includes('---naik---') || lo === 'naik' || lo === 'naik:') { mode = 'naik'; return; }
         if (lo.includes('---turun---') || lo === 'turun' || lo === 'turun:') { mode = 'turun'; return; }
         if (mode && tr) {
-          const item = tr.replace(/^[-*•]\s*/, '').trim();
+          const item = tr.replace(/^[-*â€¢]\s*/, '').trim();
           if (item && item.length > 2 && !item.toLowerCase().includes('dst') && !item.toLowerCase().includes('dan lain')) {
             hasilParse[mode].push(item);
           }
@@ -6040,28 +6049,28 @@ Sekarang baca SEMUA isi foto:`;
       
       const totalItem = hasilParse.baru.length + hasilParse.naik.length + hasilParse.turun.length;
       if (totalItem === 0) {
-        await kirim(chatId, '⚠️ Tidak ada barang terdeteksi. Coba foto lebih jelas.');
+        await kirim(chatId, 'âš ï¸ Tidak ada barang terdeteksi. Coba foto lebih jelas.');
         return;
       }
       
       updateSesi(userId, { hargaData: hasilParse });
       
       await kirim(chatId,
-        `✅ *Scan selesai!*\n🏪 ${namaToko}\n🆕 Baru: ${hasilParse.baru.length}\n📈 Naik: ${hasilParse.naik.length}\n📉 Turun: ${hasilParse.turun.length}\n📦 Total: ${totalItem} item`
+        `âœ… *Scan selesai!*\nðŸª ${namaToko}\nðŸ†• Baru: ${hasilParse.baru.length}\nðŸ“ˆ Naik: ${hasilParse.naik.length}\nðŸ“‰ Turun: ${hasilParse.turun.length}\nðŸ“¦ Total: ${totalItem} item`
       );
       
       const rekap = genLapHargaDariData(hasilParse, namaToko, kemarin);
       await kirim(chatId, rekap);
       
-      await kirim(chatId, '💡 Ketik *selesai* untuk simpan atau kirim foto lagi.',
+      await kirim(chatId, 'ðŸ’¡ Ketik *selesai* untuk simpan atau kirim foto lagi.',
         { reply_markup: { inline_keyboard: [[
-          { text: '✅ Selesai & Simpan', callback_data: 'harga:selesai' },
-          { text: '🔙 Batal', callback_data: 'menu:main' },
+          { text: 'âœ… Selesai & Simpan', callback_data: 'harga:selesai' },
+          { text: 'ðŸ”™ Batal', callback_data: 'menu:main' },
         ]]}}
       );
     } catch(err) {
       log.error('HARGA_GABUNG', err.message);
-      await kirim(chatId, '❌ Gagal scan: ' + err.message);
+      await kirim(chatId, 'âŒ Gagal scan: ' + err.message);
     }
     return;
   }
@@ -6096,14 +6105,14 @@ Sekarang baca SEMUA isi foto:`;
   
   // Proses foto per kategori
   if (imageBuffer) {
-    await kirim(chatId, `📸 _Sedang scan ${NAMA_KAT[currentKat]} (bisa 30-60 detik)..._\n🏪 ${namaToko}`);
+    await kirim(chatId, `ðŸ“¸ _Sedang scan ${NAMA_KAT[currentKat]} (bisa 30-60 detik)..._\nðŸª ${namaToko}`);
     try {
       const prompt = SCAN_PROMPTS[`barang_${currentKat}_only`];
       const aiText = await analisaGambarBuffer(imageBuffer, prompt);
       const listBaru = parseListBarang(aiText);
       
       if (listBaru.length === 0) {
-        await kirim(chatId, '⚠️ Tidak ada barang terdeteksi. Coba foto lebih jelas atau ketik *lanjut*.');
+        await kirim(chatId, 'âš ï¸ Tidak ada barang terdeteksi. Coba foto lebih jelas atau ketik *lanjut*.');
         return;
       }
       
@@ -6118,20 +6127,20 @@ Sekarang baca SEMUA isi foto:`;
       hargaData[currentKat] = listLama;
       updateSesi(userId, { hargaData });
       
-      let m = `✅ *Berhasil Scan!*\n🏪 ${namaToko}\n${NAMA_KAT[currentKat]}\n📦 Baru: ${itemBaru.length} | Total: ${listLama.length}\n\n`;
+      let m = `âœ… *Berhasil Scan!*\nðŸª ${namaToko}\n${NAMA_KAT[currentKat]}\nðŸ“¦ Baru: ${itemBaru.length} | Total: ${listLama.length}\n\n`;
       m += `*Sampel ${Math.min(itemBaru.length, 10)} item baru:*\n`;
-      itemBaru.slice(0, 10).forEach(item => m += `• ${toTitleCase(item)}\n`);
+      itemBaru.slice(0, 10).forEach(item => m += `â€¢ ${toTitleCase(item)}\n`);
       if (itemBaru.length > 10) m += `_... +${itemBaru.length - 10} item lainnya_\n`;
       
       await kirim(chatId, m, {
         reply_markup: { inline_keyboard: [
-          [{ text: '📸 Tambah Foto Lagi (kategori ini)', callback_data: 'harga:samekat' }],
-          [{ text: '⏭️ Lanjut Kategori Berikutnya', callback_data: 'harga:lanjut' }],
-          [{ text: '✅ Selesai Semua', callback_data: 'harga:selesai' }],
+          [{ text: 'ðŸ“¸ Tambah Foto Lagi (kategori ini)', callback_data: 'harga:samekat' }],
+          [{ text: 'â­ï¸ Lanjut Kategori Berikutnya', callback_data: 'harga:lanjut' }],
+          [{ text: 'âœ… Selesai Semua', callback_data: 'harga:selesai' }],
         ]}
       });
     } catch(err) {
-      await kirim(chatId, '❌ Gagal scan: ' + err.message);
+      await kirim(chatId, 'âŒ Gagal scan: ' + err.message);
     }
     return;
   }
@@ -6141,7 +6150,7 @@ Sekarang baca SEMUA isi foto:`;
     const listLama = hargaData[currentKat] || [];
     const itemBaru = [];
     message.split('\n').forEach(line => {
-      const item = line.trim().replace(/^[-*•]\s*/, '').trim();
+      const item = line.trim().replace(/^[-*â€¢]\s*/, '').trim();
       if (item && item.length > 2 && !listLama.some(x => x.toLowerCase() === item.toLowerCase())) {
         listLama.push(item);
         itemBaru.push(item);
@@ -6149,30 +6158,30 @@ Sekarang baca SEMUA isi foto:`;
     });
     
     if (itemBaru.length === 0) {
-      await kirim(chatId, '⚠️ Tidak ada item baru.');
+      await kirim(chatId, 'âš ï¸ Tidak ada item baru.');
       return;
     }
     
     hargaData[currentKat] = listLama;
     updateSesi(userId, { hargaData });
-    await kirim(chatId, `✅ *${itemBaru.length} item ditambahkan!*\n🏪 ${namaToko}\nTotal ${NAMA_KAT[currentKat]}: ${listLama.length}`, {
+    await kirim(chatId, `âœ… *${itemBaru.length} item ditambahkan!*\nðŸª ${namaToko}\nTotal ${NAMA_KAT[currentKat]}: ${listLama.length}`, {
       reply_markup: { inline_keyboard: [[
-        { text: '⏭️ Lanjut Kategori', callback_data: 'harga:lanjut' },
-        { text: '✅ Selesai Semua', callback_data: 'harga:selesai' },
+        { text: 'â­ï¸ Lanjut Kategori', callback_data: 'harga:lanjut' },
+        { text: 'âœ… Selesai Semua', callback_data: 'harga:selesai' },
       ]]}
     });
   }
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   30. WIZARD LAPORAN PENJUALAN (SCAN FOTO MULTI-STEP)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function formatKonfirmasiScan(hasilScan) {
-  let m = '✅ *Data tersimpan:*\n';
+  let m = 'âœ… *Data tersimpan:*\n';
   Object.keys(hasilScan).forEach(k => {
     const v = hasilScan[k] || 0;
-    m += `   • ${k}: ${v === 0 ? 'Rp. -' : 'Rp. ' + v.toLocaleString('id-ID')}\n`;
+    m += `   â€¢ ${k}: ${v === 0 ? 'Rp. -' : 'Rp. ' + v.toLocaleString('id-ID')}\n`;
   });
   return m.trim();
 }
@@ -6184,24 +6193,24 @@ function msgMintaFotoLaporan(tokoKode, stepIdx, namaToko, dataWizard) {
   const total = steps.length;
   const no = stepIdx + 1;
   
-  let m = `🤖 *INPUT LAPORAN*\n🏦 ${namaToko}\n${GARIS_TEBAL}\n`;
-  m += `📊 *Step ${no} dari ${total}*\n[`;
+  let m = `ðŸ¤– *INPUT LAPORAN*\nðŸ¦ ${namaToko}\n${GARIS_TEBAL}\n`;
+  m += `ðŸ“Š *Step ${no} dari ${total}*\n[`;
   const prog = Math.floor((no / total) * 10);
-  for (let i = 0; i < 10; i++) m += i < prog ? '█' : '░';
+  for (let i = 0; i < 10; i++) m += i < prog ? 'â–ˆ' : 'â–‘';
   m += `] ${Math.round((no / total) * 100)}%\n${GARIS_TEBAL}\n\n`;
   
-  let icon = '📋';
-  if (si.scanField === 'ecer_only') icon = '🛒';
-  else if (si.scanField === 'grosir_only') icon = '📦';
-  else if (si.scanField === 'parkir_komputer') icon = '🅿️';
-  else if (si.scanField === 'parkir_luar') icon = '🚗';
-  else if (si.scanField === 'multi_promo') icon = '🎁';
-  else if (si.scanField === 'multi') icon = '💰';
-  else if (si.scanField === 'total_transaksi') icon = '💵';
+  let icon = 'ðŸ“‹';
+  if (si.scanField === 'ecer_only') icon = 'ðŸ›’';
+  else if (si.scanField === 'grosir_only') icon = 'ðŸ“¦';
+  else if (si.scanField === 'parkir_komputer') icon = 'ðŸ…¿ï¸';
+  else if (si.scanField === 'parkir_luar') icon = 'ðŸš—';
+  else if (si.scanField === 'multi_promo') icon = 'ðŸŽ';
+  else if (si.scanField === 'multi') icon = 'ðŸ’°';
+  else if (si.scanField === 'total_transaksi') icon = 'ðŸ’µ';
   
   m += `${icon} *${si.label}*\n\n`;
-  m += `📸 *Kirim FOTO* bagian ini\n   → Bot akan scan otomatis ✨\n\n`;
-  m += `⌨️ Atau ketik angka manual\n`;
+  m += `ðŸ“¸ *Kirim FOTO* bagian ini\n   â†’ Bot akan scan otomatis âœ¨\n\n`;
+  m += `âŒ¨ï¸ Atau ketik angka manual\n`;
   
   if (si.fields.length > 1) {
     const subIdx = dataWizard._subField || 0;
@@ -6221,7 +6230,7 @@ async function selesaikanLaporanPenjualan(chatId, userId, scanData, tokoKode, na
   await kirim(chatId, laporan);
   resetSesi(userId);
   await tunggu(1500);
-  await kirim(chatId, '✅ *Laporan berhasil dibuat!* 😊', { reply_markup: kbMainMenu(userId) });
+  await kirim(chatId, 'âœ… *Laporan berhasil dibuat!* ðŸ˜Š', { reply_markup: kbMainMenu(userId) });
 }
 
 async function simpanDanLanjutScan(chatId, userId, scanData, stepIdx, tokoKode, namaToko, kemarin, hasilScan) {
@@ -6236,7 +6245,7 @@ async function simpanDanLanjutScan(chatId, userId, scanData, stepIdx, tokoKode, 
   const konfirm = formatKonfirmasiScan(hasilScan);
   
   if (nextIdx >= steps.length) {
-    await kirim(chatId, konfirm + '\n\n🎉 *Semua bagian sudah lengkap!*\nMembuat laporan...');
+    await kirim(chatId, konfirm + '\n\nðŸŽ‰ *Semua bagian sudah lengkap!*\nMembuat laporan...');
     await tunggu(1000);
     await selesaikanLaporanPenjualan(chatId, userId, scanData, tokoKode, namaToko, kemarin);
   } else {
@@ -6262,13 +6271,13 @@ async function handleScanModeLaporan(chatId, userId, message, imageBuffer, sessi
   
   if (low === 'batal' || low === '/batal') {
     resetSesi(userId);
-    await kirim(chatId, '✅ Dibatalkan.', { reply_markup: kbMainMenu(userId) });
+    await kirim(chatId, 'âœ… Dibatalkan.', { reply_markup: kbMainMenu(userId) });
     return;
   }
   
   // PROSES FOTO
   if (imageBuffer && imageBuffer.length > 0) {
-    await kirim(chatId, `📸 _Sedang membaca foto step ${scanStepIdx + 1}..._`);
+    await kirim(chatId, `ðŸ“¸ _Sedang membaca foto step ${scanStepIdx + 1}..._`);
     
     try {
       const prompt = SCAN_PROMPTS[si.scanField];
@@ -6299,9 +6308,9 @@ async function handleScanModeLaporan(chatId, userId, message, imageBuffer, sessi
     } catch(err) {
       log.error('SCAN_FOTO', err.message);
       await kirim(chatId,
-        `❌ *Gagal membaca foto*\n${GARIS_TEBAL}\n\n` +
+        `âŒ *Gagal membaca foto*\n${GARIS_TEBAL}\n\n` +
         `Penyebab: ${err.message}\n\n` +
-        `*Solusi:*\n📸 Kirim ulang foto lebih jelas\n⌨️ Atau ketik angka manual\n\n` +
+        `*Solusi:*\nðŸ“¸ Kirim ulang foto lebih jelas\nâŒ¨ï¸ Atau ketik angka manual\n\n` +
         `_Step ${scanStepIdx + 1}: ${si.label}_`
       );
     }
@@ -6322,7 +6331,7 @@ async function handleScanModeLaporan(chatId, userId, message, imageBuffer, sessi
       const angka = message.replace(/[^0-9]/g, '');
       if (!angka) {
         await kirim(chatId,
-          `⚠️ Masukkan angka saja\nContoh: _15741500_\nAtau ketik *-* untuk nol\n📸 Atau kirim *foto*`
+          `âš ï¸ Masukkan angka saja\nContoh: _15741500_\nAtau ketik *-* untuk nol\nðŸ“¸ Atau kirim *foto*`
         );
         return;
       }
@@ -6338,9 +6347,9 @@ async function handleScanModeLaporan(chatId, userId, message, imageBuffer, sessi
       updateSesi(userId, { scanData });
       const nextField = si.fields[nextSubIdx];
       await kirim(chatId,
-        `✅ _${currentField}: ${fmtNom}_\n\n` +
-        `💰 Masukkan angka *${nextField.toUpperCase()}*\n   (angka atau *-* jika kosong)\n\n` +
-        `📸 Atau kirim *foto*\n📊 Sub-step: ${nextSubIdx + 1}/${si.fields.length}`
+        `âœ… _${currentField}: ${fmtNom}_\n\n` +
+        `ðŸ’° Masukkan angka *${nextField.toUpperCase()}*\n   (angka atau *-* jika kosong)\n\n` +
+        `ðŸ“¸ Atau kirim *foto*\nðŸ“Š Sub-step: ${nextSubIdx + 1}/${si.fields.length}`
       );
       return;
     }
@@ -6356,7 +6365,7 @@ async function handleScanModeLaporan(chatId, userId, message, imageBuffer, sessi
     } else {
       const angka = message.replace(/[^0-9]/g, '');
       if (!angka) {
-        await kirim(chatId, `⚠️ Masukkan angka saja\nContoh: _15741500_\n📸 Atau kirim *foto*`);
+        await kirim(chatId, `âš ï¸ Masukkan angka saja\nContoh: _15741500_\nðŸ“¸ Atau kirim *foto*`);
         return;
       }
       nominal = parseInt(angka, 10);
@@ -6367,19 +6376,19 @@ async function handleScanModeLaporan(chatId, userId, message, imageBuffer, sessi
   }
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   31. BERITA ACARA SCAN FOTO
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async function handleBaScanFoto(chatId, userId, imageBuffer, session) {
   const sectionNo = session.baSection;
   
   if (![1, 2, 3].includes(sectionNo)) {
-    await kirim(chatId, '⚠️ Scan foto hanya untuk section 1, 2, atau 3.\nSection lain harus input manual.');
+    await kirim(chatId, 'âš ï¸ Scan foto hanya untuk section 1, 2, atau 3.\nSection lain harus input manual.');
     return;
   }
   
-  await kirim(chatId, '📸 _Sedang scan tabel iPos..._');
+  await kirim(chatId, 'ðŸ“¸ _Sedang scan tabel iPos..._');
   
   try {
     const aiText = await analisaGambarBuffer(imageBuffer, SCAN_PROMPTS.ba_tabel);
@@ -6387,42 +6396,42 @@ async function handleBaScanFoto(chatId, userId, imageBuffer, session) {
     
     if (items.length === 0) {
       await kirim(chatId,
-        `⚠️ *Tidak ada data terdeteksi*\n${GARIS_TEBAL}\n\nPastikan foto jelas.\n\n📸 Kirim ulang atau ⌨️ ketik manual`
+        `âš ï¸ *Tidak ada data terdeteksi*\n${GARIS_TEBAL}\n\nPastikan foto jelas.\n\nðŸ“¸ Kirim ulang atau âŒ¨ï¸ ketik manual`
       );
       return;
     }
     
     updateSesi(userId, { baScanPending: items, baScanIndex: 0 });
     
-    let m = `✅ *Berhasil Scan ${items.length} barang!*\n${GARIS_TEBAL}\n\n`;
+    let m = `âœ… *Berhasil Scan ${items.length} barang!*\n${GARIS_TEBAL}\n\n`;
     items.slice(0, 10).forEach((item, i) => {
-      m += `${i+1}. ${escapeMd(item.nama)}\n   📦 ${item.qty} ${item.satuan}\n`;
+      m += `${i+1}. ${escapeMd(item.nama)}\n   ðŸ“¦ ${item.qty} ${item.satuan}\n`;
     });
     if (items.length > 10) m += `\n_... +${items.length - 10} lainnya_\n`;
-    m += `\n${GARIS_TEBAL}\n💬 *Pilihan:*`;
+    m += `\n${GARIS_TEBAL}\nðŸ’¬ *Pilihan:*`;
     
     await kirim(chatId, m, {
       reply_markup: { inline_keyboard: [
-        [{ text: '📝 Isi Keterangan Satu-satu', callback_data: 'ba:scan:keterangan' }],
-        [{ text: '⚡ Simpan Semua (Tanpa Keterangan)', callback_data: 'ba:scan:simpansemua' }],
-        [{ text: '❌ Batal Scan', callback_data: 'ba:scan:batal' }],
+        [{ text: 'ðŸ“ Isi Keterangan Satu-satu', callback_data: 'ba:scan:keterangan' }],
+        [{ text: 'âš¡ Simpan Semua (Tanpa Keterangan)', callback_data: 'ba:scan:simpansemua' }],
+        [{ text: 'âŒ Batal Scan', callback_data: 'ba:scan:batal' }],
       ]}
     });
   } catch(err) {
     log.error('BA_SCAN', err.message);
-    await kirim(chatId, '❌ Gagal scan: ' + err.message);
+    await kirim(chatId, 'âŒ Gagal scan: ' + err.message);
   }
 }
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   31B. HOMEBASE - SCAN NOTA & BANDINGKAN HARGA SUPPLIER
 //        (Multi-pass + Deep Match + Konversi + Pembulatan Cerdas)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-// ═══ PROMPT AI SUPER DETAIL ═══
+// â•â•â• PROMPT AI SUPER DETAIL â•â•â•
 
 const SCAN_PROMPT_HOMEBASE = `Kamu WAJIB baca tabel nota supplier dengan SANGAT DETAIL dan AKURAT.
 
-⚠️ ATURAN MUTLAK:
+âš ï¸ ATURAN MUTLAK:
 - Setiap BARIS = 1 barang. Baca SATU PER SATU dari kiri ke kanan.
 - JANGAN SKIP kolom apapun.
 - JANGAN MENGARANG atau MENEBAK angka. Kalau tidak terbaca tulis 0.
@@ -6430,41 +6439,41 @@ const SCAN_PROMPT_HOMEBASE = `Kamu WAJIB baca tabel nota supplier dengan SANGAT 
 - BACA SAMPAI BARIS TERAKHIR.
 
 CARA BACA PER BARIS (kiri ke kanan):
-1. NAMA BARANG → Teks paling kiri, paling panjang. Tulis PERSIS seperti tertulis.
-2. COL/ISI → Angka kecil setelah nama. ABAIKAN.
-3. SAT (SATUAN) → PERHATIKAN BAIK-BAIK! Biasanya tertulis:
+1. NAMA BARANG â†’ Teks paling kiri, paling panjang. Tulis PERSIS seperti tertulis.
+2. COL/ISI â†’ Angka kecil setelah nama. ABAIKAN.
+3. SAT (SATUAN) â†’ PERHATIKAN BAIK-BAIK! Biasanya tertulis:
    - "pcs" = PCS (per buah)
    - "dz" = DZ (per lusin/dozen = 12 pcs)
    - "set" = SET
    - "lsn" = LSN (lusin)
    - BACA HURUFNYA TELITI! "dz" berbeda dengan "dx"!
    - "dx" BUKAN satuan! "DX" biasanya bagian dari NAMA barang.
-4. SPOS → Simbol # atau -. ABAIKAN.
-5. HPP → Angka PERTAMA setelah simbol #. Format: 326.470 → tulis 326470
-6. Kolom A → Angka KEDUA. ABAIKAN.
-7. Kolom B → Angka KETIGA. AMBIL INI! Tulis persis.
-8. Kolom C → Angka KEEMPAT. ABAIKAN.
-9. Kolom D → Angka TERAKHIR/PALING KANAN. AMBIL INI! Tulis persis.
+4. SPOS â†’ Simbol # atau -. ABAIKAN.
+5. HPP â†’ Angka PERTAMA setelah simbol #. Format: 326.470 â†’ tulis 326470
+6. Kolom A â†’ Angka KEDUA. ABAIKAN.
+7. Kolom B â†’ Angka KETIGA. AMBIL INI! Tulis persis.
+8. Kolom C â†’ Angka KEEMPAT. ABAIKAN.
+9. Kolom D â†’ Angka TERAKHIR/PALING KANAN. AMBIL INI! Tulis persis.
 
-⚠️ TIPS BACA ANGKA:
+âš ï¸ TIPS BACA ANGKA:
 - Format Indonesia: 326.470 = 326470 (hapus titik)
 - Kalau ada "N" atau "M" sebelum angka, abaikan huruf itu.
 - Kalau ada coretan merah di atas angka hitam, baca yang PALING JELAS.
 
-⚠️ TIPS BACA SATUAN:
+âš ï¸ TIPS BACA SATUAN:
 - "pcs"/"dz"/"set"/"lsn" SELALU di kolom SAT
 - JANGAN bingung dengan "DX" atau "LCS" yang merupakan bagian NAMA BARANG!
 - Kolom SAT sempit (3-4 huruf saja)
 
 CONTOH BENAR:
 "Blender Cosmos CB 282 G Glass | 48 | pcs | # | - | 326.470 | 350.000 | 361.000 | 364.000 | 399.000"
-→ {"nama":"BLENDER COSMOS CB 282 G GLASS","satuan":"PCS","hpp":326470,"hargaB":361000,"hargaD":399000}
+â†’ {"nama":"BLENDER COSMOS CB 282 G GLASS","satuan":"PCS","hpp":326470,"hargaB":361000,"hargaD":399000}
 
 "Eskan Pst Rivera M Putih 2246 P LCS | 12 | dz | # | # | 147.000 | 168.000 | 172.000 | 175.000 | 192.000"
-→ {"nama":"ESKAN PST RIVERA M PUTIH 2246 P LCS","satuan":"DZ","hpp":147000,"hargaB":172000,"hargaD":192000}
+â†’ {"nama":"ESKAN PST RIVERA M PUTIH 2246 P LCS","satuan":"DZ","hpp":147000,"hargaB":172000,"hargaD":192000}
 
 "Meishing G 1199 Piring 9 Dalam Ulir Warna | ### | 8 | dz | # | # | 74.000 | 83.000 | 85.000 | 87.000 | 97.000"
-→ {"nama":"MEISHING G 1199 PIRING 9 DALAM ULIR WARNA","satuan":"DZ","hpp":74000,"hargaB":85000,"hargaD":97000}
+â†’ {"nama":"MEISHING G 1199 PIRING 9 DALAM ULIR WARNA","satuan":"DZ","hpp":74000,"hargaB":85000,"hargaD":97000}
 
 SEKARANG BACA GAMBAR. Output HANYA JSON array, tanpa penjelasan:
 [{"nama":"...","satuan":"...","hpp":...,"hargaB":...,"hargaD":...}]`;
@@ -6478,15 +6487,15 @@ PER BARIS ambil:
 4. Harga B: kolom ke-3 dari harga (kolom B)
 5. Harga D: PALING KANAN (kolom D)
 
-⚠️ PENTING:
-- pcs/dz/set/lsn → BUKAN DX/LCS (itu nama barang)
-- Angka HAPUS TITIK: 326.470 → 326470
+âš ï¸ PENTING:
+- pcs/dz/set/lsn â†’ BUKAN DX/LCS (itu nama barang)
+- Angka HAPUS TITIK: 326.470 â†’ 326470
 - BACA SEMUA BARIS
 
 Output JSON array:
 [{"nama":"NAMA","satuan":"PCS","hpp":100000,"hargaB":120000,"hargaD":150000}]`;
 
-// ═══ PARSER dengan VALIDASI SATUAN & HARGA ═══
+// â•â•â• PARSER dengan VALIDASI SATUAN & HARGA â•â•â•
 
 function parseHomebaseScan(aiText) {
   if (!aiText) return [];
@@ -6554,7 +6563,7 @@ function parseHomebaseScan(aiText) {
   } catch(err) { log.error('HB-PARSE', err.message); return []; }
 }
 
-// ═══ PREPROCESS GAMBAR ═══
+// â•â•â• PREPROCESS GAMBAR â•â•â•
 
 async function enhanceImageForOCR(imageBuffer) {
   try {
@@ -6567,7 +6576,7 @@ async function enhanceImageForOCR(imageBuffer) {
   } catch(err) { return imageBuffer; }
 }
 
-// ═══ MULTI-PASS SCAN ═══
+// â•â•â• MULTI-PASS SCAN â•â•â•
 
 async function scanHomebaseMultiPass(imageBuffer) {
   let allItems = [];
@@ -6606,7 +6615,7 @@ async function scanHomebaseMultiPass(imageBuffer) {
   return allItems;
 }
 
-// ═══ KONVERSI SATUAN + PEMBULATAN CERDAS ═══
+// â•â•â• KONVERSI SATUAN + PEMBULATAN CERDAS â•â•â•
 
 function getFaktorKonversi(satuan) {
   const sat = String(satuan || '').toUpperCase().trim();
@@ -6658,7 +6667,7 @@ function konversiHargaKePcs(item) {
   };
 }
 
-// ═══ ULTRA DEEP MATCHING ═══
+// â•â•â• ULTRA DEEP MATCHING â•â•â•
 
 let DB_INDEX_CACHE = null;
 let DB_INDEX_TIMESTAMP = 0;
@@ -6940,11 +6949,11 @@ if (typeof loadExcel === 'function') {
   };
 }
 
-// ═══ FORMAT PERBANDINGAN ═══
+// â•â•â• FORMAT PERBANDINGAN â•â•â•
 
 function formatPerbandinganHomebase(hasilBanding, tokoKode) {
   const namaToko = NAMA_TOKO[tokoKode] || 'Toko';
-  let m = `🏠 *PERBANDINGAN HARGA HOMEBASE*\n🏦 ${namaToko}\n📅 ${getTanggalIndonesia()}\n${GARIS_TEBAL}\n\n`;
+  let m = `ðŸ  *PERBANDINGAN HARGA HOMEBASE*\nðŸ¦ ${namaToko}\nðŸ“… ${getTanggalIndonesia()}\n${GARIS_TEBAL}\n\n`;
   let totalNaik = 0, totalTurun = 0, totalSama = 0, totalTidakMatch = 0, totalDikonversi = 0;
   
   hasilBanding.forEach((item, i) => {
@@ -6952,91 +6961,91 @@ function formatPerbandinganHomebase(hasilBanding, tokoKode) {
     if (konv.dikonversi) totalDikonversi++;
     
     m += `*${i+1}. ${escapeMd(item.namaNota)}*\n`;
-    if (konv.dikonversi) m += `   📏 *${item.satuan}* (÷${konv.faktorKonversi} = per PCS)\n`;
-    else m += `   📏 ${item.satuan}\n`;
+    if (konv.dikonversi) m += `   ðŸ“ *${item.satuan}* (Ã·${konv.faktorKonversi} = per PCS)\n`;
+    else m += `   ðŸ“ ${item.satuan}\n`;
     
     if (!item.matched) {
       totalTidakMatch++;
-      m += `   ❌ _Tidak match_\n`;
+      m += `   âŒ _Tidak match_\n`;
       if (konv.dikonversi) {
-        m += `   💰 HPP: ${formatRp(item.hpp)}/${item.satuan} = ${formatRp(konv.hppPcs)}/PCS\n`;
+        m += `   ðŸ’° HPP: ${formatRp(item.hpp)}/${item.satuan} = ${formatRp(konv.hppPcs)}/PCS\n`;
         m += `   B: ${formatRp(konv.hargaBPcsBulat)}/PCS | D: ${formatRp(konv.hargaDPcsBulat)}/PCS\n\n`;
       } else {
-        m += `   💰 HPP: ${formatRp(item.hpp)} | B: ${formatRp(item.hargaB)} | D: ${formatRp(item.hargaD)}\n\n`;
+        m += `   ðŸ’° HPP: ${formatRp(item.hpp)} | B: ${formatRp(item.hargaB)} | D: ${formatRp(item.hargaD)}\n\n`;
       }
       return;
     }
     
     const db = item.matched;
-    let matchIcon = db.matchScore >= 90 ? '✅' : db.matchScore >= 70 ? '🔗' : db.matchScore >= 50 ? '⚠️' : '❓';
+    let matchIcon = db.matchScore >= 90 ? 'âœ…' : db.matchScore >= 70 ? 'ðŸ”—' : db.matchScore >= 50 ? 'âš ï¸' : 'â“';
     let warnText = db.matchScore < 70 ? ' _(perlu review)_' : '';
     
-    m += `   ${matchIcon} → _${escapeMd(db.item.nama)}_ (${db.matchScore}%)${warnText}\n`;
-    m += `   🔖 \`${db.item.kode}\`\n`;
+    m += `   ${matchIcon} â†’ _${escapeMd(db.item.nama)}_ (${db.matchScore}%)${warnText}\n`;
+    m += `   ðŸ”– \`${db.item.kode}\`\n`;
     
     if (db.alternatives && db.alternatives.length > 0) {
-      m += `   💡 *Alternatif mirip:*\n`;
+      m += `   ðŸ’¡ *Alternatif mirip:*\n`;
       db.alternatives.forEach((alt, ai) => {
-        const altIcon = alt.matchScore >= 70 ? '🔗' : '⚠️';
+        const altIcon = alt.matchScore >= 70 ? 'ðŸ”—' : 'âš ï¸';
         m += `      ${altIcon} ${ai+1}. _${escapeMd(alt.item.nama)}_ (${alt.matchScore}%) \`${alt.item.kode}\`\n`;
       });
     }
     
     if (db.flags && db.flags.length > 0) {
-      if (db.flags.includes('kode-angka-beda')) m += `   ⚠️ Kode angka BEDA!\n`;
-      if (db.flags.includes('angka-beda')) m += `   ⚠️ Ada angka yang tidak cocok!\n`;
+      if (db.flags.includes('kode-angka-beda')) m += `   âš ï¸ Kode angka BEDA!\n`;
+      if (db.flags.includes('angka-beda')) m += `   âš ï¸ Ada angka yang tidak cocok!\n`;
       if (db.flags.includes('variant-beda')) {
         const ns = db.details?.notaSuffixes || [], ds = db.details?.dbSuffixes || [];
-        if (ns.length > 0 && ds.length === 0) m += `   ⚠️ Nota variant "${ns.join(', ')}" - Excel tidak\n`;
-        else if (ds.length > 0 && ns.length === 0) m += `   ⚠️ Excel variant "${ds.join(', ')}" - Nota tidak\n`;
-        else m += `   ⚠️ Variant: [${ns.join('/')}] vs [${ds.join('/')}]\n`;
+        if (ns.length > 0 && ds.length === 0) m += `   âš ï¸ Nota variant "${ns.join(', ')}" - Excel tidak\n`;
+        else if (ds.length > 0 && ns.length === 0) m += `   âš ï¸ Excel variant "${ds.join(', ')}" - Nota tidak\n`;
+        else m += `   âš ï¸ Variant: [${ns.join('/')}] vs [${ds.join('/')}]\n`;
       }
     }
     
     // HPP
     if (item.hpp > 0) {
       m += konv.dikonversi
-        ? `   💰 HPP: ${formatRp(item.hpp)}/${item.satuan} → *${formatRp(konv.hppPcs)}/PCS*\n`
-        : `   💰 HPP: ${formatRp(item.hpp)}\n`;
+        ? `   ðŸ’° HPP: ${formatRp(item.hpp)}/${item.satuan} â†’ *${formatRp(konv.hppPcs)}/PCS*\n`
+        : `   ðŸ’° HPP: ${formatRp(item.hpp)}\n`;
     }
     
     // ECER (D) - pakai harga BULAT (kelipatan 1000)
     const hargaEcer = db.item.harga[tokoKode]?.ecer || 0;
     if (konv.dikonversi && konv.hargaDPcsBulat > 0 && hargaEcer > 0) {
       const s = konv.hargaDPcsBulat - hargaEcer;
-      const st = s === 0 ? '✅' : s > 0 ? '📈' : '📉';
+      const st = s === 0 ? 'âœ…' : s > 0 ? 'ðŸ“ˆ' : 'ðŸ“‰';
       if (s > 0) totalNaik++; else if (s < 0) totalTurun++; else totalSama++;
       
-      m += `   🏷️ Ecer: ${formatRp(item.hargaD)}/${item.satuan} ÷${konv.faktorKonversi} = ${formatRp(konv.hargaDPcs)} → *${formatRp(konv.hargaDPcsBulat)}*/PCS\n`;
+      m += `   ðŸ·ï¸ Ecer: ${formatRp(item.hargaD)}/${item.satuan} Ã·${konv.faktorKonversi} = ${formatRp(konv.hargaDPcs)} â†’ *${formatRp(konv.hargaDPcsBulat)}*/PCS\n`;
       m += `      vs Excel: ${formatRp(hargaEcer)} ${st}${s !== 0 ? ` (${s>0?'+':''}${formatRp(s)})` : ''}\n`;
     } else if (!konv.dikonversi && konv.hargaDPcs > 0 && hargaEcer > 0) {
       const s = konv.hargaDPcs - hargaEcer;
-      const st = s === 0 ? '✅' : s > 0 ? '📈' : '📉';
+      const st = s === 0 ? 'âœ…' : s > 0 ? 'ðŸ“ˆ' : 'ðŸ“‰';
       if (s > 0) totalNaik++; else if (s < 0) totalTurun++; else totalSama++;
-      m += `   🏷️ Ecer: ${formatRp(konv.hargaDPcs)} vs ${formatRp(hargaEcer)} ${st}${s !== 0 ? ` (${s>0?'+':''}${formatRp(s)})` : ''}\n`;
+      m += `   ðŸ·ï¸ Ecer: ${formatRp(konv.hargaDPcs)} vs ${formatRp(hargaEcer)} ${st}${s !== 0 ? ` (${s>0?'+':''}${formatRp(s)})` : ''}\n`;
     }
     
     // GROSIR (B) - pakai harga BULAT (kelipatan 500)
     const hargaAmbil = db.item.harga[tokoKode]?.ambil || 0;
     if (konv.dikonversi && konv.hargaBPcsBulat > 0 && hargaAmbil > 0) {
       const s = konv.hargaBPcsBulat - hargaAmbil;
-      const st = s === 0 ? '✅' : s > 0 ? '📈' : '📉';
+      const st = s === 0 ? 'âœ…' : s > 0 ? 'ðŸ“ˆ' : 'ðŸ“‰';
       
-      m += `   📦 Grosir: ${formatRp(item.hargaB)}/${item.satuan} ÷${konv.faktorKonversi} = ${formatRp(konv.hargaBPcs)} → *${formatRp(konv.hargaBPcsBulat)}*/PCS\n`;
+      m += `   ðŸ“¦ Grosir: ${formatRp(item.hargaB)}/${item.satuan} Ã·${konv.faktorKonversi} = ${formatRp(konv.hargaBPcs)} â†’ *${formatRp(konv.hargaBPcsBulat)}*/PCS\n`;
       m += `      vs Excel: ${formatRp(hargaAmbil)} ${st}${s !== 0 ? ` (${s>0?'+':''}${formatRp(s)})` : ''}\n`;
     } else if (!konv.dikonversi && konv.hargaBPcs > 0 && hargaAmbil > 0) {
       const s = konv.hargaBPcs - hargaAmbil;
-      const st = s === 0 ? '✅' : s > 0 ? '📈' : '📉';
-      m += `   📦 Grosir: ${formatRp(konv.hargaBPcs)} vs ${formatRp(hargaAmbil)} ${st}${s !== 0 ? ` (${s>0?'+':''}${formatRp(s)})` : ''}\n`;
+      const st = s === 0 ? 'âœ…' : s > 0 ? 'ðŸ“ˆ' : 'ðŸ“‰';
+      m += `   ðŸ“¦ Grosir: ${formatRp(konv.hargaBPcs)} vs ${formatRp(hargaAmbil)} ${st}${s !== 0 ? ` (${s>0?'+':''}${formatRp(s)})` : ''}\n`;
     }
     m += '\n';
   });
   
-  m += `${GARIS_TEBAL}\n📊 *RINGKASAN:*\n📦 Total: ${hasilBanding.length}\n🔗 Match: ${hasilBanding.length - totalTidakMatch}\n❌ Tidak match: ${totalTidakMatch}\n🔄 Konversi (lusin→pcs): ${totalDikonversi}\n📈 NAIK: ${totalNaik} | 📉 TURUN: ${totalTurun} | ✅ SAMA: ${totalSama}\n`;
+  m += `${GARIS_TEBAL}\nðŸ“Š *RINGKASAN:*\nðŸ“¦ Total: ${hasilBanding.length}\nðŸ”— Match: ${hasilBanding.length - totalTidakMatch}\nâŒ Tidak match: ${totalTidakMatch}\nðŸ”„ Konversi (lusinâ†’pcs): ${totalDikonversi}\nðŸ“ˆ NAIK: ${totalNaik} | ðŸ“‰ TURUN: ${totalTurun} | âœ… SAMA: ${totalSama}\n`;
   return m;
 }
 
-// ═══ GENERATE EXCEL ═══
+// â•â•â• GENERATE EXCEL â•â•â•
 
 function generateExcelHomebase(hasilBanding, tokoKode) {
   const namaToko = NAMA_TOKO[tokoKode] || 'Toko';
@@ -7072,7 +7081,7 @@ function generateExcelHomebase(hasilBanding, tokoKode) {
     rows.push({
       'Nama Barang (Nota)': item.namaNota,
       'Satuan': item.satuan,
-      'Faktor': konv.faktorKonversi > 1 ? `÷${konv.faktorKonversi}` : '-',
+      'Faktor': konv.faktorKonversi > 1 ? `Ã·${konv.faktorKonversi}` : '-',
       'Nama Barang (Excel)': db ? db.item.nama : 'TIDAK DITEMUKAN',
       'Kode': db ? db.item.kode : '-',
       'Match %': db ? db.matchScore + '%' : '0%',
@@ -7109,7 +7118,7 @@ function generateExcelHomebase(hasilBanding, tokoKode) {
   return filePath;
 }
 
-// ═══ MAIN HANDLER ═══
+// â•â•â• MAIN HANDLER â•â•â•
 
 async function handleHomebaseMode(chatId, userId, message, imageBuffer, session) {
   const low = (message || '').toLowerCase().trim();
@@ -7118,14 +7127,14 @@ async function handleHomebaseMode(chatId, userId, message, imageBuffer, session)
   
   if (low === 'batal' || low === '/batal') {
     resetSesi(userId);
-    return kirim(chatId, '✅ Dibatalkan.', { reply_markup: kbMainMenu(userId) });
+    return kirim(chatId, 'âœ… Dibatalkan.', { reply_markup: kbMainMenu(userId) });
   }
   
   if (low === 'selesai' || low === 'export') {
     const items = session.homebaseItems || [];
-    if (!items.length) return kirim(chatId, '⚠️ Belum ada data. Kirim foto nota dulu!');
+    if (!items.length) return kirim(chatId, 'âš ï¸ Belum ada data. Kirim foto nota dulu!');
     
-    await kirim(chatId, '📊 _Membuat laporan perbandingan..._');
+    await kirim(chatId, 'ðŸ“Š _Membuat laporan perbandingan..._');
     
     const hasilBanding = items.map(item => ({
       namaNota: item.nama, satuan: item.satuan,
@@ -7149,35 +7158,35 @@ async function handleHomebaseMode(chatId, userId, message, imageBuffer, session)
       try { fs.unlinkSync(excelPath); } catch(e) {}
     } catch(err) {
       log.error('HB-EXCEL', err.message);
-      await kirim(chatId, '❌ Gagal buat Excel: ' + err.message);
+      await kirim(chatId, 'âŒ Gagal buat Excel: ' + err.message);
     }
     
     resetSesi(userId);
-    await kirim(chatId, '✅ *Perbandingan Homebase selesai!*', { reply_markup: kbMainMenu(userId) });
+    await kirim(chatId, 'âœ… *Perbandingan Homebase selesai!*', { reply_markup: kbMainMenu(userId) });
     return;
   }
   
   if (low === 'review' || low === 'lihat') {
     const items = session.homebaseItems || [];
-    if (!items.length) return kirim(chatId, '⚠️ Belum ada data.');
+    if (!items.length) return kirim(chatId, 'âš ï¸ Belum ada data.');
     
-    let m = `📋 *REVIEW HOMEBASE*\n🏦 ${namaToko}\n${GARIS_TEBAL}\n📦 Total: ${items.length} item\n\n`;
+    let m = `ðŸ“‹ *REVIEW HOMEBASE*\nðŸ¦ ${namaToko}\n${GARIS_TEBAL}\nðŸ“¦ Total: ${items.length} item\n\n`;
     items.forEach((item, i) => {
       m += `${i+1}. *${escapeMd(item.nama)}*\n   ${item.satuan} | HPP: ${formatRp(item.hpp)} | B: ${formatRp(item.hargaB)} | D: ${formatRp(item.hargaD)}\n\n`;
     });
     
     await kirim(chatId, m, {
       reply_markup: { inline_keyboard: [
-        [{ text: '📊 Selesai & Bandingkan', callback_data: 'homebase:selesai' }],
-        [{ text: '🗑️ Reset', callback_data: 'homebase:reset' }],
-        [{ text: '🔙 Batal', callback_data: 'menu:main' }],
+        [{ text: 'ðŸ“Š Selesai & Bandingkan', callback_data: 'homebase:selesai' }],
+        [{ text: 'ðŸ—‘ï¸ Reset', callback_data: 'homebase:reset' }],
+        [{ text: 'ðŸ”™ Batal', callback_data: 'menu:main' }],
       ]}
     });
     return;
   }
   
   if (imageBuffer) {
-    await kirim(chatId, '📸 _Sedang scan nota (multi-pass, 60-90 detik)..._');
+    await kirim(chatId, 'ðŸ“¸ _Sedang scan nota (multi-pass, 60-90 detik)..._');
     
     try {
       const scannedItems = await scanHomebaseMultiPass(imageBuffer);
@@ -7185,8 +7194,8 @@ async function handleHomebaseMode(chatId, userId, message, imageBuffer, session)
       
       if (!scannedItems.length) {
         await kirim(chatId,
-          `⚠️ *Tidak ada barang terdeteksi*\n${GARIS_TIPIS}\n\n💡 Tips:\n1. Foto ASLI (jangan forward WA)\n2. Lurus dari atas\n3. Zoom sampai jelas\n4. Bagi 2-3 foto kalau panjang\n\n📸 Coba lagi.`,
-          { reply_markup: { inline_keyboard: [[{ text: '🔙 Batal', callback_data: 'menu:main' }]] }}
+          `âš ï¸ *Tidak ada barang terdeteksi*\n${GARIS_TIPIS}\n\nðŸ’¡ Tips:\n1. Foto ASLI (jangan forward WA)\n2. Lurus dari atas\n3. Zoom sampai jelas\n4. Bagi 2-3 foto kalau panjang\n\nðŸ“¸ Coba lagi.`,
+          { reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Batal', callback_data: 'menu:main' }]] }}
         );
         return;
       }
@@ -7201,69 +7210,69 @@ async function handleHomebaseMode(chatId, userId, message, imageBuffer, session)
       });
       updateSesi(userId, { homebaseItems: existing });
       
-      let m = `✅ *Scan ${scannedItems.length} item!*\n🆕 Baru: ${newItems.length} | Total: ${existing.length}\n${GARIS_TEBAL}\n\n`;
+      let m = `âœ… *Scan ${scannedItems.length} item!*\nðŸ†• Baru: ${newItems.length} | Total: ${existing.length}\n${GARIS_TEBAL}\n\n`;
       
       newItems.slice(0, 8).forEach((si, i) => {
         const match = matchBarangHomebase(si.nama);
         const konv = konversiHargaKePcs(si);
         
         m += `*${i+1}. ${escapeMd(si.nama)}*\n`;
-        m += `   📏 ${si.satuan}`;
-        if (konv.dikonversi) m += ` (÷${konv.faktorKonversi})`;
+        m += `   ðŸ“ ${si.satuan}`;
+        if (konv.dikonversi) m += ` (Ã·${konv.faktorKonversi})`;
         m += ` | HPP: ${formatRp(si.hpp)} | B: ${formatRp(si.hargaB)} | D: ${formatRp(si.hargaD)}\n`;
         
         if (si.hargaB > 0 && si.hargaD > 0 && si.hargaB > si.hargaD) {
-          m += `   ⚠️ _Harga B > D (terswap otomatis)_\n`;
+          m += `   âš ï¸ _Harga B > D (terswap otomatis)_\n`;
         }
         
         if (match) {
-          const icon = match.matchScore >= 90 ? '✅' : match.matchScore >= 70 ? '🔗' : '⚠️';
-          m += `   ${icon} → _${escapeMd(match.item.nama.substring(0, 45))}_ (${match.matchScore}%)`;
+          const icon = match.matchScore >= 90 ? 'âœ…' : match.matchScore >= 70 ? 'ðŸ”—' : 'âš ï¸';
+          m += `   ${icon} â†’ _${escapeMd(match.item.nama.substring(0, 45))}_ (${match.matchScore}%)`;
           if (match.alternatives && match.alternatives.length > 0) m += ` +${match.alternatives.length} alt`;
           m += '\n';
         } else {
-          m += `   ❌ _Belum match_\n`;
+          m += `   âŒ _Belum match_\n`;
         }
         m += '\n';
       });
       
       if (newItems.length > 8) m += `_... +${newItems.length - 8} lainnya_\n\n`;
-      m += `${GARIS_TIPIS}\n📸 Kirim foto lagi atau pilih:`;
+      m += `${GARIS_TIPIS}\nðŸ“¸ Kirim foto lagi atau pilih:`;
       
       await kirim(chatId, m, {
         reply_markup: { inline_keyboard: [
-          [{ text: '📊 Selesai & Bandingkan', callback_data: 'homebase:selesai' }],
-          [{ text: '📋 Review Semua', callback_data: 'homebase:review' }],
-          [{ text: '🔙 Batal', callback_data: 'menu:main' }],
+          [{ text: 'ðŸ“Š Selesai & Bandingkan', callback_data: 'homebase:selesai' }],
+          [{ text: 'ðŸ“‹ Review Semua', callback_data: 'homebase:review' }],
+          [{ text: 'ðŸ”™ Batal', callback_data: 'menu:main' }],
         ]}
       });
     } catch(err) {
       log.error('HB-SCAN', err.message);
-      await kirim(chatId, '❌ Gagal: ' + err.message + '\n\n📸 Coba lagi.');
+      await kirim(chatId, 'âŒ Gagal: ' + err.message + '\n\nðŸ“¸ Coba lagi.');
     }
     return;
   }
   
   await kirim(chatId,
-    `📸 *Kirim FOTO nota Homebase*\n${GARIS_TIPIS}\n🏦 ${namaToko}\n📦 Data: ${(session.homebaseItems || []).length} item\n\n💡 Tips: Foto asli, lurus, zoom jelas, bagi 2-3 foto kalau panjang.`,
+    `ðŸ“¸ *Kirim FOTO nota Homebase*\n${GARIS_TIPIS}\nðŸ¦ ${namaToko}\nðŸ“¦ Data: ${(session.homebaseItems || []).length} item\n\nðŸ’¡ Tips: Foto asli, lurus, zoom jelas, bagi 2-3 foto kalau panjang.`,
     { reply_markup: { inline_keyboard: [
-      [{ text: '📋 Review', callback_data: 'homebase:review' }],
-      [{ text: '📊 Selesai', callback_data: 'homebase:selesai' }],
-      [{ text: '🔙 Batal', callback_data: 'menu:main' }],
+      [{ text: 'ðŸ“‹ Review', callback_data: 'homebase:review' }],
+      [{ text: 'ðŸ“Š Selesai', callback_data: 'homebase:selesai' }],
+      [{ text: 'ðŸ”™ Batal', callback_data: 'menu:main' }],
     ]}}
   );
 }
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   32. COMMAND HANDLERS
-// ════════════════════════════════════════════════════════════════
-// ═══ AUDIT LOG untuk aktivitas sensitif ═══
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// â•â•â• AUDIT LOG untuk aktivitas sensitif â•â•â•
 const AUDIT_LOG_FILE = path.join(CONFIG.paths.storage, 'audit.log');
 
 function auditLog(userId, action, details = '') {
   const timestamp = getJamSekarang();
   const nama = getNama(userId) || 'Unknown';
   const isAdminUser = isAdmin(userId) ? 'ADMIN' : 'USER';
-  const entry = `[${timestamp}] [${isAdminUser}] ${nama} (${userId}) → ${action} | ${details}\n`;
+  const entry = `[${timestamp}] [${isAdminUser}] ${nama} (${userId}) â†’ ${action} | ${details}\n`;
   
   try {
     fs.appendFileSync(AUDIT_LOG_FILE, entry);
@@ -7276,7 +7285,7 @@ function auditLog(userId, action, details = '') {
   if (SENSITIVE_ACTIONS.includes(action) && CONFIG.adminId) {
     try {
       bot.sendMessage(CONFIG.adminId, 
-        `🚨 *AUDIT ALERT*\n\n👤 ${nama} (${userId})\n📝 Action: *${action}*\n${details ? '📋 Detail: ' + details : ''}\n⏰ ${timestamp}`,
+        `ðŸš¨ *AUDIT ALERT*\n\nðŸ‘¤ ${nama} (${userId})\nðŸ“ Action: *${action}*\n${details ? 'ðŸ“‹ Detail: ' + details : ''}\nâ° ${timestamp}`,
         { parse_mode: 'Markdown' }
       );
     } catch(e) {}
@@ -7300,27 +7309,27 @@ bot.onText(/\/removemember (\d+)/, (msg, match) => {
   if (!isAdmin(msg.from.id)) return;
   auditLog(msg.from.id, 'MEMBER_DELETED', `Target: ${match[1]}`);
   const r = hapusMember(match[1]);
-  kirim(msg.chat.id, r.ok ? '✅ Member dihapus' : '❌ ' + r.alasan);
+  kirim(msg.chat.id, r.ok ? 'âœ… Member dihapus' : 'âŒ ' + r.alasan);
 });
 
 // Command untuk lihat audit log (admin only)
 bot.onText(/\/auditlog/, (msg) => {
-  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, 'ðŸš« Khusus admin.');
   
   try {
     if (!fs.existsSync(AUDIT_LOG_FILE)) {
-      return kirim(msg.chat.id, '📋 Audit log kosong.');
+      return kirim(msg.chat.id, 'ðŸ“‹ Audit log kosong.');
     }
     
     const content = fs.readFileSync(AUDIT_LOG_FILE, 'utf8');
     const lines = content.trim().split('\n').slice(-30); // 30 terakhir
     
-    let m = `📋 *AUDIT LOG (30 terakhir)*\n${GARIS_TEBAL}\n\n`;
+    let m = `ðŸ“‹ *AUDIT LOG (30 terakhir)*\n${GARIS_TEBAL}\n\n`;
     m += '```\n' + lines.join('\n') + '\n```';
     
     kirim(msg.chat.id, m);
   } catch(e) {
-    kirim(msg.chat.id, '❌ Error: ' + e.message);
+    kirim(msg.chat.id, 'âŒ Error: ' + e.message);
   }
 });
 
@@ -7340,7 +7349,7 @@ bot.onText(/\/start/, (msg) => {
 bot.onText(/\/menu/, (msg) => {
   const userId = msg.from.id;
   if (!isMember(userId)) return kirim(msg.chat.id, buildGuestWelcome(msg.from.first_name, userId));
-  kirim(msg.chat.id, '📋 *MENU UTAMA*', { reply_markup: kbMainMenu(userId) });
+  kirim(msg.chat.id, 'ðŸ“‹ *MENU UTAMA*', { reply_markup: kbMainMenu(userId) });
 });
 
 bot.onText(/\/request (.+)/, (msg, match) => {
@@ -7348,22 +7357,22 @@ bot.onText(/\/request (.+)/, (msg, match) => {
   const nama = match[1].trim();
   
   if (isMember(userId)) {
-    return kirim(msg.chat.id, '✅ Anda sudah jadi member!');
+    return kirim(msg.chat.id, 'âœ… Anda sudah jadi member!');
   }
   
   PENDING[userId] = { nama, timestamp: Date.now(), username: msg.from.username || '-' };
   saveJSON(CONFIG.paths.pending, PENDING);
   
   kirim(msg.chat.id,
-    `✅ *Permintaan Terkirim!*\n👤 Nama: ${escapeMd(nama)}\n🆔 ID: \`${userId}\`\n\nAdmin akan review.`
+    `âœ… *Permintaan Terkirim!*\nðŸ‘¤ Nama: ${escapeMd(nama)}\nðŸ†” ID: \`${userId}\`\n\nAdmin akan review.`
   );
   
   if (CONFIG.adminId) {
     kirim(CONFIG.adminId,
-      `🔔 *PERMINTAAN AKSES BARU*\n\n👤 ${escapeMd(nama)}\n🆔 \`${userId}\`\n📛 @${msg.from.username || '-'}`,
+      `ðŸ”” *PERMINTAAN AKSES BARU*\n\nðŸ‘¤ ${escapeMd(nama)}\nðŸ†” \`${userId}\`\nðŸ“› @${msg.from.username || '-'}`,
       { reply_markup: { inline_keyboard: [[
-        { text: '✅ Approve', callback_data: `approve:${userId}` },
-        { text: '❌ Reject', callback_data: `reject:${userId}` },
+        { text: 'âœ… Approve', callback_data: `approve:${userId}` },
+        { text: 'âŒ Reject', callback_data: `reject:${userId}` },
       ]]}}
     );
   }
@@ -7373,28 +7382,28 @@ bot.onText(/\/info/, (msg) => {
   const userId = msg.from.id;
   const uptime = Math.floor(process.uptime());
   kirim(msg.chat.id,
-    `ℹ️ *INFO BOT*\n${GARIS_TEBAL}\n🤖 ${CONFIG.appName}\n📦 ${DATA_BARANG.length} barang\n👥 ${MEMBERS.length} members\n⏱️ Uptime: ${Math.floor(uptime/3600)}j ${Math.floor((uptime%3600)/60)}m\n\n*Your Info:*\n🆔 \`${userId}\`\n📛 ${getUserRole(userId)}`
+    `â„¹ï¸ *INFO BOT*\n${GARIS_TEBAL}\nðŸ¤– ${CONFIG.appName}\nðŸ“¦ ${DATA_BARANG.length} barang\nðŸ‘¥ ${MEMBERS.length} members\nâ±ï¸ Uptime: ${Math.floor(uptime/3600)}j ${Math.floor((uptime%3600)/60)}m\n\n*Your Info:*\nðŸ†” \`${userId}\`\nðŸ“› ${getUserRole(userId)}`
   );
 });
 
 bot.onText(/\/gambar (.+)/, async (msg, match) => {
   const userId = msg.from.id;
   const chatId = msg.chat.id;
-  if (!isMember(userId)) return kirim(chatId, '⚠️ Anda belum jadi member. Ketik /request <nama> dulu.');
+  if (!isMember(userId)) return kirim(chatId, 'âš ï¸ Anda belum jadi member. Ketik /request <nama> dulu.');
   
   const prompt = match[1].trim();
-  if (!prompt) return kirim(chatId, '⚠️ Format: /gambar <deskripsi gambar>');
+  if (!prompt) return kirim(chatId, 'âš ï¸ Format: /gambar <deskripsi gambar>');
   
-  const status = await kirim(chatId, '🎨 _Sedang menggambar... (bisa 10-30 detik)_');
+  const status = await kirim(chatId, 'ðŸŽ¨ _Sedang menggambar... (bisa 10-30 detik)_');
   try {
     const url = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt) + '?width=1024&height=1024&nologo=true&seed=' + Math.floor(Math.random()*100000);
     const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000 });
     if (!resp.data || resp.data.length < 1000) throw new Error('Gambar kosong');
-    await bot.sendPhoto(chatId, Buffer.from(resp.data), { caption: `🎨 *${escapeMd(prompt)}*` });
+    await bot.sendPhoto(chatId, Buffer.from(resp.data), { caption: `ðŸŽ¨ *${escapeMd(prompt)}*` });
     try { await bot.deleteMessage(chatId, status.message_id); } catch(e) {}
   } catch(err) {
     log.error('GAMBAR', err.message);
-    await kirim(chatId, '❌ Gagal generate gambar: ' + (err.message || 'unknown error'));
+    await kirim(chatId, 'âŒ Gagal generate gambar: ' + (err.message || 'unknown error'));
   }
 });
 
@@ -7411,29 +7420,29 @@ bot.onText(/\/reject (\d+)/, (msg, match) => {
 bot.onText(/\/addstaff (\d+)/, (msg, match) => {
   if (!isAdmin(msg.from.id)) return;
   const r = tambahRoleLaporan(match[1]);
-  kirim(msg.chat.id, r.ok ? '✅ Staff laporan ditambahkan' : '❌ ' + r.alasan);
+  kirim(msg.chat.id, r.ok ? 'âœ… Staff laporan ditambahkan' : 'âŒ ' + r.alasan);
 });
 
 bot.onText(/\/removestaff (\d+)/, (msg, match) => {
   if (!isAdmin(msg.from.id)) return;
   const r = hapusRoleLaporan(match[1]);
-  kirim(msg.chat.id, r.ok ? '✅ Staff laporan dihapus' : '❌ ' + r.alasan);
+  kirim(msg.chat.id, r.ok ? 'âœ… Staff laporan dihapus' : 'âŒ ' + r.alasan);
 });
 
 bot.onText(/\/removemember (\d+)/, (msg, match) => {
   if (!isAdmin(msg.from.id)) return;
   const r = hapusMember(match[1]);
-  kirim(msg.chat.id, r.ok ? '✅ Member dihapus' : '❌ ' + r.alasan);
+  kirim(msg.chat.id, r.ok ? 'âœ… Member dihapus' : 'âŒ ' + r.alasan);
 });
 // Ubah nama member (admin)
 bot.onText(/\/setnama (\d+) (.+)/, (msg, match) => {
-  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, 'ðŸš« Khusus admin.');
   
   const targetId = String(match[1]).trim();
   const namaBaru = match[2].trim();
   
   if (namaBaru.length < 2) {
-    return kirim(msg.chat.id, '⚠️ Nama minimal 2 karakter.');
+    return kirim(msg.chat.id, 'âš ï¸ Nama minimal 2 karakter.');
   }
   
   const namaLama = KONTAK[targetId] || '_(belum ada nama)_';
@@ -7443,22 +7452,22 @@ bot.onText(/\/setnama (\d+) (.+)/, (msg, match) => {
   saveJSON(CONFIG.paths.kontak, KONTAK);
   
   kirim(msg.chat.id,
-    `✅ *Nama berhasil diubah!*\n${GARIS_TIPIS}\n\n` +
-    `🆔 ID: \`${targetId}\`\n` +
-    `📛 Nama Lama: ${escapeMd(namaLama)}\n` +
-    `📛 Nama Baru: *${escapeMd(namaBaru)}*\n` +
-    `👤 Status: ${isMember ? '✅ Member' : '⚠️ Bukan member'}`
+    `âœ… *Nama berhasil diubah!*\n${GARIS_TIPIS}\n\n` +
+    `ðŸ†” ID: \`${targetId}\`\n` +
+    `ðŸ“› Nama Lama: ${escapeMd(namaLama)}\n` +
+    `ðŸ“› Nama Baru: *${escapeMd(namaBaru)}*\n` +
+    `ðŸ‘¤ Status: ${isMember ? 'âœ… Member' : 'âš ï¸ Bukan member'}`
   );
   
   // Notif ke user yang bersangkutan
   try {
-    kirim(targetId, `✨ *Nama Anda diubah oleh admin*\n\nNama baru: *${escapeMd(namaBaru)}*`);
+    kirim(targetId, `âœ¨ *Nama Anda diubah oleh admin*\n\nNama baru: *${escapeMd(namaBaru)}*`);
   } catch(e) {}
 });
 
 // Cari member by nama atau ID
 bot.onText(/\/carimember (.+)/, (msg, match) => {
-  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, 'ðŸš« Khusus admin.');
   
   const query = match[1].trim().toLowerCase();
   const results = [];
@@ -7470,15 +7479,15 @@ bot.onText(/\/carimember (.+)/, (msg, match) => {
   });
   
   if (results.length === 0) {
-    return kirim(msg.chat.id, `❌ Tidak ada member yang cocok dengan "${escapeMd(query)}"`);
+    return kirim(msg.chat.id, `âŒ Tidak ada member yang cocok dengan "${escapeMd(query)}"`);
   }
   
-  let m = `🔍 *HASIL PENCARIAN* (${results.length})\n${GARIS_TEBAL}\n\n`;
+  let m = `ðŸ” *HASIL PENCARIAN* (${results.length})\n${GARIS_TEBAL}\n\n`;
   results.slice(0, 20).forEach((r, i) => {
     m += `${i+1}. *${escapeMd(r.nama)}*\n`;
-    m += `   🆔 \`${r.id}\`\n`;
-    m += `   👤 ${r.isMember ? '✅ Member' : '⚠️ Bukan member'}\n`;
-    m += `   ✏️ Ubah: \`/setnama ${r.id} [nama baru]\`\n\n`;
+    m += `   ðŸ†” \`${r.id}\`\n`;
+    m += `   ðŸ‘¤ ${r.isMember ? 'âœ… Member' : 'âš ï¸ Bukan member'}\n`;
+    m += `   âœï¸ Ubah: \`/setnama ${r.id} [nama baru]\`\n\n`;
   });
   
   if (results.length > 20) m += `_... +${results.length - 20} lainnya_\n`;
@@ -7488,33 +7497,33 @@ bot.onText(/\/carimember (.+)/, (msg, match) => {
 
 // Hapus kontak (bukan member, hanya nama)
 bot.onText(/\/hapuskontak (\d+)/, (msg, match) => {
-  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, 'ðŸš« Khusus admin.');
   
   const targetId = String(match[1]).trim();
   const namaLama = KONTAK[targetId];
   
   if (!namaLama) {
-    return kirim(msg.chat.id, '⚠️ Kontak dengan ID tersebut tidak ditemukan.');
+    return kirim(msg.chat.id, 'âš ï¸ Kontak dengan ID tersebut tidak ditemukan.');
   }
   
   delete KONTAK[targetId];
   saveJSON(CONFIG.paths.kontak, KONTAK);
   
   kirim(msg.chat.id,
-    `🗑️ *Kontak dihapus!*\n\n🆔 \`${targetId}\`\n📛 ${escapeMd(namaLama)}\n\n_Note: Ini hanya hapus nama, bukan hapus member. Untuk hapus member gunakan /removemember_`
+    `ðŸ—‘ï¸ *Kontak dihapus!*\n\nðŸ†” \`${targetId}\`\nðŸ“› ${escapeMd(namaLama)}\n\n_Note: Ini hanya hapus nama, bukan hapus member. Untuk hapus member gunakan /removemember_`
   );
 });
 
 bot.onText(/\/reload/, (msg) => {
   if (!isAdmin(msg.from.id)) return;
   loadExcel();
-  kirim(msg.chat.id, `✅ Excel reloaded! ${DATA_BARANG.length} barang`);
+  kirim(msg.chat.id, `âœ… Excel reloaded! ${DATA_BARANG.length} barang`);
 });
 
 // Manual backup SO untuk admin
 bot.onText(/\/backupso(?:\s+(\w+))?/, async (msg, match) => {
   if (!isAdmin(msg.from.id)) {
-    return kirim(msg.chat.id, '🚫 Khusus admin.');
+    return kirim(msg.chat.id, 'ðŸš« Khusus admin.');
   }
   
   const tokoKode = match[1]?.toLowerCase();
@@ -7523,21 +7532,21 @@ bot.onText(/\/backupso(?:\s+(\w+))?/, async (msg, match) => {
     // Backup toko spesifik
     if (!NAMA_TOKO[tokoKode]) {
       return kirim(msg.chat.id, 
-        `⚠️ Toko tidak valid. Pilih: ${Object.keys(NAMA_TOKO).join(', ')}`
+        `âš ï¸ Toko tidak valid. Pilih: ${Object.keys(NAMA_TOKO).join(', ')}`
       );
     }
     
-    await kirim(msg.chat.id, `📦 _Membuat backup ${NAMA_TOKO[tokoKode]}..._`);
+    await kirim(msg.chat.id, `ðŸ“¦ _Membuat backup ${NAMA_TOKO[tokoKode]}..._`);
     const success = await kirimBackupKeAdmin(tokoKode, 'manual', true);
     
     if (success) {
-      await kirim(msg.chat.id, `✅ Backup ${NAMA_TOKO[tokoKode]} terkirim!`);
+      await kirim(msg.chat.id, `âœ… Backup ${NAMA_TOKO[tokoKode]} terkirim!`);
     } else {
-      await kirim(msg.chat.id, `⚠️ ${NAMA_TOKO[tokoKode]} tidak ada data SO.`);
+      await kirim(msg.chat.id, `âš ï¸ ${NAMA_TOKO[tokoKode]} tidak ada data SO.`);
     }
   } else {
     // Backup semua toko
-    await kirim(msg.chat.id, '📦 _Membuat backup semua toko..._');
+    await kirim(msg.chat.id, 'ðŸ“¦ _Membuat backup semua toko..._');
     
     const tokoList = Object.keys(SO_SHARED).filter(tk => {
       const shared = SO_SHARED[tk];
@@ -7545,11 +7554,11 @@ bot.onText(/\/backupso(?:\s+(\w+))?/, async (msg, match) => {
     });
     
     if (tokoList.length === 0) {
-      return kirim(msg.chat.id, '⚠️ Tidak ada data SO aktif di toko manapun.');
+      return kirim(msg.chat.id, 'âš ï¸ Tidak ada data SO aktif di toko manapun.');
     }
     
     await backupSemuaToko('manual');
-    await kirim(msg.chat.id, `✅ Backup ${tokoList.length} toko selesai!`);
+    await kirim(msg.chat.id, `âœ… Backup ${tokoList.length} toko selesai!`);
   }
 });
 
@@ -7557,12 +7566,12 @@ bot.onText(/\/backupso(?:\s+(\w+))?/, async (msg, match) => {
 bot.onText(/\/statusbackup/, async (msg) => {
   if (!isAdmin(msg.from.id)) return;
   
-  let m = `📊 *STATUS AUTO-BACKUP SO*\n${GARIS_TEBAL}\n\n`;
-  m += `⏰ Interval auto-backup: 2 menit\n`;
-  m += `🚨 Emergency backup: aktif\n`;
-  m += `⚡ Event-triggered: aktif (30s debounce)\n\n`;
+  let m = `ðŸ“Š *STATUS AUTO-BACKUP SO*\n${GARIS_TEBAL}\n\n`;
+  m += `â° Interval auto-backup: 2 menit\n`;
+  m += `ðŸš¨ Emergency backup: aktif\n`;
+  m += `âš¡ Event-triggered: aktif (30s debounce)\n\n`;
   
-  m += `📦 *Status per toko:*\n${GARIS_TIPIS}\n`;
+  m += `ðŸ“¦ *Status per toko:*\n${GARIS_TIPIS}\n`;
   
   const tokoList = Object.keys(NAMA_TOKO);
   tokoList.forEach((tk, i) => {
@@ -7576,25 +7585,25 @@ bot.onText(/\/statusbackup/, async (msg) => {
     if (hasData) {
       const totalRak = Object.keys(shared.racks).length;
       const usersAktif = Object.keys(shared.usersAktif || {}).length;
-      m += `   📦 ${totalRak} rak | 🟢 ${usersAktif} user aktif\n`;
+      m += `   ðŸ“¦ ${totalRak} rak | ðŸŸ¢ ${usersAktif} user aktif\n`;
       
       if (lastBackup) {
         const menitLalu = Math.floor((Date.now() - lastBackup) / 60000);
-        m += `   ⏰ Backup terakhir: ${menitLalu < 1 ? 'baru saja' : menitLalu + 'm lalu'}\n`;
+        m += `   â° Backup terakhir: ${menitLalu < 1 ? 'baru saja' : menitLalu + 'm lalu'}\n`;
       } else {
-        m += `   ⏰ Belum ada backup\n`;
+        m += `   â° Belum ada backup\n`;
       }
-      m += `   🔢 Total backup: ${count}x\n`;
+      m += `   ðŸ”¢ Total backup: ${count}x\n`;
     } else {
       m += `   _Tidak ada SO aktif_\n`;
     }
     m += '\n';
   });
   
-  m += `${GARIS_TIPIS}\n💬 *Command:*\n`;
-  m += `• /backupso - backup semua\n`;
-  m += `• /backupso tdm - backup toko spesifik\n`;
-  m += `• /statusbackup - status ini`;
+  m += `${GARIS_TIPIS}\nðŸ’¬ *Command:*\n`;
+  m += `â€¢ /backupso - backup semua\n`;
+  m += `â€¢ /backupso tdm - backup toko spesifik\n`;
+  m += `â€¢ /statusbackup - status ini`;
   
   await kirim(msg.chat.id, m);
 });
@@ -7604,22 +7613,22 @@ bot.onText(/\/broadcast (.+)/, async (msg, match) => {
   const message = match[1];
   const targets = [...MEMBERS, String(CONFIG.adminId)];
   let sent = 0, failed = 0;
-  await kirim(msg.chat.id, `📢 Broadcasting ke ${targets.length} users...`);
+  await kirim(msg.chat.id, `ðŸ“¢ Broadcasting ke ${targets.length} users...`);
   for (const id of targets) {
     try {
-      await bot.sendMessage(id, `📢 *PENGUMUMAN*\n${GARIS_TEBAL}\n\n${message}\n\n${GARIS_TEBAL}\n_Pesan dari Admin_`, { parse_mode: 'Markdown' });
+      await bot.sendMessage(id, `ðŸ“¢ *PENGUMUMAN*\n${GARIS_TEBAL}\n\n${message}\n\n${GARIS_TEBAL}\n_Pesan dari Admin_`, { parse_mode: 'Markdown' });
       sent++;
       await tunggu(1500);
     } catch(e) { failed++; }
   }
-  kirim(msg.chat.id, `✅ Sent: ${sent} | ❌ Failed: ${failed}`);
+  kirim(msg.chat.id, `âœ… Sent: ${sent} | âŒ Failed: ${failed}`);
 });
 // Reset memory percakapan AI
 bot.onText(/\/resetchat/, (msg) => {
   if (!isMember(msg.from.id)) return;
   clearMemory(msg.from.id);
   kirim(msg.chat.id, 
-    `🔄 *Memori reset!*\n\nOkay kak, aku lupakan obrolan kita sebelumnya ya 😊\n\nYuk mulai ngobrol fresh!`
+    `ðŸ”„ *Memori reset!*\n\nOkay kak, aku lupakan obrolan kita sebelumnya ya ðŸ˜Š\n\nYuk mulai ngobrol fresh!`
   );
 });
 
@@ -7628,11 +7637,11 @@ bot.onText(/\/memory/, (msg) => {
   if (!isMember(msg.from.id)) return;
   const memory = getChatMemory(msg.from.id);
   if (memory.length === 0) {
-    return kirim(msg.chat.id, `Belum ada percakapan tersimpan kak 😊`);
+    return kirim(msg.chat.id, `Belum ada percakapan tersimpan kak ðŸ˜Š`);
   }
-  let m = `🧠 *Memori Percakapan (${memory.length} pesan)*\n${GARIS_TIPIS}\n\n`;
+  let m = `ðŸ§  *Memori Percakapan (${memory.length} pesan)*\n${GARIS_TIPIS}\n\n`;
   memory.slice(-5).forEach((msg) => {
-    const role = msg.role === 'user' ? '👤' : '🤖';
+    const role = msg.role === 'user' ? 'ðŸ‘¤' : 'ðŸ¤–';
     m += `${role} _${msg.content.substring(0, 100)}_\n\n`;
   });
   kirim(msg.chat.id, m);
@@ -7641,7 +7650,7 @@ bot.onText(/\/memory/, (msg) => {
 async function approveUser(chatId, targetId) {
   targetId = String(targetId);
   const pending = PENDING[targetId];
-  if (!pending) return kirim(chatId, '⚠️ Tidak ada pending atau sudah diproses.');
+  if (!pending) return kirim(chatId, 'âš ï¸ Tidak ada pending atau sudah diproses.');
   
   // Hapus dari pending DULU untuk prevent race condition
   delete PENDING[targetId];
@@ -7654,29 +7663,29 @@ async function approveUser(chatId, targetId) {
   KONTAK[targetId] = pending.nama;
   saveJSON(CONFIG.paths.kontak, KONTAK);
   
-  kirim(chatId, `✅ Approved: ${pending.nama}`);
+  kirim(chatId, `âœ… Approved: ${pending.nama}`);
   try {
-    await kirim(targetId, `🎉 *DISETUJUI!*\nSelamat datang ${pending.nama}!\n\nKetik /start untuk mulai!`);
+    await kirim(targetId, `ðŸŽ‰ *DISETUJUI!*\nSelamat datang ${pending.nama}!\n\nKetik /start untuk mulai!`);
   } catch(e) {}
 }
 
 async function rejectUser(chatId, targetId) {
   targetId = String(targetId);
   const pending = PENDING[targetId];
-  if (!pending) return kirim(chatId, '⚠️ Tidak ada pending.');
+  if (!pending) return kirim(chatId, 'âš ï¸ Tidak ada pending.');
   delete PENDING[targetId];
   saveJSON(CONFIG.paths.pending, PENDING);
-  kirim(chatId, `❌ Rejected: ${pending.nama}`);
-  try { await kirim(targetId, `❌ Maaf ${pending.nama}, akses ditolak admin.`); } catch(e) {}
+  kirim(chatId, `âŒ Rejected: ${pending.nama}`);
+  try { await kirim(targetId, `âŒ Maaf ${pending.nama}, akses ditolak admin.`); } catch(e) {}
 }
-// ═══ GitHub Storage Commands ═══
+// â•â•â• GitHub Storage Commands â•â•â•
 
 // Force sync SEMUA data ke GitHub
 bot.onText(/\/synctogithub/, async (msg) => {
-  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
-  if (!isGitHubEnabled) return kirim(msg.chat.id, '❌ GitHub Storage belum diaktifkan!\n\nSet GITHUB_TOKEN di Railway Variables.');
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, 'ðŸš« Khusus admin.');
+  if (!isGitHubEnabled) return kirim(msg.chat.id, 'âŒ GitHub Storage belum diaktifkan!\n\nSet GITHUB_TOKEN di Railway Variables.');
   
-  await kirim(msg.chat.id, '🔄 _Syncing data ke GitHub..._');
+  await kirim(msg.chat.id, 'ðŸ”„ _Syncing data ke GitHub..._');
   
   let success = [], failed = [];
   const dataMap = {
@@ -7696,122 +7705,122 @@ bot.onText(/\/synctogithub/, async (msg) => {
     await tunggu(1000); // Jeda 1 detik antar save
   }
   
-  let m = `✅ *SYNC KE GITHUB SELESAI*\n${GARIS_TEBAL}\n\n`;
-  m += `📤 Berhasil: ${success.length}\n${success.map(s => `   ✅ ${s}.json`).join('\n')}\n\n`;
+  let m = `âœ… *SYNC KE GITHUB SELESAI*\n${GARIS_TEBAL}\n\n`;
+  m += `ðŸ“¤ Berhasil: ${success.length}\n${success.map(s => `   âœ… ${s}.json`).join('\n')}\n\n`;
   if (failed.length > 0) {
-    m += `❌ Gagal: ${failed.length}\n${failed.map(s => `   ❌ ${s}.json`).join('\n')}\n`;
+    m += `âŒ Gagal: ${failed.length}\n${failed.map(s => `   âŒ ${s}.json`).join('\n')}\n`;
   }
-  m += `\n💡 Cek di GitHub: \`${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}\``;
+  m += `\nðŸ’¡ Cek di GitHub: \`${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}\``;
   
   kirim(msg.chat.id, m);
 });
 
 // Load ulang dari GitHub (kalau data local corrupt)
 bot.onText(/\/loadfromgithub/, async (msg) => {
-  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
-  if (!isGitHubEnabled) return kirim(msg.chat.id, '❌ GitHub Storage belum aktif!');
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, 'ðŸš« Khusus admin.');
+  if (!isGitHubEnabled) return kirim(msg.chat.id, 'âŒ GitHub Storage belum aktif!');
   
-  await kirim(msg.chat.id, '🔄 _Loading data dari GitHub..._');
+  await kirim(msg.chat.id, 'ðŸ”„ _Loading data dari GitHub..._');
   
   await loadAllFromGitHub();
   
   kirim(msg.chat.id, 
-    `✅ *DATA DI-LOAD DARI GITHUB*\n${GARIS_TEBAL}\n\n` +
-    `👥 Members: ${MEMBERS.length}\n` +
-    `📒 Kontak: ${Object.keys(KONTAK).length}\n` +
-    `🔔 Pending: ${Object.keys(PENDING).length}\n` +
-    `📊 Staff: ${ROLE_LAPORAN.length}\n`
+    `âœ… *DATA DI-LOAD DARI GITHUB*\n${GARIS_TEBAL}\n\n` +
+    `ðŸ‘¥ Members: ${MEMBERS.length}\n` +
+    `ðŸ“’ Kontak: ${Object.keys(KONTAK).length}\n` +
+    `ðŸ”” Pending: ${Object.keys(PENDING).length}\n` +
+    `ðŸ“Š Staff: ${ROLE_LAPORAN.length}\n`
   );
 });
 
 // Status GitHub Storage
 bot.onText(/\/githubstatus/, (msg) => {
-  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, 'ðŸš« Khusus admin.');
   
-  let m = `📊 *GITHUB STORAGE STATUS*\n${GARIS_TEBAL}\n\n`;
+  let m = `ðŸ“Š *GITHUB STORAGE STATUS*\n${GARIS_TEBAL}\n\n`;
   
   if (!isGitHubEnabled) {
-    m += `❌ *STATUS: NONAKTIF*\n\n`;
-    m += `⚠️ Data hanya di memory Railway.\nSetiap deploy → DATA HILANG!\n\n`;
-    m += `${GARIS_TIPIS}\n💡 *Cara Aktifkan:*\n`;
-    m += `1. GitHub → Settings → Developer settings\n`;
-    m += `2. Personal access tokens → Generate\n`;
+    m += `âŒ *STATUS: NONAKTIF*\n\n`;
+    m += `âš ï¸ Data hanya di memory Railway.\nSetiap deploy â†’ DATA HILANG!\n\n`;
+    m += `${GARIS_TIPIS}\nðŸ’¡ *Cara Aktifkan:*\n`;
+    m += `1. GitHub â†’ Settings â†’ Developer settings\n`;
+    m += `2. Personal access tokens â†’ Generate\n`;
     m += `3. Scope: repo (full access)\n`;
     m += `4. Copy token\n`;
-    m += `5. Railway → Variables → Add:\n`;
-    m += `   • GITHUB_TOKEN = ghp_xxx\n`;
-    m += `   • GITHUB_USERNAME = username\n`;
-    m += `   • GITHUB_REPO = nama-repo\n`;
+    m += `5. Railway â†’ Variables â†’ Add:\n`;
+    m += `   â€¢ GITHUB_TOKEN = ghp_xxx\n`;
+    m += `   â€¢ GITHUB_USERNAME = username\n`;
+    m += `   â€¢ GITHUB_REPO = nama-repo\n`;
     m += `6. Redeploy service`;
   } else {
-    m += `✅ *STATUS: AKTIF*\n\n`;
-    m += `📁 Repo: \`${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}\`\n`;
-    m += `🌿 Branch: \`${GITHUB_CONFIG.branch}\`\n`;
-    m += `📂 Folder: \`${GITHUB_CONFIG.folder}/\`\n\n`;
-    m += `${GARIS_TIPIS}\n📊 *Data Tersimpan di GitHub:*\n`;
-    m += `👥 Members: *${MEMBERS.length}*\n`;
-    m += `📒 Kontak: *${Object.keys(KONTAK).length}*\n`;
-    m += `🔔 Pending: *${Object.keys(PENDING).length}*\n`;
-    m += `📊 Staff: *${ROLE_LAPORAN.length}*\n\n`;
-    m += `${GARIS_TIPIS}\n💡 *Commands:*\n`;
-    m += `• /synctogithub - Push semua data ke GitHub\n`;
-    m += `• /loadfromgithub - Pull data dari GitHub\n`;
-    m += `• /githubstatus - Status ini\n\n`;
-    m += `✅ *Data AMAN!*\nSetiap perubahan otomatis backup ke GitHub.\nData tetap ada meski Railway restart/deploy.`;
+    m += `âœ… *STATUS: AKTIF*\n\n`;
+    m += `ðŸ“ Repo: \`${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}\`\n`;
+    m += `ðŸŒ¿ Branch: \`${GITHUB_CONFIG.branch}\`\n`;
+    m += `ðŸ“‚ Folder: \`${GITHUB_CONFIG.folder}/\`\n\n`;
+    m += `${GARIS_TIPIS}\nðŸ“Š *Data Tersimpan di GitHub:*\n`;
+    m += `ðŸ‘¥ Members: *${MEMBERS.length}*\n`;
+    m += `ðŸ“’ Kontak: *${Object.keys(KONTAK).length}*\n`;
+    m += `ðŸ”” Pending: *${Object.keys(PENDING).length}*\n`;
+    m += `ðŸ“Š Staff: *${ROLE_LAPORAN.length}*\n\n`;
+    m += `${GARIS_TIPIS}\nðŸ’¡ *Commands:*\n`;
+    m += `â€¢ /synctogithub - Push semua data ke GitHub\n`;
+    m += `â€¢ /loadfromgithub - Pull data dari GitHub\n`;
+    m += `â€¢ /githubstatus - Status ini\n\n`;
+    m += `âœ… *Data AMAN!*\nSetiap perubahan otomatis backup ke GitHub.\nData tetap ada meski Railway restart/deploy.`;
   }
   
   kirim(msg.chat.id, m);
 });
-// ═══ DEBUG GitHub Storage ═══
+// â•â•â• DEBUG GitHub Storage â•â•â•
 
 bot.onText(/\/debugsync/, async (msg) => {
-  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, 'ðŸš« Khusus admin.');
   
-  let m = `🔍 *DEBUG GITHUB SYNC*\n${GARIS_TEBAL}\n\n`;
+  let m = `ðŸ” *DEBUG GITHUB SYNC*\n${GARIS_TEBAL}\n\n`;
   
-  m += `📊 *Config:*\n`;
-  m += `• Token: ${GITHUB_CONFIG.token ? '✅ Ada (' + GITHUB_CONFIG.token.substring(0, 10) + '...)' : '❌ TIDAK ADA!'}\n`;
-  m += `• Owner: ${GITHUB_CONFIG.owner || '❌ TIDAK ADA!'}\n`;
-  m += `• Repo: ${GITHUB_CONFIG.repo || '❌ TIDAK ADA!'}\n`;
-  m += `• Branch: ${GITHUB_CONFIG.branch}\n`;
-  m += `• Folder: ${GITHUB_CONFIG.folder}/\n\n`;
+  m += `ðŸ“Š *Config:*\n`;
+  m += `â€¢ Token: ${GITHUB_CONFIG.token ? 'âœ… Ada (' + GITHUB_CONFIG.token.substring(0, 10) + '...)' : 'âŒ TIDAK ADA!'}\n`;
+  m += `â€¢ Owner: ${GITHUB_CONFIG.owner || 'âŒ TIDAK ADA!'}\n`;
+  m += `â€¢ Repo: ${GITHUB_CONFIG.repo || 'âŒ TIDAK ADA!'}\n`;
+  m += `â€¢ Branch: ${GITHUB_CONFIG.branch}\n`;
+  m += `â€¢ Folder: ${GITHUB_CONFIG.folder}/\n\n`;
   
-  m += `📊 *Status:*\n`;
-  m += `• GitHub Enabled: ${isGitHubEnabled ? '✅' : '❌'}\n`;
-  m += `• Client Ready: ${githubClient ? '✅' : '❌'}\n\n`;
+  m += `ðŸ“Š *Status:*\n`;
+  m += `â€¢ GitHub Enabled: ${isGitHubEnabled ? 'âœ…' : 'âŒ'}\n`;
+  m += `â€¢ Client Ready: ${githubClient ? 'âœ…' : 'âŒ'}\n\n`;
   
-  m += `📊 *Data in Memory:*\n`;
-  m += `• MEMBERS: ${MEMBERS.length} items\n`;
-  m += `• KONTAK: ${Object.keys(KONTAK).length} items\n`;
-  m += `• PENDING: ${Object.keys(PENDING).length} items\n`;
-  m += `• ROLE_LAPORAN: ${ROLE_LAPORAN.length} items\n\n`;
+  m += `ðŸ“Š *Data in Memory:*\n`;
+  m += `â€¢ MEMBERS: ${MEMBERS.length} items\n`;
+  m += `â€¢ KONTAK: ${Object.keys(KONTAK).length} items\n`;
+  m += `â€¢ PENDING: ${Object.keys(PENDING).length} items\n`;
+  m += `â€¢ ROLE_LAPORAN: ${ROLE_LAPORAN.length} items\n\n`;
   
-  m += `📊 *Save Queue:*\n`;
+  m += `ðŸ“Š *Save Queue:*\n`;
   const queued = Object.keys(githubSaveTimers);
   if (queued.length === 0) m += `_(kosong)_\n`;
-  else queued.forEach(k => m += `• ${k}\n`);
+  else queued.forEach(k => m += `â€¢ ${k}\n`);
   m += '\n';
   
-  m += `📊 *Last Commit:*\n`;
+  m += `ðŸ“Š *Last Commit:*\n`;
   const lastCommits = Object.keys(lastCommitTime);
   if (lastCommits.length === 0) m += `_(belum ada commit)_\n`;
   else lastCommits.forEach(k => {
     const ago = Math.floor((Date.now() - lastCommitTime[k]) / 1000);
-    m += `• ${k}: ${ago}s lalu\n`;
+    m += `â€¢ ${k}: ${ago}s lalu\n`;
   });
   
-  m += `\n${GARIS_TIPIS}\n💡 *Commands:*\n`;
-  m += `• /synctogithub - Force push semua ke GitHub\n`;
-  m += `• /loadfromgithub - Pull semua dari GitHub\n`;
-  m += `• /debugsync - Debug ini\n`;
-  m += `• /testadduser - Test add user (debug)\n`;
+  m += `\n${GARIS_TIPIS}\nðŸ’¡ *Commands:*\n`;
+  m += `â€¢ /synctogithub - Force push semua ke GitHub\n`;
+  m += `â€¢ /loadfromgithub - Pull semua dari GitHub\n`;
+  m += `â€¢ /debugsync - Debug ini\n`;
+  m += `â€¢ /testadduser - Test add user (debug)\n`;
   
   kirim(msg.chat.id, m);
 });
 
 // Test add user untuk debug
 bot.onText(/\/testadduser/, async (msg) => {
-  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, 'ðŸš« Khusus admin.');
   
   const testId = `999${Date.now().toString().substring(6)}`;
   const testName = `TEST_USER_${new Date().toISOString().substring(11, 19)}`;
@@ -7825,12 +7834,12 @@ bot.onText(/\/testadduser/, async (msg) => {
   saveJSON(CONFIG.paths.kontak, KONTAK);
   
   await kirim(msg.chat.id, 
-    `🧪 *TEST ADD USER*\n${GARIS_TIPIS}\n\n` +
-    `✅ Added:\n` +
-    `• ID: \`${testId}\`\n` +
-    `• Nama: ${testName}\n\n` +
-    `📊 Total members sekarang: ${MEMBERS.length}\n\n` +
-    `⏳ Tunggu 30 detik, lalu cek GitHub:\n` +
+    `ðŸ§ª *TEST ADD USER*\n${GARIS_TIPIS}\n\n` +
+    `âœ… Added:\n` +
+    `â€¢ ID: \`${testId}\`\n` +
+    `â€¢ Nama: ${testName}\n\n` +
+    `ðŸ“Š Total members sekarang: ${MEMBERS.length}\n\n` +
+    `â³ Tunggu 30 detik, lalu cek GitHub:\n` +
     `https://github.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/blob/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.folder}/members.json\n\n` +
     `Kalau ID \`${testId}\` muncul di GitHub, sync BERHASIL!`
   );
@@ -7838,21 +7847,21 @@ bot.onText(/\/testadduser/, async (msg) => {
 
 // Force flush saves ke GitHub
 bot.onText(/\/flushgithub/, async (msg) => {
-  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
+  if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, 'ðŸš« Khusus admin.');
   
   const queued = Object.keys(githubSaveTimers);
   if (queued.length === 0) {
-    return kirim(msg.chat.id, '✅ Tidak ada save yang pending.\n\nGunakan /synctogithub untuk force push semua.');
+    return kirim(msg.chat.id, 'âœ… Tidak ada save yang pending.\n\nGunakan /synctogithub untuk force push semua.');
   }
   
-  await kirim(msg.chat.id, `🔄 Force flushing ${queued.length} pending saves...`);
+  await kirim(msg.chat.id, `ðŸ”„ Force flushing ${queued.length} pending saves...`);
   await flushGitHubSaves();
-  await kirim(msg.chat.id, '✅ Flush selesai! Cek GitHub sekarang.');
+  await kirim(msg.chat.id, 'âœ… Flush selesai! Cek GitHub sekarang.');
 });
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   33. VOICE HANDLER (LENGKAP DENGAN AUTO-RETRY & SMART ROUTING)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 bot.on('voice', async (msg) => {
   const chatId = msg.chat.id;
@@ -7863,7 +7872,7 @@ bot.on('voice', async (msg) => {
   let loading = null;
   
   try {
-    loading = await kirim(chatId, '🎙️ _Sedang mendengarkan..._');
+    loading = await kirim(chatId, 'ðŸŽ™ï¸ _Sedang mendengarkan..._');
     
     // Download audio
     const fileLink = await bot.getFileLink(msg.voice.file_id);
@@ -7880,13 +7889,13 @@ bot.on('voice', async (msg) => {
     // Gagal transcribe
     if (!rawText || rawText.trim().length < 2) {
       return kirim(chatId, 
-        `⚠️ *Gagal mengenali voice*\n${GARIS_TIPIS}\n\n` +
+        `âš ï¸ *Gagal mengenali voice*\n${GARIS_TIPIS}\n\n` +
         `Suara terlalu pelan/pendek/bising.\n\n` +
-        `💡 *Tips:*\n` +
-        `• Bicara jelas & tidak terlalu cepat\n` +
-        `• Hindari noise background\n` +
-        `• Coba ketik langsung jika susah\n\n` +
-        `📝 Atau ketik pesan langsung:`,
+        `ðŸ’¡ *Tips:*\n` +
+        `â€¢ Bicara jelas & tidak terlalu cepat\n` +
+        `â€¢ Hindari noise background\n` +
+        `â€¢ Coba ketik langsung jika susah\n\n` +
+        `ðŸ“ Atau ketik pesan langsung:`,
         { reply_markup: kbMainMenu(userId) }
       );
     }
@@ -7895,25 +7904,25 @@ bot.on('voice', async (msg) => {
     const corrected = await koreksiVoiceText(rawText);
     const low = corrected.toLowerCase().trim();
     
-    log.info('VOICE', `Raw: "${rawText}" → Corrected: "${corrected}"`);
+    log.info('VOICE', `Raw: "${rawText}" â†’ Corrected: "${corrected}"`);
     
     // Tampilkan hasil dengar
-    let info = `🎙️ *Saya dengar:*\n_"${escapeMd(rawText)}"_\n`;
+    let info = `ðŸŽ™ï¸ *Saya dengar:*\n_"${escapeMd(rawText)}"_\n`;
     if (corrected.toLowerCase() !== rawText.toLowerCase()) {
-      info += `\n🧠 *Saya pahami:*\n_"${escapeMd(corrected)}"_\n`;
+      info += `\nðŸ§  *Saya pahami:*\n_"${escapeMd(corrected)}"_\n`;
     }
-    info += `\n${GARIS_TIPIS}\n⏳ _Memproses..._`;
+    info += `\n${GARIS_TIPIS}\nâ³ _Memproses..._`;
     
     await kirim(chatId, info);
     await tunggu(500);
     
-    // ════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // SMART ROUTING (sama logikanya dengan text)
-    // ════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     
     const session = getSesi(userId);
     
-    // ★ PRIORITY 1: Mode aktif (SO, BA, Harga, Scan Laporan)
+    // â˜… PRIORITY 1: Mode aktif (SO, BA, Harga, Scan Laporan)
     if (session.mode === 'stockopname') {
       return await handleStockOpnameMode(chatId, userId, corrected, session);
     }
@@ -7934,36 +7943,36 @@ bot.on('voice', async (msg) => {
       const laporan = genLapMarket(corrected, session.kemarin);
       await kirim(chatId, laporan);
       resetSesi(userId);
-      return kirim(chatId, '✅ *Laporan Marketplace selesai!*', { reply_markup: kbMainMenu(userId) });
+      return kirim(chatId, 'âœ… *Laporan Marketplace selesai!*', { reply_markup: kbMainMenu(userId) });
     }
     
-    // ★ PRIORITY 2: Reset commands
+    // â˜… PRIORITY 2: Reset commands
     if (KATA_RESET.includes(low)) {
       resetSesi(userId);
-      return kirim(chatId, '📋 *MENU UTAMA*', { reply_markup: kbMainMenu(userId) });
+      return kirim(chatId, 'ðŸ“‹ *MENU UTAMA*', { reply_markup: kbMainMenu(userId) });
     }
     
-    // ★ PRIORITY 3: Menu keyword (stock opname, menu utama, dll)
+    // â˜… PRIORITY 3: Menu keyword (stock opname, menu utama, dll)
     const menuMatch = detectMenuKeyword(corrected);
     if (menuMatch) {
       if (menuMatch.adminOnly && !isAdmin(userId)) {
-        return kirim(chatId, '🚫 Khusus admin.');
+        return kirim(chatId, 'ðŸš« Khusus admin.');
       }
       if (menuMatch.priority === 'high') {
-        log.info('VOICE-MENU', `"${low}" → ${menuMatch.label}`);
+        log.info('VOICE-MENU', `"${low}" â†’ ${menuMatch.label}`);
         return executeMenuAction(chatId, userId, menuMatch.action);
       }
     }
     
-    // ★ PRIORITY 4: Sapaan
+    // â˜… PRIORITY 4: Sapaan
     const kataSapaan = isSapaan(low);
     if (kataSapaan) {
       await kirim(chatId, balasSapaan(userId, kataSapaan));
       await tunggu(600);
-      return kirim(chatId, '📋 *Mau cari apa?*', { reply_markup: kbMainMenu(userId) });
+      return kirim(chatId, 'ðŸ“‹ *Mau cari apa?*', { reply_markup: kbMainMenu(userId) });
     }
     
-    // ★ PRIORITY 5: Cari barang eksplisit (ada keyword "cari", "harga", dll)
+    // â˜… PRIORITY 5: Cari barang eksplisit (ada keyword "cari", "harga", dll)
     const isCariEksplisit = /^(cari|harga|stok|stock|cek|lihat|beli)\s+/i.test(low);
     if (isCariEksplisit) {
       const keyword = corrected.replace(/^(cari|harga|stok|stock|cek|lihat|beli)\s+/i, '').trim();
@@ -7972,7 +7981,7 @@ bot.on('voice', async (msg) => {
       }
     }
     
-    // ★ PRIORITY 6: Deteksi intent barang
+    // â˜… PRIORITY 6: Deteksi intent barang
     const intent = deteksiIntentBarang(corrected);
     log.info('VOICE-ROUTER', `Intent: ${intent.isProduct ? 'PRODUK' : 'NON-PRODUK'} (${intent.confidence}) - ${intent.reason}`);
     
@@ -7982,31 +7991,31 @@ bot.on('voice', async (msg) => {
       return await prosesVoiceSearch(chatId, userId, corrected, corrected);
     }
     
-    // ★ PRIORITY 7: Non-produk → AI Chat
+    // â˜… PRIORITY 7: Non-produk â†’ AI Chat
     return await prosesAI(chatId, userId, corrected);
     
   } catch(err) {
     log.error('VOICE', err.message);
     try { if (loading) await bot.deleteMessage(chatId, loading.message_id); } catch(e) {}
     await kirim(chatId, 
-      `❌ *Error proses voice*\n${GARIS_TIPIS}\n\n` +
+      `âŒ *Error proses voice*\n${GARIS_TIPIS}\n\n` +
       `${err.message}\n\n` +
-      `💡 Coba ketik pesannya langsung.`,
+      `ðŸ’¡ Coba ketik pesannya langsung.`,
       { reply_markup: kbMainMenu(userId) }
     );
   }
 });
 
 /**
- * ════════════════════════════════════════════════════════════
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * VOICE SEARCH: Cari barang dari voice dengan auto-retry
- * ════════════════════════════════════════════════════════════
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * 
  * Strategy:
  * 1. Cari dengan teks lengkap yang sudah dikoreksi
- * 2. Kalau tidak match → coba tanpa kata kunci (cari/harga/cek/di/cp/dll)
- * 3. Kalau masih tidak → coba per kata (kata terpanjang dulu)
- * 4. Kalau tetap tidak → tampilkan saran + tombol
+ * 2. Kalau tidak match â†’ coba tanpa kata kunci (cari/harga/cek/di/cp/dll)
+ * 3. Kalau masih tidak â†’ coba per kata (kata terpanjang dulu)
+ * 4. Kalau tetap tidak â†’ tampilkan saran + tombol
  */
 async function prosesVoiceSearch(chatId, userId, searchText, originalText) {
   // Bersihkan keyword dari nama toko dll
@@ -8017,24 +8026,24 @@ async function prosesVoiceSearch(chatId, userId, searchText, originalText) {
   
   log.info('VOICE-SEARCH', `Search: "${cleanKeyword}" | Toko: ${tokoKode || 'all'} | Tipe: ${tipeHarga}`);
   
-  // ═══ ATTEMPT 1: Cari dengan keyword bersih ═══
+  // â•â•â• ATTEMPT 1: Cari dengan keyword bersih â•â•â•
   const result1 = cariBarang(cleanKeyword);
   if (result1.hasil.length > 0) {
-    log.info('VOICE-SEARCH', `✅ Attempt 1: ${result1.hasil.length} hasil`);
+    log.info('VOICE-SEARCH', `âœ… Attempt 1: ${result1.hasil.length} hasil`);
     return await prosesCari(chatId, userId, originalText, tokoKode);
   }
   
-  // ═══ ATTEMPT 2: Cari tanpa angka/ukuran ═══
+  // â•â•â• ATTEMPT 2: Cari tanpa angka/ukuran â•â•â•
   const keywordTanpaAngka = cleanKeyword.replace(/\d+/g, '').replace(/\s+/g, ' ').trim();
   if (keywordTanpaAngka.length >= 3 && keywordTanpaAngka !== cleanKeyword) {
     const result2 = cariBarang(keywordTanpaAngka);
     if (result2.hasil.length > 0) {
-      log.info('VOICE-SEARCH', `✅ Attempt 2 (tanpa angka): ${result2.hasil.length} hasil`);
+      log.info('VOICE-SEARCH', `âœ… Attempt 2 (tanpa angka): ${result2.hasil.length} hasil`);
       return await prosesCari(chatId, userId, keywordTanpaAngka + (tokoKode ? ` di ${tokoKode}` : ''), tokoKode);
     }
   }
   
-  // ═══ ATTEMPT 3: Cari per kata (kata terpanjang dulu) ═══
+  // â•â•â• ATTEMPT 3: Cari per kata (kata terpanjang dulu) â•â•â•
   const kataKata = cleanKeyword
     .split(/\s+/)
     .filter(k => k.length >= 3)
@@ -8046,59 +8055,59 @@ async function prosesVoiceSearch(chatId, userId, searchText, originalText) {
     
     const result3 = cariBarang(kata);
     if (result3.hasil.length > 0) {
-      log.info('VOICE-SEARCH', `✅ Attempt 3 (per kata "${kata}"): ${result3.hasil.length} hasil`);
+      log.info('VOICE-SEARCH', `âœ… Attempt 3 (per kata "${kata}"): ${result3.hasil.length} hasil`);
       
       // Tampilkan info bahwa kita cari dengan kata kunci berbeda
-      await kirim(chatId, `🔍 Mencari dengan kata kunci: *${escapeMd(kata)}*`);
+      await kirim(chatId, `ðŸ” Mencari dengan kata kunci: *${escapeMd(kata)}*`);
       await tunggu(500);
       return await prosesCari(chatId, userId, kata + (tokoKode ? ` di ${tokoKode}` : ''), tokoKode);
     }
     
     // Cek saran juga
     if (result3.saran && result3.saran.length > 0) {
-      log.info('VOICE-SEARCH', `✅ Attempt 3 (saran dari "${kata}"): ${result3.saran.length} saran`);
+      log.info('VOICE-SEARCH', `âœ… Attempt 3 (saran dari "${kata}"): ${result3.saran.length} saran`);
       
-      await kirim(chatId, `🔍 Mencari: *${escapeMd(kata)}*`);
+      await kirim(chatId, `ðŸ” Mencari: *${escapeMd(kata)}*`);
       await tunggu(500);
       return await prosesCari(chatId, userId, kata + (tokoKode ? ` di ${tokoKode}` : ''), tokoKode);
     }
   }
   
-  // ═══ ATTEMPT 4: Gabung 2 kata pertama ═══
+  // â•â•â• ATTEMPT 4: Gabung 2 kata pertama â•â•â•
   if (kataKata.length >= 2) {
     const gabung2 = kataKata.slice(0, 2).join(' ');
     const result4 = cariBarang(gabung2);
     if (result4.hasil.length > 0 || (result4.saran && result4.saran.length > 0)) {
-      log.info('VOICE-SEARCH', `✅ Attempt 4 (gabung 2 kata): "${gabung2}"`);
-      await kirim(chatId, `🔍 Mencari: *${escapeMd(gabung2)}*`);
+      log.info('VOICE-SEARCH', `âœ… Attempt 4 (gabung 2 kata): "${gabung2}"`);
+      await kirim(chatId, `ðŸ” Mencari: *${escapeMd(gabung2)}*`);
       await tunggu(500);
       return await prosesCari(chatId, userId, gabung2 + (tokoKode ? ` di ${tokoKode}` : ''), tokoKode);
     }
   }
   
-  // ═══ SEMUA ATTEMPT GAGAL ═══
-  log.warn('VOICE-SEARCH', `❌ Semua attempt gagal untuk: "${cleanKeyword}"`);
+  // â•â•â• SEMUA ATTEMPT GAGAL â•â•â•
+  log.warn('VOICE-SEARCH', `âŒ Semua attempt gagal untuk: "${cleanKeyword}"`);
   
   // Tampilkan pesan yang helpful
   await kirim(chatId,
-    `❌ *Barang tidak ditemukan*\n${GARIS_TEBAL}\n\n` +
-    `🎙️ Anda bilang: _"${escapeMd(originalText)}"_\n` +
-    `🔍 Dicari: _"${escapeMd(cleanKeyword)}"_\n\n` +
-    `💡 *Coba:*\n` +
-    `• Ketik langsung: \`sapu ferona\`\n` +
-    `• Ucapkan lebih jelas & pelan\n` +
-    `• Sebutkan merek lengkap\n\n` +
-    `📝 *Atau pilih cara lain:*`,
+    `âŒ *Barang tidak ditemukan*\n${GARIS_TEBAL}\n\n` +
+    `ðŸŽ™ï¸ Anda bilang: _"${escapeMd(originalText)}"_\n` +
+    `ðŸ” Dicari: _"${escapeMd(cleanKeyword)}"_\n\n` +
+    `ðŸ’¡ *Coba:*\n` +
+    `â€¢ Ketik langsung: \`sapu ferona\`\n` +
+    `â€¢ Ucapkan lebih jelas & pelan\n` +
+    `â€¢ Sebutkan merek lengkap\n\n` +
+    `ðŸ“ *Atau pilih cara lain:*`,
     { reply_markup: { inline_keyboard: [
-      [{ text: '🔍 Cari Barang (Ketik)', callback_data: 'menu:4' }],
-      [{ text: '📋 Menu Utama', callback_data: 'menu:main' }],
+      [{ text: 'ðŸ” Cari Barang (Ketik)', callback_data: 'menu:4' }],
+      [{ text: 'ðŸ“‹ Menu Utama', callback_data: 'menu:main' }],
     ]}}
   );
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   34. PHOTO HANDLER (Tunggal - Route Semua Mode + Foto Barang Baru)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 bot.on('photo', async (msg) => {
   const chatId = msg.chat.id;
@@ -8115,16 +8124,16 @@ bot.on('photo', async (msg) => {
     
     const session = getSesi(userId);
     
-    // ★ Homebase mode - scan nota supplier
+    // â˜… Homebase mode - scan nota supplier
     if (session.mode === 'homebase') {
       await handleHomebaseMode(chatId, userId, msg.caption || '', imageBuffer, session);
       return;
     }
     
-    // ★ Stock Opname mode
+    // â˜… Stock Opname mode
     if (session.mode === 'stockopname') {
       
-      // ★★ FOTO BARANG BARU (saat wizard tambah barang baru step foto) ★★
+      // â˜…â˜… FOTO BARANG BARU (saat wizard tambah barang baru step foto) â˜…â˜…
       if (session.soTambahBaruStep === 'foto') {
         try {
           const namaBarang = session.soBaruNama || 'Barang Baru';
@@ -8140,21 +8149,21 @@ bot.on('photo', async (msg) => {
                     // Forward foto ke admin sebagai backup dokumentasi
           if (CONFIG.adminId) {
             try {
-              // ★ Escape karakter Markdown biar tidak error
+              // â˜… Escape karakter Markdown biar tidak error
               const safeName = String(namaBarang).replace(/[_*\[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
               const safeToko = String(namaToko).replace(/[_*\[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
               const safeRak = String(rakAktif).replace(/[_*\[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
               const safeUser = String(getNama(userId) || 'User').replace(/[_*\[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
               
               await bot.sendPhoto(CONFIG.adminId, photo.file_id, {
-                caption: `📸 FOTO BARANG BARU (SO)\n\n` +
-                  `🏦 Toko: ${safeToko}\n` +
-                  `📦 Nama: ${safeName}\n` +
-                  `🔖 Kode: ${kodeBaru}\n` +
-                  `📍 Rak: ${safeRak}\n` +
-                  `👤 Petugas: ${safeUser}\n` +
-                  `⏰ Jam: ${getJamSekarang()}`,
-                // ★ TANPA parse_mode biar aman dari karakter aneh
+                caption: `ðŸ“¸ FOTO BARANG BARU (SO)\n\n` +
+                  `ðŸ¦ Toko: ${safeToko}\n` +
+                  `ðŸ“¦ Nama: ${safeName}\n` +
+                  `ðŸ”– Kode: ${kodeBaru}\n` +
+                  `ðŸ“ Rak: ${safeRak}\n` +
+                  `ðŸ‘¤ Petugas: ${safeUser}\n` +
+                  `â° Jam: ${getJamSekarang()}`,
+                // â˜… TANPA parse_mode biar aman dari karakter aneh
               });
             } catch(e) {
               log.warn('SO-FOTO-FWD', 'Gagal forward: ' + e.message);
@@ -8175,16 +8184,16 @@ bot.on('photo', async (msg) => {
           
           const totalBaru = getBarangBaruSO(session.tokoKode).length;
           await kirim(chatId,
-            `✅ *Foto tersimpan!*\n${GARIS_TEBAL}\n\n` +
-            `📦 ${escapeMd(namaBarang)}\n` +
-            `📸 Foto akan MUNCUL di Excel!\n` +
-            `📦 Total barang baru: *${totalBaru}*\n\n` +
-            `💬 Lanjutkan input barang atau pilih:`,
+            `âœ… *Foto tersimpan!*\n${GARIS_TEBAL}\n\n` +
+            `ðŸ“¦ ${escapeMd(namaBarang)}\n` +
+            `ðŸ“¸ Foto akan MUNCUL di Excel!\n` +
+            `ðŸ“¦ Total barang baru: *${totalBaru}*\n\n` +
+            `ðŸ’¬ Lanjutkan input barang atau pilih:`,
             { reply_markup: kbSOAktif() }
           );
         } catch(err) {
           log.error('SO-FOTO', err.message);
-          await kirim(chatId, '❌ Error simpan foto: ' + err.message, { reply_markup: kbSOAktif() });
+          await kirim(chatId, 'âŒ Error simpan foto: ' + err.message, { reply_markup: kbSOAktif() });
         }
         return;
       }
@@ -8211,19 +8220,19 @@ bot.on('photo', async (msg) => {
       }
     }
     
-    // ★ Scan laporan penjualan
+    // â˜… Scan laporan penjualan
     if (session.scanActive) {
       await handleScanModeLaporan(chatId, userId, msg.caption || '', imageBuffer, session);
       return;
     }
     
-    // ★ Wizard laporan harga
+    // â˜… Wizard laporan harga
     if (session.hargaActive) {
       await handleHargaMode(chatId, userId, msg.caption || '', imageBuffer, session);
       return;
     }
     
-    // ★ Berita Acara scan tabel iPos
+    // â˜… Berita Acara scan tabel iPos
     if (session.mode === 'beritaacara' && session.baSection) {
       if (typeof handleBaScanFoto === 'function') {
         await handleBaScanFoto(chatId, userId, imageBuffer, session);
@@ -8231,55 +8240,55 @@ bot.on('photo', async (msg) => {
       return;
     }
     
-    // ★ Marketplace scan
+    // â˜… Marketplace scan
     if (session.menu === 3) {
-      await kirim(chatId, '📸 _Scan laporan marketplace..._');
+      await kirim(chatId, 'ðŸ“¸ _Scan laporan marketplace..._');
       try {
         const prompt = `Baca gambar laporan marketplace. Ekstrak per toko (oesapa, tdm, central), channel (wa, shopee, tiktok, tokopedia), bayar (tunai, debit, kredit). Format: nama nilai`;
         const aiText = await analisaGambarBuffer(imageBuffer, prompt);
         const laporan = genLapMarket(aiText, session.kemarin);
         await kirim(chatId, laporan);
         resetSesi(userId);
-        await kirim(chatId, '✅ *Laporan Marketplace selesai!*', { reply_markup: kbMainMenu(userId) });
+        await kirim(chatId, 'âœ… *Laporan Marketplace selesai!*', { reply_markup: kbMainMenu(userId) });
       } catch(err) {
-        await kirim(chatId, '❌ Gagal: ' + err.message);
+        await kirim(chatId, 'âŒ Gagal: ' + err.message);
       }
       return;
     }
     
-    // ★ Default: AI Vision umum
-    await kirim(chatId, '📸 _Menganalisa foto..._');
+    // â˜… Default: AI Vision umum
+    await kirim(chatId, 'ðŸ“¸ _Menganalisa foto..._');
     const prompt = msg.caption
       ? `Foto toko perabot. ${msg.caption}. Jawab bahasa Indonesia.`
       : 'Foto toko perabot. Analisa singkat dalam bahasa Indonesia.';
     const result = await analisaGambarBuffer(imageBuffer, prompt);
     if (result) {
-      await kirim(chatId, `📸 *Hasil Analisa AI:*\n${GARIS_TEBAL}\n\n${result}`);
+      await kirim(chatId, `ðŸ“¸ *Hasil Analisa AI:*\n${GARIS_TEBAL}\n\n${result}`);
     } else {
-      await kirim(chatId, '❌ AI Vision tidak tersedia.');
+      await kirim(chatId, 'âŒ AI Vision tidak tersedia.');
     }
     
   } catch(err) {
     log.error('PHOTO', err.message);
-    kirim(chatId, '❌ Error: ' + err.message);
+    kirim(chatId, 'âŒ Error: ' + err.message);
   }
 });
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   34B. HANDLER SCAN BARCODE/NAMA RAK
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async function handleScanRak(chatId, userId, imageBuffer, session) {
   const tokoKode = session.tokoKode;
   const namaToko = NAMA_TOKO[tokoKode];
   
-  await kirim(chatId, '📸 _Sedang scan QR/barcode/nama rak..._');
+  await kirim(chatId, 'ðŸ“¸ _Sedang scan QR/barcode/nama rak..._');
   
   try {
     let namaRakScan = null;
     let metodeScan = '';
     
-    // ★ METODE 1: Coba decode QR code dulu
+    // â˜… METODE 1: Coba decode QR code dulu
     log.info('SCAN_RAK', 'Coba decode QR...');
     const qrResult = await decodeQRFromBuffer(imageBuffer);
     if (qrResult) {
@@ -8290,7 +8299,7 @@ async function handleScanRak(chatId, userId, imageBuffer, session) {
       }
     }
     
-    // ★ METODE 2: Jika QR gagal, fallback ke AI Vision (baca tulisan biasa)
+    // â˜… METODE 2: Jika QR gagal, fallback ke AI Vision (baca tulisan biasa)
     if (!namaRakScan) {
       log.info('SCAN_RAK', 'QR gagal, coba AI Vision...');
       try {
@@ -8302,28 +8311,28 @@ async function handleScanRak(chatId, userId, imageBuffer, session) {
       }
     }
     
-    // ★ Tidak ada yang berhasil
+    // â˜… Tidak ada yang berhasil
         if (!namaRakScan) {
       await kirim(chatId,
-        `⚠️ *Tidak bisa membaca rak dari foto*\n${GARIS_TEBAL}\n\n` +
-        `❌ QR Code: tidak terdeteksi\n` +
-        `❌ Tulisan: tidak terbaca\n\n` +
-        `💡 *Tips agar QR berhasil terbaca:*\n` +
-        `• ✅ Foto QR code dari **layar HP langsung** (bukan screenshot)\n` +
-        `• ✅ QR memenuhi **60-80% frame foto**\n` +
-        `• ✅ Foto **tegak lurus** (tidak miring)\n` +
-        `• ✅ Cahaya cukup, tidak ada **pantulan**\n` +
-        `• ✅ Hindari foto **layar HP** dengan HP lain (moire pattern)\n\n` +
-        `💡 *Alternatif:*\n` +
-        `• Print QR code di kertas, lalu foto\n` +
-        `• Foto tulisan nama rak langsung (jangan QR)\n` +
-        `• Atau **ketik nama rak manual**\n\n` +
-        `📸 Coba foto lagi, atau ketik nama rak.`
+        `âš ï¸ *Tidak bisa membaca rak dari foto*\n${GARIS_TEBAL}\n\n` +
+        `âŒ QR Code: tidak terdeteksi\n` +
+        `âŒ Tulisan: tidak terbaca\n\n` +
+        `ðŸ’¡ *Tips agar QR berhasil terbaca:*\n` +
+        `â€¢ âœ… Foto QR code dari **layar HP langsung** (bukan screenshot)\n` +
+        `â€¢ âœ… QR memenuhi **60-80% frame foto**\n` +
+        `â€¢ âœ… Foto **tegak lurus** (tidak miring)\n` +
+        `â€¢ âœ… Cahaya cukup, tidak ada **pantulan**\n` +
+        `â€¢ âœ… Hindari foto **layar HP** dengan HP lain (moire pattern)\n\n` +
+        `ðŸ’¡ *Alternatif:*\n` +
+        `â€¢ Print QR code di kertas, lalu foto\n` +
+        `â€¢ Foto tulisan nama rak langsung (jangan QR)\n` +
+        `â€¢ Atau **ketik nama rak manual**\n\n` +
+        `ðŸ“¸ Coba foto lagi, atau ketik nama rak.`
       );
       return;
     }
     
-    // ★ Cek apakah rak sudah ada (mirip)
+    // â˜… Cek apakah rak sudah ada (mirip)
     const rakExisting = findRakMirip(tokoKode, namaRakScan);
     
     if (rakExisting) {
@@ -8335,20 +8344,20 @@ async function handleScanRak(chatId, userId, imageBuffer, session) {
       
       updateSesi(userId, { soScanRakPending: rakExisting });
       
-      let m = `✅ *Berhasil scan!* (via ${metodeScan})\n${GARIS_TEBAL}\n\n`;
-      m += `📸 Hasil scan: *${escapeMd(namaRakScan)}*\n`;
-      m += `🔍 Ditemukan rak existing: *${escapeMd(rakExisting)}*\n\n`;
-      m += `📊 Info rak:\n`;
-      m += `   📦 ${itemCount} jenis barang\n`;
-      if (pegangRak) m += `   🟢 Sedang dipegang: ${pegangRak.nama}\n`;
+      let m = `âœ… *Berhasil scan!* (via ${metodeScan})\n${GARIS_TEBAL}\n\n`;
+      m += `ðŸ“¸ Hasil scan: *${escapeMd(namaRakScan)}*\n`;
+      m += `ðŸ” Ditemukan rak existing: *${escapeMd(rakExisting)}*\n\n`;
+      m += `ðŸ“Š Info rak:\n`;
+      m += `   ðŸ“¦ ${itemCount} jenis barang\n`;
+      if (pegangRak) m += `   ðŸŸ¢ Sedang dipegang: ${pegangRak.nama}\n`;
       m += `\n${GARIS_TIPIS}\n\n`;
-      m += `💬 *Apa yang ingin Anda lakukan?*`;
+      m += `ðŸ’¬ *Apa yang ingin Anda lakukan?*`;
       
       await kirim(chatId, m, {
         reply_markup: { inline_keyboard: [
-          [{ text: `✅ Pakai Rak Ini (${rakExisting})`, callback_data: 'so:scanrak:pakai' }],
-          [{ text: '🆕 Buat Rak Baru (Beda Nama)', callback_data: 'so:scanrak:baru' }],
-          [{ text: '🔙 Batal', callback_data: 'so:scanrak:batal' }],
+          [{ text: `âœ… Pakai Rak Ini (${rakExisting})`, callback_data: 'so:scanrak:pakai' }],
+          [{ text: 'ðŸ†• Buat Rak Baru (Beda Nama)', callback_data: 'so:scanrak:baru' }],
+          [{ text: 'ðŸ”™ Batal', callback_data: 'so:scanrak:batal' }],
         ]}
       });
     } else {
@@ -8356,21 +8365,21 @@ async function handleScanRak(chatId, userId, imageBuffer, session) {
       updateSesi(userId, { soScanRakPending: namaRakScan });
       
       await kirim(chatId,
-        `✅ *Berhasil scan!* (via ${metodeScan})\n${GARIS_TEBAL}\n\n` +
-        `📸 Hasil scan: *${escapeMd(namaRakScan)}*\n` +
-        `🆕 Status: *Rak BARU* (belum pernah ada)\n\n` +
+        `âœ… *Berhasil scan!* (via ${metodeScan})\n${GARIS_TEBAL}\n\n` +
+        `ðŸ“¸ Hasil scan: *${escapeMd(namaRakScan)}*\n` +
+        `ðŸ†• Status: *Rak BARU* (belum pernah ada)\n\n` +
         `${GARIS_TIPIS}\n\n` +
-        `💬 *Pakai nama rak ini?*`,
+        `ðŸ’¬ *Pakai nama rak ini?*`,
         { reply_markup: { inline_keyboard: [
-          [{ text: `✅ Ya, Buat "${namaRakScan}"`, callback_data: 'so:scanrak:pakai' }],
-          [{ text: '✏️ Edit Nama Rak', callback_data: 'so:scanrak:edit' }],
-          [{ text: '🔙 Batal', callback_data: 'so:scanrak:batal' }],
+          [{ text: `âœ… Ya, Buat "${namaRakScan}"`, callback_data: 'so:scanrak:pakai' }],
+          [{ text: 'âœï¸ Edit Nama Rak', callback_data: 'so:scanrak:edit' }],
+          [{ text: 'ðŸ”™ Batal', callback_data: 'so:scanrak:batal' }],
         ]}}
       );
     }
   } catch(err) {
     log.error('SCAN_RAK', err.message);
-    await kirim(chatId, '❌ Gagal scan: ' + err.message + '\n\n💡 Coba foto lagi atau ketik nama rak manual.');
+    await kirim(chatId, 'âŒ Gagal scan: ' + err.message + '\n\nðŸ’¡ Coba foto lagi atau ketik nama rak manual.');
   }
 }
 
@@ -8379,20 +8388,20 @@ async function handleScanRakPindah(chatId, userId, imageBuffer, session) {
   const namaToko = NAMA_TOKO[tokoKode];
   const rakAktifSkrg = session.soInfo.rakAktif;
   
-  await kirim(chatId, '📸 _Sedang scan QR/barcode/nama rak..._');
+  await kirim(chatId, 'ðŸ“¸ _Sedang scan QR/barcode/nama rak..._');
   
   try {
     let namaRakScan = null;
     let metodeScan = '';
     
-    // ★ METODE 1: QR code dulu
+    // â˜… METODE 1: QR code dulu
     const qrResult = await decodeQRFromBuffer(imageBuffer);
     if (qrResult) {
       namaRakScan = bersihkanHasilQR(qrResult);
       if (namaRakScan) metodeScan = 'QR Code';
     }
     
-    // ★ METODE 2: Fallback AI Vision
+    // â˜… METODE 2: Fallback AI Vision
     if (!namaRakScan) {
       try {
         const aiText = await analisaGambarBuffer(imageBuffer, SCAN_PROMPT_RAK);
@@ -8405,10 +8414,10 @@ async function handleScanRakPindah(chatId, userId, imageBuffer, session) {
     
     if (!namaRakScan) {
       await kirim(chatId,
-        `⚠️ *Tidak bisa membaca rak*\n\n` +
-        `❌ QR Code: tidak terdeteksi\n` +
-        `❌ Tulisan: tidak terbaca\n\n` +
-        `💡 Coba foto QR lebih jelas atau ketik nama manual.`,
+        `âš ï¸ *Tidak bisa membaca rak*\n\n` +
+        `âŒ QR Code: tidak terdeteksi\n` +
+        `âŒ Tulisan: tidak terbaca\n\n` +
+        `ðŸ’¡ Coba foto QR lebih jelas atau ketik nama manual.`,
         { reply_markup: kbSOAktif() }
       );
       return;
@@ -8417,9 +8426,9 @@ async function handleScanRakPindah(chatId, userId, imageBuffer, session) {
     // Cek apakah rak sama dengan yang aktif
     if (rakAktifSkrg.toLowerCase().replace(/[\s\-_]/g, '') === namaRakScan.toLowerCase().replace(/[\s\-_]/g, '')) {
       await kirim(chatId,
-        `ℹ️ *Anda sudah di rak ini!*\n\n` +
-        `📦 Rak Aktif: *${escapeMd(rakAktifSkrg)}*\n` +
-        `📸 Hasil scan (via ${metodeScan}): *${escapeMd(namaRakScan)}*\n\n` +
+        `â„¹ï¸ *Anda sudah di rak ini!*\n\n` +
+        `ðŸ“¦ Rak Aktif: *${escapeMd(rakAktifSkrg)}*\n` +
+        `ðŸ“¸ Hasil scan (via ${metodeScan}): *${escapeMd(namaRakScan)}*\n\n` +
         `Tetap lanjutkan input di rak ini.`,
         { reply_markup: kbSOAktif() }
       );
@@ -8436,37 +8445,37 @@ async function handleScanRakPindah(chatId, userId, imageBuffer, session) {
     const usersAktif = getAllUsersAktif(tokoKode);
     const pegangRak = Object.values(usersAktif).find(u => u.rakAktif === targetRak);
     
-    let m = `✅ *Hasil Scan!* (via ${metodeScan})\n${GARIS_TEBAL}\n\n`;
-    m += `📸 Hasil: *${escapeMd(namaRakScan)}*\n`;
-    m += `🎯 Target: *${escapeMd(targetRak)}* ${isBaru ? '(BARU)' : '(EXISTING)'}\n`;
-    m += `📦 Rak aktif saat ini: ${rakAktifSkrg}\n\n`;
+    let m = `âœ… *Hasil Scan!* (via ${metodeScan})\n${GARIS_TEBAL}\n\n`;
+    m += `ðŸ“¸ Hasil: *${escapeMd(namaRakScan)}*\n`;
+    m += `ðŸŽ¯ Target: *${escapeMd(targetRak)}* ${isBaru ? '(BARU)' : '(EXISTING)'}\n`;
+    m += `ðŸ“¦ Rak aktif saat ini: ${rakAktifSkrg}\n\n`;
     
     if (!isBaru) {
-      m += `📊 Info rak target:\n`;
-      m += `   📦 ${itemCount} jenis barang\n`;
+      m += `ðŸ“Š Info rak target:\n`;
+      m += `   ðŸ“¦ ${itemCount} jenis barang\n`;
       if (pegangRak && String(pegangRak.nama) !== String(getNama(userId))) {
-        m += `   ⚠️ Sedang dipegang: ${pegangRak.nama}\n`;
+        m += `   âš ï¸ Sedang dipegang: ${pegangRak.nama}\n`;
       }
       m += '\n';
     }
     
-    m += `${GARIS_TIPIS}\n💬 *Pindah ke rak ini?*`;
+    m += `${GARIS_TIPIS}\nðŸ’¬ *Pindah ke rak ini?*`;
     
     await kirim(chatId, m, {
       reply_markup: { inline_keyboard: [
-        [{ text: `✅ Pindah ke "${targetRak}"`, callback_data: 'so:scanrak:pindah' }],
-        [{ text: '🔙 Batal (Tetap di Rak Ini)', callback_data: 'so:scanrak:batal' }],
+        [{ text: `âœ… Pindah ke "${targetRak}"`, callback_data: 'so:scanrak:pindah' }],
+        [{ text: 'ðŸ”™ Batal (Tetap di Rak Ini)', callback_data: 'so:scanrak:batal' }],
       ]}
     });
   } catch(err) {
     log.error('SCAN_RAK_PINDAH', err.message);
-    await kirim(chatId, '❌ Gagal scan: ' + err.message, { reply_markup: kbSOAktif() });
+    await kirim(chatId, 'âŒ Gagal scan: ' + err.message, { reply_markup: kbSOAktif() });
   }
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   35. SAPAAN HELPER
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const SAPAAN_MAP = {
   'halo': ['Halo','Haloo','Hai juga'],
@@ -8499,95 +8508,95 @@ function balasSapaan(userId, kataSapaan) {
   const nama = getNama(userId);
   const balasan = SAPAAN_MAP[kataSapaan] || ['Halo'];
   const p = balasan[Math.floor(Math.random() * balasan.length)];
-  return p + (nama ? `, *${escapeMd(nama)}*` : '') + '! 😊';
+  return p + (nama ? `, *${escapeMd(nama)}*` : '') + '! ðŸ˜Š';
 }
 
 function balasTerimakasih(userId) {
   const nama = getNama(userId);
   const n = nama ? `, *${escapeMd(nama)}*` : '';
-  const ops = [`Sama-sama${n}! 😊`, `Senang bisa membantu${n}! ✨`, `Anytime${n}! 🙏`];
+  const ops = [`Sama-sama${n}! ðŸ˜Š`, `Senang bisa membantu${n}! âœ¨`, `Anytime${n}! ðŸ™`];
   return ops[Math.floor(Math.random() * ops.length)];
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   36. SMART KEYWORD DETECTOR (Untuk navigasi menu via ketik)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const MENU_KEYWORDS = {
-  // ═══ MENU UTAMA ═══
-  'menu': { action: 'menu:main', label: '📋 Menu Utama', priority: 'high' },
-  'menu utama': { action: 'menu:main', label: '📋 Menu Utama', priority: 'high' },
-  'main menu': { action: 'menu:main', label: '📋 Menu Utama', priority: 'high' },
-  'home': { action: 'menu:main', label: '📋 Menu Utama', priority: 'high' },
-  'kembali ke menu': { action: 'menu:main', label: '📋 Menu Utama', priority: 'high' },
-  'back to menu': { action: 'menu:main', label: '📋 Menu Utama', priority: 'high' },
+  // â•â•â• MENU UTAMA â•â•â•
+  'menu': { action: 'menu:main', label: 'ðŸ“‹ Menu Utama', priority: 'high' },
+  'menu utama': { action: 'menu:main', label: 'ðŸ“‹ Menu Utama', priority: 'high' },
+  'main menu': { action: 'menu:main', label: 'ðŸ“‹ Menu Utama', priority: 'high' },
+  'home': { action: 'menu:main', label: 'ðŸ“‹ Menu Utama', priority: 'high' },
+  'kembali ke menu': { action: 'menu:main', label: 'ðŸ“‹ Menu Utama', priority: 'high' },
+  'back to menu': { action: 'menu:main', label: 'ðŸ“‹ Menu Utama', priority: 'high' },
   
-  // ═══ CARI BARANG ═══
-  'cari': { action: 'menu:4', label: '🔍 Cari Barang', priority: 'high' },
-  'cari barang': { action: 'menu:4', label: '🔍 Cari Barang', priority: 'high' },
-  'search': { action: 'menu:4', label: '🔍 Cari Barang', priority: 'high' },
-  'lihat barang': { action: 'menu:4', label: '🔍 Cari Barang', priority: 'high' },
-  'menu cari': { action: 'menu:4', label: '🔍 Cari Barang', priority: 'high' },
+  // â•â•â• CARI BARANG â•â•â•
+  'cari': { action: 'menu:4', label: 'ðŸ” Cari Barang', priority: 'high' },
+  'cari barang': { action: 'menu:4', label: 'ðŸ” Cari Barang', priority: 'high' },
+  'search': { action: 'menu:4', label: 'ðŸ” Cari Barang', priority: 'high' },
+  'lihat barang': { action: 'menu:4', label: 'ðŸ” Cari Barang', priority: 'high' },
+  'menu cari': { action: 'menu:4', label: 'ðŸ” Cari Barang', priority: 'high' },
   
-  // ═══ STOCK OPNAME ═══
-  'so': { action: 'menu:5', label: '📦 Stock Opname', priority: 'high' },
-  'stock opname': { action: 'menu:5', label: '📦 Stock Opname', priority: 'high' },
-  'stok opname': { action: 'menu:5', label: '📦 Stock Opname', priority: 'high' },
-  'opname': { action: 'menu:5', label: '📦 Stock Opname', priority: 'high' },
-  'menu so': { action: 'menu:5', label: '📦 Stock Opname', priority: 'high' },
-  'mulai so': { action: 'menu:5', label: '📦 Stock Opname', priority: 'high' },
+  // â•â•â• STOCK OPNAME â•â•â•
+  'so': { action: 'menu:5', label: 'ðŸ“¦ Stock Opname', priority: 'high' },
+  'stock opname': { action: 'menu:5', label: 'ðŸ“¦ Stock Opname', priority: 'high' },
+  'stok opname': { action: 'menu:5', label: 'ðŸ“¦ Stock Opname', priority: 'high' },
+  'opname': { action: 'menu:5', label: 'ðŸ“¦ Stock Opname', priority: 'high' },
+  'menu so': { action: 'menu:5', label: 'ðŸ“¦ Stock Opname', priority: 'high' },
+  'mulai so': { action: 'menu:5', label: 'ðŸ“¦ Stock Opname', priority: 'high' },
   
-  // ═══ LAPORAN PENJUALAN ═══
-  'laporan penjualan': { action: 'menu:1', label: '📊 Laporan Penjualan', priority: 'high' },
-  'lap penjualan': { action: 'menu:1', label: '📊 Laporan Penjualan', priority: 'high' },
-  'menu penjualan': { action: 'menu:1', label: '📊 Laporan Penjualan', priority: 'high' },
-  'penjualan': { action: 'menu:1', label: '📊 Laporan Penjualan', priority: 'medium' },
-  'lap jual': { action: 'menu:1', label: '📊 Laporan Penjualan', priority: 'high' },
+  // â•â•â• LAPORAN PENJUALAN â•â•â•
+  'laporan penjualan': { action: 'menu:1', label: 'ðŸ“Š Laporan Penjualan', priority: 'high' },
+  'lap penjualan': { action: 'menu:1', label: 'ðŸ“Š Laporan Penjualan', priority: 'high' },
+  'menu penjualan': { action: 'menu:1', label: 'ðŸ“Š Laporan Penjualan', priority: 'high' },
+  'penjualan': { action: 'menu:1', label: 'ðŸ“Š Laporan Penjualan', priority: 'medium' },
+  'lap jual': { action: 'menu:1', label: 'ðŸ“Š Laporan Penjualan', priority: 'high' },
   
-  // ═══ LAPORAN HARGA ═══
-  'laporan harga': { action: 'menu:2', label: '🏷️ Laporan Harga', priority: 'high' },
-  'lap harga': { action: 'menu:2', label: '🏷️ Laporan Harga', priority: 'high' },
-  'menu harga': { action: 'menu:2', label: '🏷️ Laporan Harga', priority: 'high' },
+  // â•â•â• LAPORAN HARGA â•â•â•
+  'laporan harga': { action: 'menu:2', label: 'ðŸ·ï¸ Laporan Harga', priority: 'high' },
+  'lap harga': { action: 'menu:2', label: 'ðŸ·ï¸ Laporan Harga', priority: 'high' },
+  'menu harga': { action: 'menu:2', label: 'ðŸ·ï¸ Laporan Harga', priority: 'high' },
   
-  // ═══ LAPORAN MARKETPLACE ═══
-  'laporan marketplace': { action: 'menu:3', label: '🛒 Laporan Marketplace', priority: 'high' },
-  'lap marketplace': { action: 'menu:3', label: '🛒 Laporan Marketplace', priority: 'high' },
-  'marketplace': { action: 'menu:3', label: '🛒 Laporan Marketplace', priority: 'high' },
-  'lap mp': { action: 'menu:3', label: '🛒 Laporan Marketplace', priority: 'high' },
-  'menu mp': { action: 'menu:3', label: '🛒 Laporan Marketplace', priority: 'high' },
+  // â•â•â• LAPORAN MARKETPLACE â•â•â•
+  'laporan marketplace': { action: 'menu:3', label: 'ðŸ›’ Laporan Marketplace', priority: 'high' },
+  'lap marketplace': { action: 'menu:3', label: 'ðŸ›’ Laporan Marketplace', priority: 'high' },
+  'marketplace': { action: 'menu:3', label: 'ðŸ›’ Laporan Marketplace', priority: 'high' },
+  'lap mp': { action: 'menu:3', label: 'ðŸ›’ Laporan Marketplace', priority: 'high' },
+  'menu mp': { action: 'menu:3', label: 'ðŸ›’ Laporan Marketplace', priority: 'high' },
   
-  // ═══ BERITA ACARA ═══
-  'berita acara': { action: 'menu:6', label: '📋 Berita Acara', priority: 'high' },
-  'ba': { action: 'menu:6', label: '📋 Berita Acara', priority: 'medium' },
-  'menu ba': { action: 'menu:6', label: '📋 Berita Acara', priority: 'high' },
-  'buat ba': { action: 'menu:6', label: '📋 Berita Acara', priority: 'high' },
+  // â•â•â• BERITA ACARA â•â•â•
+  'berita acara': { action: 'menu:6', label: 'ðŸ“‹ Berita Acara', priority: 'high' },
+  'ba': { action: 'menu:6', label: 'ðŸ“‹ Berita Acara', priority: 'medium' },
+  'menu ba': { action: 'menu:6', label: 'ðŸ“‹ Berita Acara', priority: 'high' },
+  'buat ba': { action: 'menu:6', label: 'ðŸ“‹ Berita Acara', priority: 'high' },
 
-  // ═══ HOMEBASE ═══
-  'homebase': { action: 'menu:7', label: '🏠 Input Homebase', priority: 'high' },
-  'input homebase': { action: 'menu:7', label: '🏠 Input Homebase', priority: 'high' },
-  'scan nota': { action: 'menu:7', label: '🏠 Input Homebase', priority: 'high' },
-  'nota supplier': { action: 'menu:7', label: '🏠 Input Homebase', priority: 'high' },
-  'banding harga': { action: 'menu:7', label: '🏠 Input Homebase', priority: 'high' },
+  // â•â•â• HOMEBASE â•â•â•
+  'homebase': { action: 'menu:7', label: 'ðŸ  Input Homebase', priority: 'high' },
+  'input homebase': { action: 'menu:7', label: 'ðŸ  Input Homebase', priority: 'high' },
+  'scan nota': { action: 'menu:7', label: 'ðŸ  Input Homebase', priority: 'high' },
+  'nota supplier': { action: 'menu:7', label: 'ðŸ  Input Homebase', priority: 'high' },
+  'banding harga': { action: 'menu:7', label: 'ðŸ  Input Homebase', priority: 'high' },
   
-  // ═══ AI CHAT ═══
-  'ai': { action: 'menu:ai', label: '🤖 AI Chat', priority: 'medium' },
-  'ai chat': { action: 'menu:ai', label: '🤖 AI Chat', priority: 'high' },
-  'chat ai': { action: 'menu:ai', label: '🤖 AI Chat', priority: 'high' },
-  'aiva': { action: 'menu:ai', label: '🤖 AI Chat', priority: 'high' },
+  // â•â•â• AI CHAT â•â•â•
+  'ai': { action: 'menu:ai', label: 'ðŸ¤– AI Chat', priority: 'medium' },
+  'ai chat': { action: 'menu:ai', label: 'ðŸ¤– AI Chat', priority: 'high' },
+  'chat ai': { action: 'menu:ai', label: 'ðŸ¤– AI Chat', priority: 'high' },
+  'aiva': { action: 'menu:ai', label: 'ðŸ¤– AI Chat', priority: 'high' },
   
-  // ═══ MENU ADMIN ═══
-  'admin': { action: 'menu:9', label: '👑 Menu Admin', priority: 'high', adminOnly: true },
-  'menu admin': { action: 'menu:9', label: '👑 Menu Admin', priority: 'high', adminOnly: true },
-  'panel admin': { action: 'menu:9', label: '👑 Menu Admin', priority: 'high', adminOnly: true },
+  // â•â•â• MENU ADMIN â•â•â•
+  'admin': { action: 'menu:9', label: 'ðŸ‘‘ Menu Admin', priority: 'high', adminOnly: true },
+  'menu admin': { action: 'menu:9', label: 'ðŸ‘‘ Menu Admin', priority: 'high', adminOnly: true },
+  'panel admin': { action: 'menu:9', label: 'ðŸ‘‘ Menu Admin', priority: 'high', adminOnly: true },
   
-  // ═══ INFO & BANTUAN ═══
-  'info': { action: 'menu:info', label: 'ℹ️ Info Bot', priority: 'medium' },
-  'info bot': { action: 'menu:info', label: 'ℹ️ Info Bot', priority: 'high' },
-  'help': { action: 'menu:help', label: '❓ Bantuan', priority: 'high' },
-  'bantuan': { action: 'menu:help', label: '❓ Bantuan', priority: 'high' },
-  'panduan': { action: 'menu:help', label: '❓ Bantuan', priority: 'high' },
-  'tutorial': { action: 'menu:help', label: '❓ Bantuan', priority: 'high' },
-  'cara pakai': { action: 'menu:help', label: '❓ Bantuan', priority: 'high' },
+  // â•â•â• INFO & BANTUAN â•â•â•
+  'info': { action: 'menu:info', label: 'â„¹ï¸ Info Bot', priority: 'medium' },
+  'info bot': { action: 'menu:info', label: 'â„¹ï¸ Info Bot', priority: 'high' },
+  'help': { action: 'menu:help', label: 'â“ Bantuan', priority: 'high' },
+  'bantuan': { action: 'menu:help', label: 'â“ Bantuan', priority: 'high' },
+  'panduan': { action: 'menu:help', label: 'â“ Bantuan', priority: 'high' },
+  'tutorial': { action: 'menu:help', label: 'â“ Bantuan', priority: 'high' },
+  'cara pakai': { action: 'menu:help', label: 'â“ Bantuan', priority: 'high' },
 };
 
 function detectMenuKeyword(text) {
@@ -8622,7 +8631,7 @@ function detectMenuKeyword(text) {
 }
 
 // Deteksi kalimat yang MENGANDUNG keyword menu (tapi tidak persis)
-// Contoh: "buka menu utama dong" → match "menu utama"
+// Contoh: "buka menu utama dong" â†’ match "menu utama"
 function detectMenuInSentence(text) {
   const low = text.toLowerCase().trim();
   
@@ -8647,7 +8656,7 @@ function detectMenuInSentence(text) {
 // Eksekusi aksi menu secara langsung (tanpa callback)
 async function executeMenuAction(chatId, userId, action) {
   // Simulasikan klik tombol
-// ★ TAMBAH INI: Handler Menu Utama
+// â˜… TAMBAH INI: Handler Menu Utama
   if (action === 'menu:main') {
     const userName = getNama(userId) || 'Kakak';
     return kirim(chatId, buildWelcome(userId, userName), { 
@@ -8658,10 +8667,10 @@ async function executeMenuAction(chatId, userId, action) {
   if (action === 'menu:1' || action === 'menu:2' || action === 'menu:5' || action === 'menu:6') {
     const menuType = parseInt(action.split(':')[1]);
     if (menuType !== 4 && !bisaAksesLaporan(userId)) {
-      return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+      return kirim(chatId, 'ðŸš« Akses ditolak. Khusus staff laporan.');
     }
     const labels = { 1: 'Laporan Penjualan', 2: 'Laporan Harga', 5: 'Stock Opname', 6: 'Berita Acara' };
-    return kirim(chatId, `🏦 *Pilih Toko - ${labels[menuType]}*\n${GARIS_TEBAL}`, { 
+    return kirim(chatId, `ðŸ¦ *Pilih Toko - ${labels[menuType]}*\n${GARIS_TEBAL}`, { 
       reply_markup: kbPilihToko(menuType, menuType === 6) 
     });
   }
@@ -8669,55 +8678,55 @@ async function executeMenuAction(chatId, userId, action) {
   if (action === 'menu:3') {
     resetSesi(userId);
     updateSesi(userId, { menu: 3 });
-    return kirim(chatId, '🛒 *Laporan Marketplace*\n\nPilih hari:', {
+    return kirim(chatId, 'ðŸ›’ *Laporan Marketplace*\n\nPilih hari:', {
       reply_markup: kbPilihHari(3, 'mp')
     });
   }
   
   if (action === 'menu:4') {
-    return kirim(chatId, '🔍 *Cari Barang*\n\nKetik nama barang atau kode.\n\n*Contoh:*\n• `dandang eagle 20`\n• `harga panci di cp`\n• `grosir kompor`', {
-      reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]]}
+    return kirim(chatId, 'ðŸ” *Cari Barang*\n\nKetik nama barang atau kode.\n\n*Contoh:*\nâ€¢ `dandang eagle 20`\nâ€¢ `harga panci di cp`\nâ€¢ `grosir kompor`', {
+      reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' }]]}
     });
   }
   
   if (action === 'menu:ai') {
-    return kirim(chatId, '🤖 *AI Chat*\n\nKetik pertanyaan apa saja!', {
-      reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]]}
+    return kirim(chatId, 'ðŸ¤– *AI Chat*\n\nKetik pertanyaan apa saja!', {
+      reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' }]]}
     });
   }
-    // ★ Homebase
+    // â˜… Homebase
   if (action === 'menu:7') {
-    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak.');
-    return kirim(chatId, `🏠 *INPUT BARANG HOMEBASE*\n${GARIS_TEBAL}\n\nPilih toko:`, {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, 'ðŸš« Akses ditolak.');
+    return kirim(chatId, `ðŸ  *INPUT BARANG HOMEBASE*\n${GARIS_TEBAL}\n\nPilih toko:`, {
       reply_markup: kbPilihToko(7)
     });
   }
   if (action === 'menu:9' && isAdmin(userId)) {
-    return kirim(chatId, '👑 *MENU ADMIN*', { reply_markup: kbAdminMenu() });
+    return kirim(chatId, 'ðŸ‘‘ *MENU ADMIN*', { reply_markup: kbAdminMenu() });
   }
   
   if (action === 'menu:info') {
     const uptime = Math.floor(process.uptime());
     return kirim(chatId,
-      `ℹ️ *INFO BOT*\n${GARIS_TEBAL}\n🤖 ${CONFIG.appName}\n📦 ${DATA_BARANG.length} barang\n👥 ${MEMBERS.length} members\n⏱️ Uptime: ${Math.floor(uptime/3600)}j ${Math.floor((uptime%3600)/60)}m\n\n*Your Info:*\n🆔 \`${userId}\`\n📛 ${getUserRole(userId)}`
+      `â„¹ï¸ *INFO BOT*\n${GARIS_TEBAL}\nðŸ¤– ${CONFIG.appName}\nðŸ“¦ ${DATA_BARANG.length} barang\nðŸ‘¥ ${MEMBERS.length} members\nâ±ï¸ Uptime: ${Math.floor(uptime/3600)}j ${Math.floor((uptime%3600)/60)}m\n\n*Your Info:*\nðŸ†” \`${userId}\`\nðŸ“› ${getUserRole(userId)}`
     );
   }
   
   if (action === 'menu:help') {
     return kirim(chatId,
-      '❓ *PANDUAN*\n' + GARIS_TEBAL + '\n\n' +
-      '💬 *Cara cepat (ketik langsung):*\n' +
-      '• `stock opname` - buka SO\n' +
-      '• `cari barang` - cari\n' +
-      '• `laporan harga` - lap harga\n' +
-      '• `marketplace` - lap mp\n' +
-      '• `berita acara` - BA\n' +
-      '• `info` - info bot\n\n' +
-      '🔍 *Cari barang langsung:*\n' +
+      'â“ *PANDUAN*\n' + GARIS_TEBAL + '\n\n' +
+      'ðŸ’¬ *Cara cepat (ketik langsung):*\n' +
+      'â€¢ `stock opname` - buka SO\n' +
+      'â€¢ `cari barang` - cari\n' +
+      'â€¢ `laporan harga` - lap harga\n' +
+      'â€¢ `marketplace` - lap mp\n' +
+      'â€¢ `berita acara` - BA\n' +
+      'â€¢ `info` - info bot\n\n' +
+      'ðŸ” *Cari barang langsung:*\n' +
       'Ketik: `cari [nama]` atau `harga [nama]`\n' +
       '*Contoh:* `cari dandang eagle`\n\n' +
       '*Kode Toko:* NK, TDM, Oesapa, Kefa, CP',
-      { reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]]}}
+      { reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' }]]}}
     );
   }
 }
@@ -8733,9 +8742,9 @@ function isKodeBarang(text) {
   return /^[a-z]{2,5}\d{2,6}$/i.test(text.trim());
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   36B. MAIN MESSAGE HANDLER (SMART ROUTING + KONFIRMASI)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 bot.on('message', async (msg) => {
   if (msg.text && msg.text.startsWith('/')) return;
@@ -8754,12 +8763,12 @@ bot.on('message', async (msg) => {
   trackChat(userId, text);
   const session = getSesi(userId);
   
-  // ★ PRIORITY 1: Mode aktif (route DULU sebelum apapun)
+  // â˜… PRIORITY 1: Mode aktif (route DULU sebelum apapun)
     if (session.scanActive) {
     return handleScanModeLaporan(chatId, userId, text, null, session);
   }
   
-  // ★ Homebase mode
+  // â˜… Homebase mode
   if (session.mode === 'homebase') {
     return handleHomebaseMode(chatId, userId, text, null, session);
   }
@@ -8780,16 +8789,16 @@ bot.on('message', async (msg) => {
     const laporan = genLapMarket(text, session.kemarin);
     await kirim(chatId, laporan);
     resetSesi(userId);
-    return kirim(chatId, '✅ *Laporan Marketplace selesai!*', { reply_markup: kbMainMenu(userId) });
+    return kirim(chatId, 'âœ… *Laporan Marketplace selesai!*', { reply_markup: kbMainMenu(userId) });
   }
   
-  // ★ PRIORITY 2: Konfirmasi pending (user merespons konfirmasi sebelumnya)
+  // â˜… PRIORITY 2: Konfirmasi pending (user merespons konfirmasi sebelumnya)
   if (session.pendingKonfirmasi) {
     const pk = session.pendingKonfirmasi;
     updateSesi(userId, { pendingKonfirmasi: null });
     
     if (low === 'ya' || low === 'y' || low === 'yes' || low === 'ok' || low === 'oke') {
-      // User setuju → jalankan aksi
+      // User setuju â†’ jalankan aksi
       if (pk.action === 'cari') {
         return prosesCari(chatId, userId, pk.text, null);
       }
@@ -8797,13 +8806,13 @@ bot.on('message', async (msg) => {
         return executeMenuAction(chatId, userId, pk.menuAction);
       }
     } else if (low === 'tidak' || low === 'no' || low === 'n' || low === 'batal') {
-      return kirim(chatId, '👌 OK, dibatalkan.', { reply_markup: kbMainMenu(userId) });
+      return kirim(chatId, 'ðŸ‘Œ OK, dibatalkan.', { reply_markup: kbMainMenu(userId) });
     } else {
-      // User ketik hal lain → anggap perintah baru, lanjut proses normal
+      // User ketik hal lain â†’ anggap perintah baru, lanjut proses normal
     }
   }
 
-    // ★ PRIORITY 2.5: Konfirmasi pending menu navigation
+    // â˜… PRIORITY 2.5: Konfirmasi pending menu navigation
   if (session.pendingMenuAction) {
     const pendingAction = session.pendingMenuAction;
     const pendingLabel = session.pendingMenuLabel || 'menu';
@@ -8812,35 +8821,35 @@ bot.on('message', async (msg) => {
     if (low === 'ya' || low === 'y' || low === 'yes' || low === 'ok' || low === 'oke') {
       return executeMenuAction(chatId, userId, pendingAction);
     } else if (low === 'tidak' || low === 'no' || low === 'n' || low === 'batal' || low === 'gak') {
-      return kirim(chatId, `Oke kak, dibatalkan 😊 Mau ngapain?`, { reply_markup: kbMainMenu(userId) });
+      return kirim(chatId, `Oke kak, dibatalkan ðŸ˜Š Mau ngapain?`, { reply_markup: kbMainMenu(userId) });
     }
     // Kalau jawaban lain, lanjut proses normal (jangan re-trigger menu)
   }
   
-  // ★ PRIORITY 3: Reset commands
+  // â˜… PRIORITY 3: Reset commands
   if (KATA_RESET.includes(low)) {
     resetSesi(userId);
-    return kirim(chatId, '📋 *MENU UTAMA*', { reply_markup: kbMainMenu(userId) });
+    return kirim(chatId, 'ðŸ“‹ *MENU UTAMA*', { reply_markup: kbMainMenu(userId) });
   }
   
-    // ★ PRIORITY 4: Menu keyword detection (SUPER PRIORITAS!)
+    // â˜… PRIORITY 4: Menu keyword detection (SUPER PRIORITAS!)
   
   // 4A. Exact/Partial match keyword
   const menuMatch = detectMenuKeyword(text);
   if (menuMatch) {
     if (menuMatch.adminOnly && !isAdmin(userId)) {
-      return kirim(chatId, '🚫 Khusus admin.');
+      return kirim(chatId, 'ðŸš« Khusus admin.');
     }
     
-    // High priority → langsung eksekusi
+    // High priority â†’ langsung eksekusi
     if (menuMatch.priority === 'high') {
-      log.info('MENU', `[HIGH] "${low}" → ${menuMatch.label}`);
+      log.info('MENU', `[HIGH] "${low}" â†’ ${menuMatch.label}`);
       return executeMenuAction(chatId, userId, menuMatch.action);
     }
     
-    // Medium priority → tanya konfirmasi
+    // Medium priority â†’ tanya konfirmasi
     if (menuMatch.priority === 'medium') {
-      log.info('MENU', `[MEDIUM] "${low}" → konfirmasi ${menuMatch.label}`);
+      log.info('MENU', `[MEDIUM] "${low}" â†’ konfirmasi ${menuMatch.label}`);
       
       updateSesi(userId, { 
         pendingMenuAction: menuMatch.action,
@@ -8848,13 +8857,13 @@ bot.on('message', async (msg) => {
       });
       
       return kirim(chatId,
-        `🤔 Maksudnya mau buka *${escapeMd(menuMatch.label)}* ya kak?`,
+        `ðŸ¤” Maksudnya mau buka *${escapeMd(menuMatch.label)}* ya kak?`,
         { reply_markup: { inline_keyboard: [
           [
-            { text: `✅ Ya, Buka ${menuMatch.label}`, callback_data: `gomenu:yes` },
-            { text: '❌ Bukan', callback_data: 'gomenu:no' },
+            { text: `âœ… Ya, Buka ${menuMatch.label}`, callback_data: `gomenu:yes` },
+            { text: 'âŒ Bukan', callback_data: 'gomenu:no' },
           ],
-          [{ text: '📋 Menu Utama', callback_data: 'menu:main' }],
+          [{ text: 'ðŸ“‹ Menu Utama', callback_data: 'menu:main' }],
         ]}}
       );
     }
@@ -8864,9 +8873,9 @@ bot.on('message', async (msg) => {
   const sentenceMatch = detectMenuInSentence(text);
   if (sentenceMatch) {
     if (sentenceMatch.adminOnly && !isAdmin(userId)) {
-      return kirim(chatId, '🚫 Khusus admin.');
+      return kirim(chatId, 'ðŸš« Khusus admin.');
     }
-    log.info('MENU', `[SENTENCE] "${low}" → ${sentenceMatch.label}`);
+    log.info('MENU', `[SENTENCE] "${low}" â†’ ${sentenceMatch.label}`);
     
     // Untuk via sentence, tanya konfirmasi
     updateSesi(userId, { 
@@ -8875,66 +8884,66 @@ bot.on('message', async (msg) => {
     });
     
     return kirim(chatId,
-      `🤔 Kakak mau buka *${escapeMd(sentenceMatch.label)}* ya?`,
+      `ðŸ¤” Kakak mau buka *${escapeMd(sentenceMatch.label)}* ya?`,
       { reply_markup: { inline_keyboard: [
         [
-          { text: `✅ Ya, Buka`, callback_data: `gomenu:yes` },
-          { text: '❌ Tidak', callback_data: 'gomenu:no' },
+          { text: `âœ… Ya, Buka`, callback_data: `gomenu:yes` },
+          { text: 'âŒ Tidak', callback_data: 'gomenu:no' },
         ],
       ]}}
     );
   }
   
-  // ★ PRIORITY 5: Sapaan
+  // â˜… PRIORITY 5: Sapaan
   const kataSapaan = isSapaan(low);
   if (kataSapaan) {
     await kirim(chatId, balasSapaan(userId, kataSapaan));
     await tunggu(600);
-    return kirim(chatId, '📋 *Mau cari apa?*', { reply_markup: kbMainMenu(userId) });
+    return kirim(chatId, 'ðŸ“‹ *Mau cari apa?*', { reply_markup: kbMainMenu(userId) });
   }
   
-  // ★ PRIORITY 6: Terima Kasih
+  // â˜… PRIORITY 6: Terima Kasih
   if (isTerimakasih(low)) {
     return kirim(chatId, balasTerimakasih(userId));
   }
   
-  // ★ PRIORITY 7: Cari barang EKSPLISIT (ada keyword "cari", "harga", dll)
+  // â˜… PRIORITY 7: Cari barang EKSPLISIT (ada keyword "cari", "harga", dll)
   if (isCariBarangCommand(low)) {
     // Hapus keyword "cari/harga/stok" dari awal
     const keyword = text.replace(/^(cari|harga|stok|stock|cek|lihat|beli)\s+/i, '').trim();
     if (keyword.length >= 2) {
       return prosesCari(chatId, userId, keyword, null);
     }
-    return kirim(chatId, '⚠️ Ketik nama barang setelah `cari`.\n\n*Contoh:* `cari dandang eagle 20`');
+    return kirim(chatId, 'âš ï¸ Ketik nama barang setelah `cari`.\n\n*Contoh:* `cari dandang eagle 20`');
   }
   
-  // ★ PRIORITY 8: Kode barang (NN00001, KS00456, dll) → langsung cari
+  // â˜… PRIORITY 8: Kode barang (NN00001, KS00456, dll) â†’ langsung cari
   if (isKodeBarang(text)) {
     return prosesCari(chatId, userId, text, null);
   }
   
   
-  // ★ PRIORITY 10: Teks pendek/tidak jelas → tampilkan menu
+  // â˜… PRIORITY 10: Teks pendek/tidak jelas â†’ tampilkan menu
   if (text.length < 4) {
     return kirim(chatId, 
-      `🤔 Saya tidak mengerti "${escapeMd(text)}"\n\n` +
-      `💡 *Coba ketik:*\n` +
-      `• \`stock opname\` - buka SO\n` +
-      `• \`cari [nama barang]\` - cari\n` +
-      `• \`info\` - info bot\n` +
-      `• \`menu\` - menu utama\n\n` +
+      `ðŸ¤” Saya tidak mengerti "${escapeMd(text)}"\n\n` +
+      `ðŸ’¡ *Coba ketik:*\n` +
+      `â€¢ \`stock opname\` - buka SO\n` +
+      `â€¢ \`cari [nama barang]\` - cari\n` +
+      `â€¢ \`info\` - info bot\n` +
+      `â€¢ \`menu\` - menu utama\n\n` +
       `Atau pilih dari tombol:`,
       { reply_markup: kbMainMenu(userId) }
     );
   }
   
-    // ★ PRIORITY 11: Smart routing via prosesAI
+    // â˜… PRIORITY 11: Smart routing via prosesAI
   // prosesAI sudah include router pintar (cari barang vs ngobrol)
   return prosesAI(chatId, userId, text);
 });
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   37. CALLBACK QUERY HANDLER (LENGKAP - Semua Callback + Barang Baru)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 bot.on('callback_query', async (query) => {
   const chatId = query.message.chat.id;
@@ -8944,14 +8953,14 @@ bot.on('callback_query', async (query) => {
   
   try { await bot.answerCallbackQuery(query.id); } catch(e) {}
   
-  // ════════════ PAGINATION CARI BARANG ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• PAGINATION CARI BARANG â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data.startsWith('caripage:')) {
     const page = parseInt(data.replace('caripage:', ''));
     const session = getSesi(userId);
     if (!session.lastSearch || !session.lastSearch.keyword) {
-      await kirim(chatId, '⚠️ Session pencarian expired. Silakan cari lagi.', {
-        reply_markup: { inline_keyboard: [[{ text: '🔄 Cari Lagi', callback_data: 'menu:4' }]] }
+      await kirim(chatId, 'âš ï¸ Session pencarian expired. Silakan cari lagi.', {
+        reply_markup: { inline_keyboard: [[{ text: 'ðŸ”„ Cari Lagi', callback_data: 'menu:4' }]] }
       });
       return;
     }
@@ -8963,12 +8972,12 @@ bot.on('callback_query', async (query) => {
   
   if (data === 'caripageinfo') {
     try {
-      await bot.answerCallbackQuery(query.id, { text: '📄 Info halaman', show_alert: false });
+      await bot.answerCallbackQuery(query.id, { text: 'ðŸ“„ Info halaman', show_alert: false });
     } catch(e) {}
     return;
   }
   
-  // ════════════ KONFIRMASI AI ROUTER ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• KONFIRMASI AI ROUTER â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data.startsWith('airouter:cari:')) {
     const textB64 = data.replace('airouter:cari:', '');
@@ -8978,7 +8987,7 @@ bot.on('callback_query', async (query) => {
       const session = getSesi(userId);
       originalText = session.aiPendingQuery || '';
     }
-    if (!originalText) return kirim(chatId, '⚠️ Query hilang.');
+    if (!originalText) return kirim(chatId, 'âš ï¸ Query hilang.');
     updateSesi(userId, { aiPendingQuery: null });
     await prosesCari(chatId, userId, originalText, null);
     return;
@@ -8987,16 +8996,16 @@ bot.on('callback_query', async (query) => {
   if (data === 'airouter:batal') {
     updateSesi(userId, { aiPendingQuery: null });
     try { await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msgId }); } catch(e) {}
-    await kirim(chatId, `Oke kak 😊 Mau apa nih?`);
+    await kirim(chatId, `Oke kak ðŸ˜Š Mau apa nih?`);
     return;
   }
   
-  // ════════════ KONFIRMASI MENU NAVIGATION ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• KONFIRMASI MENU NAVIGATION â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data === 'gomenu:yes') {
     const session = getSesi(userId);
     const action = session.pendingMenuAction;
-    if (!action) return kirim(chatId, '⚠️ Aksi hilang.', { reply_markup: kbMainMenu(userId) });
+    if (!action) return kirim(chatId, 'âš ï¸ Aksi hilang.', { reply_markup: kbMainMenu(userId) });
     updateSesi(userId, { pendingMenuAction: null, pendingMenuLabel: null });
     try { await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msgId }); } catch(e) {}
     await executeMenuAction(chatId, userId, action);
@@ -9006,11 +9015,11 @@ bot.on('callback_query', async (query) => {
   if (data === 'gomenu:no') {
     updateSesi(userId, { pendingMenuAction: null, pendingMenuLabel: null });
     try { await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msgId }); } catch(e) {}
-    await kirim(chatId, `Oke kak 😊`);
+    await kirim(chatId, `Oke kak ðŸ˜Š`);
     return;
   }
   
-  // ════════════ KONFIRMASI CARI BARANG ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• KONFIRMASI CARI BARANG â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data.startsWith('konfirm:cari:')) {
     const textB64 = data.replace('konfirm:cari:', '');
@@ -9020,7 +9029,7 @@ bot.on('callback_query', async (query) => {
       const session = getSesi(userId);
       originalText = session.pendingKonfirmasi?.text || '';
     }
-    if (!originalText) return kirim(chatId, '⚠️ Teks hilang.');
+    if (!originalText) return kirim(chatId, 'âš ï¸ Teks hilang.');
     updateSesi(userId, { pendingKonfirmasi: null });
     await prosesCari(chatId, userId, originalText, null);
     return;
@@ -9028,12 +9037,12 @@ bot.on('callback_query', async (query) => {
   
   if (data === 'konfirm:batal') {
     updateSesi(userId, { pendingKonfirmasi: null });
-    try { await bot.editMessageText('👌 Dibatalkan.', { chat_id: chatId, message_id: msgId, reply_markup: kbMainMenu(userId) }); }
-    catch(e) { await kirim(chatId, '👌 OK.', { reply_markup: kbMainMenu(userId) }); }
+    try { await bot.editMessageText('ðŸ‘Œ Dibatalkan.', { chat_id: chatId, message_id: msgId, reply_markup: kbMainMenu(userId) }); }
+    catch(e) { await kirim(chatId, 'ðŸ‘Œ OK.', { reply_markup: kbMainMenu(userId) }); }
     return;
   }
   
-  // ════════════ MENU NAVIGATION ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• MENU NAVIGATION â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data === 'menu:main') {
     const userName = getNama(userId) || query.from.first_name || 'Kakak';
@@ -9049,14 +9058,14 @@ bot.on('callback_query', async (query) => {
   
   if (data === 'menu:1' || data === 'menu:2' || data === 'menu:5' || data === 'menu:6') {
     const menuType = parseInt(data.split(':')[1]);
-    if (menuType !== 4 && !bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak.');
+    if (menuType !== 4 && !bisaAksesLaporan(userId)) return kirim(chatId, 'ðŸš« Akses ditolak.');
     const labels = { 1: 'Laporan Penjualan', 2: 'Laporan Harga', 5: 'Stock Opname', 6: 'Berita Acara' };
     try {
-      await bot.editMessageText(`🏦 *Pilih Toko - ${labels[menuType]}*\n${GARIS_TEBAL}`, {
+      await bot.editMessageText(`ðŸ¦ *Pilih Toko - ${labels[menuType]}*\n${GARIS_TEBAL}`, {
         chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbPilihToko(menuType, menuType === 6)
       });
     } catch(e) {
-      await kirim(chatId, `🏦 *Pilih Toko - ${labels[menuType]}*`, { reply_markup: kbPilihToko(menuType, menuType === 6) });
+      await kirim(chatId, `ðŸ¦ *Pilih Toko - ${labels[menuType]}*`, { reply_markup: kbPilihToko(menuType, menuType === 6) });
     }
     return;
   }
@@ -9064,15 +9073,15 @@ bot.on('callback_query', async (query) => {
   if (data === 'menu:3') {
     resetSesi(userId);
     updateSesi(userId, { menu: 3 });
-    kirim(chatId, '🛒 *Laporan Marketplace*\n\nPilih hari:', { reply_markup: kbPilihHari(3, 'mp') });
+    kirim(chatId, 'ðŸ›’ *Laporan Marketplace*\n\nPilih hari:', { reply_markup: kbPilihHari(3, 'mp') });
     return;
   }
   
   if (data === 'menu:4') {
     try {
-      await bot.editMessageText('🔍 *Cari Barang*\n\nKetik nama barang atau kode.\n\n*Contoh:*\n• `dandang eagle 20`\n• `harga panci di cp`\n• `grosir kompor`', {
+      await bot.editMessageText('ðŸ” *Cari Barang*\n\nKetik nama barang atau kode.\n\n*Contoh:*\nâ€¢ `dandang eagle 20`\nâ€¢ `harga panci di cp`\nâ€¢ `grosir kompor`', {
         chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
-        reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]]}
+        reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' }]]}
       });
     } catch(e) {}
     return;
@@ -9081,31 +9090,31 @@ bot.on('callback_query', async (query) => {
   if (data === 'menu:ai') {
     const nama = getNama(userId) || 'kak';
     try {
-      await bot.editMessageText(`🤖 *Halo ${escapeMd(nama)}!* 😊\n\nKetik pertanyaan apa saja!\n\n_/resetchat untuk reset memori_`, {
+      await bot.editMessageText(`ðŸ¤– *Halo ${escapeMd(nama)}!* ðŸ˜Š\n\nKetik pertanyaan apa saja!\n\n_/resetchat untuk reset memori_`, {
         chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
-        reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]]}
+        reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' }]]}
       });
     } catch(e) {}
     return;
   }
   
   if (data === 'menu:7') {
-    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak.');
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, 'ðŸš« Akses ditolak.');
     try {
-      await bot.editMessageText(`🏠 *INPUT BARANG HOMEBASE*\n${GARIS_TEBAL}\n\nPilih toko:`, {
+      await bot.editMessageText(`ðŸ  *INPUT BARANG HOMEBASE*\n${GARIS_TEBAL}\n\nPilih toko:`, {
         chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbPilihToko(7)
       });
     } catch(e) {
-      await kirim(chatId, '🏠 *INPUT HOMEBASE*\nPilih toko:', { reply_markup: kbPilihToko(7) });
+      await kirim(chatId, 'ðŸ  *INPUT HOMEBASE*\nPilih toko:', { reply_markup: kbPilihToko(7) });
     }
     return;
   }
   
   if (data === 'menu:9' && isAdmin(userId)) {
     try {
-      await bot.editMessageText('👑 *MENU ADMIN*', { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbAdminMenu() });
+      await bot.editMessageText('ðŸ‘‘ *MENU ADMIN*', { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbAdminMenu() });
     } catch(e) {
-      await kirim(chatId, '👑 *MENU ADMIN*', { reply_markup: kbAdminMenu() });
+      await kirim(chatId, 'ðŸ‘‘ *MENU ADMIN*', { reply_markup: kbAdminMenu() });
     }
     return;
   }
@@ -9113,7 +9122,7 @@ bot.on('callback_query', async (query) => {
   if (data === 'menu:info') {
     const uptime = Math.floor(process.uptime());
     await kirim(chatId,
-      `ℹ️ *INFO BOT*\n${GARIS_TEBAL}\n🤖 ${CONFIG.appName}\n📦 ${DATA_BARANG.length} barang\n👥 ${MEMBERS.length} members\n⏱️ Uptime: ${Math.floor(uptime/3600)}j ${Math.floor((uptime%3600)/60)}m\n\n*Your Info:*\n🆔 \`${userId}\`\n📛 ${getUserRole(userId)}`
+      `â„¹ï¸ *INFO BOT*\n${GARIS_TEBAL}\nðŸ¤– ${CONFIG.appName}\nðŸ“¦ ${DATA_BARANG.length} barang\nðŸ‘¥ ${MEMBERS.length} members\nâ±ï¸ Uptime: ${Math.floor(uptime/3600)}j ${Math.floor((uptime%3600)/60)}m\n\n*Your Info:*\nðŸ†” \`${userId}\`\nðŸ“› ${getUserRole(userId)}`
     );
     return;
   }
@@ -9121,27 +9130,27 @@ bot.on('callback_query', async (query) => {
   if (data === 'menu:help') {
     try {
       await bot.editMessageText(
-        '❓ *PANDUAN*\n' + GARIS_TEBAL + '\n\n' +
-        '💬 *Cara cepat:*\n' +
-        '• `stock opname` - buka SO\n' +
-        '• `cari barang` - cari\n' +
-        '• `laporan harga` - lap harga\n' +
-        '• `marketplace` - lap mp\n' +
-        '• `berita acara` - BA\n' +
-        '• `homebase` - input nota\n' +
-        '• `info` - info bot\n' +
-        '• `menu utama` - balik menu\n\n' +
+        'â“ *PANDUAN*\n' + GARIS_TEBAL + '\n\n' +
+        'ðŸ’¬ *Cara cepat:*\n' +
+        'â€¢ `stock opname` - buka SO\n' +
+        'â€¢ `cari barang` - cari\n' +
+        'â€¢ `laporan harga` - lap harga\n' +
+        'â€¢ `marketplace` - lap mp\n' +
+        'â€¢ `berita acara` - BA\n' +
+        'â€¢ `homebase` - input nota\n' +
+        'â€¢ `info` - info bot\n' +
+        'â€¢ `menu utama` - balik menu\n\n' +
         '*Kode Toko:* NK, TDM, Oesapa, Kefa, CP',
         {
           chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
-          reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]]}
+          reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' }]]}
         }
       );
     } catch(e) {}
     return;
   }
   
-  // ════════════ HOMEBASE ACTIONS ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• HOMEBASE ACTIONS â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data === 'homebase:selesai') {
     const session = getSesi(userId);
@@ -9157,13 +9166,13 @@ bot.on('callback_query', async (query) => {
   
   if (data === 'homebase:reset') {
     updateSesi(userId, { homebaseItems: [] });
-    await kirim(chatId, '🗑️ Data direset.', {
-      reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]] }
+    await kirim(chatId, 'ðŸ—‘ï¸ Data direset.', {
+      reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' }]] }
     });
     return;
   }
   
-  // ════════════ PILIH TOKO ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• PILIH TOKO â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data.startsWith('toko:')) {
     const [, menuType, tokoKode] = data.split(':');
@@ -9171,7 +9180,7 @@ bot.on('callback_query', async (query) => {
     if (!toko) return;
     
     if (menuType === '4') {
-      kirim(chatId, `🔍 Ketik nama barang untuk dicari di *${toko.nama}*`);
+      kirim(chatId, `ðŸ” Ketik nama barang untuk dicari di *${toko.nama}*`);
       return;
     }
     
@@ -9189,36 +9198,36 @@ bot.on('callback_query', async (query) => {
       });
       
       if (totalUsersAktif > 0 || totalRacks > 0) {
-        let m = `📦 *STOCK OPNAME*\n🏦 ${toko.nama}\n📅 ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n`;
-        m += `⚠️ *SUDAH ADA SO BERJALAN HARI INI!*\n\n`;
+        let m = `ðŸ“¦ *STOCK OPNAME*\nðŸ¦ ${toko.nama}\nðŸ“… ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n`;
+        m += `âš ï¸ *SUDAH ADA SO BERJALAN HARI INI!*\n\n`;
         
         if (totalUsersAktif > 0) {
-          m += `👥 *PETUGAS AKTIF (${totalUsersAktif}):*\n${GARIS_TIPIS}\n`;
+          m += `ðŸ‘¥ *PETUGAS AKTIF (${totalUsersAktif}):*\n${GARIS_TIPIS}\n`;
           Object.entries(usersAktif).forEach(([uid, info], i) => {
             const lastMin = Math.floor((Date.now() - info.lastActive) / 60000);
-            const st = lastMin < 5 ? '🟢' : lastMin < 15 ? '🟡' : '🔴';
-            m += `${i+1}. ${st} *${info.nama}* di *${info.rakAktif}*\n   ⏰ Mulai: ${info.jamMulai} | ${lastMin < 1 ? 'baru saja' : lastMin + 'm lalu'}\n\n`;
+            const st = lastMin < 5 ? 'ðŸŸ¢' : lastMin < 15 ? 'ðŸŸ¡' : 'ðŸ”´';
+            m += `${i+1}. ${st} *${info.nama}* di *${info.rakAktif}*\n   â° Mulai: ${info.jamMulai} | ${lastMin < 1 ? 'baru saja' : lastMin + 'm lalu'}\n\n`;
           });
         }
         
         if (totalRacks > 0) {
-          m += `📦 *RAK YANG SUDAH ADA (${totalRacks}):*\n${GARIS_TIPIS}\n`;
+          m += `ðŸ“¦ *RAK YANG SUDAH ADA (${totalRacks}):*\n${GARIS_TIPIS}\n`;
           Object.entries(allRacks).forEach(([rakName, rackData], i) => {
             const itemCount = Object.keys(rackData.items || {}).length;
             const pegangRak = Object.values(usersAktif).find(u => u.rakAktif === rakName);
-            m += `${i+1}. *${rakName}* (${itemCount} barang) ${pegangRak ? `🟢 ${pegangRak.nama}` : '⚪ Kosong'}\n`;
+            m += `${i+1}. *${rakName}* (${itemCount} barang) ${pegangRak ? `ðŸŸ¢ ${pegangRak.nama}` : 'âšª Kosong'}\n`;
           });
           m += '\n';
         }
         
-        m += `${GARIS_TEBAL}\n💬 *Apa yang ingin Anda lakukan?*`;
+        m += `${GARIS_TEBAL}\nðŸ’¬ *Apa yang ingin Anda lakukan?*`;
         
         const buttons = [
-          [{ text: '➕ Bergabung (Daftar Petugas Baru)', callback_data: `so:join` }],
+          [{ text: 'âž• Bergabung (Daftar Petugas Baru)', callback_data: `so:join` }],
         ];
-        if (totalRacks > 0) buttons.push([{ text: '✏️ Edit Rak Yang Sudah Ada', callback_data: 'so:editrakawal' }]);
-        buttons.push([{ text: '🆕 Mulai SO BARU (Reset Data)', callback_data: 'so:reset_confirm' }]);
-        buttons.push([{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]);
+        if (totalRacks > 0) buttons.push([{ text: 'âœï¸ Edit Rak Yang Sudah Ada', callback_data: 'so:editrakawal' }]);
+        buttons.push([{ text: 'ðŸ†• Mulai SO BARU (Reset Data)', callback_data: 'so:reset_confirm' }]);
+        buttons.push([{ text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' }]);
         
         try { await bot.editMessageText(m, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } }); }
         catch(e) { await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons } }); }
@@ -9227,9 +9236,9 @@ bot.on('callback_query', async (query) => {
       
       updateSesi(userId, { soSetupStep: 'petugas' });
       try {
-        await bot.editMessageText(`📦 *STOCK OPNAME*\n🏦 ${toko.nama}\n📅 ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n✨ *SO BARU*\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\nJika lebih dari 1, pisah koma.\n\n*Contoh:* \`Budi\` atau \`Budi, Sari\`\n\nKetik *batal* untuk keluar.`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
+        await bot.editMessageText(`ðŸ“¦ *STOCK OPNAME*\nðŸ¦ ${toko.nama}\nðŸ“… ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\nâœ¨ *SO BARU*\n\nðŸ‘¥ *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\nJika lebih dari 1, pisah koma.\n\n*Contoh:* \`Budi\` atau \`Budi, Sari\`\n\nKetik *batal* untuk keluar.`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
       } catch(e) {
-        await kirim(chatId, `📦 *SO - ${toko.nama}*\n\n👥 *STEP 1/3: Nama Petugas*\nKetik nama petugas.`);
+        await kirim(chatId, `ðŸ“¦ *SO - ${toko.nama}*\n\nðŸ‘¥ *STEP 1/3: Nama Petugas*\nKetik nama petugas.`);
       }
       return;
     }
@@ -9239,9 +9248,9 @@ bot.on('callback_query', async (query) => {
       const baData = { nomorBA, penambahanKasir: [], penyesuaianTambah: [], penyesuaianKurang: [], salahKetikRetur: [], barangMasuk: [], dicoretGudang: [] };
       updateSesi(userId, { mode: 'beritaacara', tokoKode: toko.kode, baData, baSection: null });
       try {
-        await bot.editMessageText(`📋 *BERITA ACARA*\n🏦 ${toko.nama}\n📅 ${getTanggalIndonesia()}\n🆔 *${nomorBA}*\n${GARIS_TEBAL}`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbBaSection(baData) });
+        await bot.editMessageText(`ðŸ“‹ *BERITA ACARA*\nðŸ¦ ${toko.nama}\nðŸ“… ${getTanggalIndonesia()}\nðŸ†” *${nomorBA}*\n${GARIS_TEBAL}`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbBaSection(baData) });
       } catch(e) {
-        await kirim(chatId, `📋 *BA*\n🏦 ${toko.nama}\n🆔 ${nomorBA}`, { reply_markup: kbBaSection(baData) });
+        await kirim(chatId, `ðŸ“‹ *BA*\nðŸ¦ ${toko.nama}\nðŸ†” ${nomorBA}`, { reply_markup: kbBaSection(baData) });
       }
       return;
     }
@@ -9250,20 +9259,20 @@ bot.on('callback_query', async (query) => {
       updateSesi(userId, { mode: 'homebase', homebaseToko: toko.kode, homebaseItems: [] });
       try {
         await bot.editMessageText(
-          `🏠 *INPUT BARANG HOMEBASE*\n🏦 ${toko.nama}\n📅 ${getTanggalIndonesia()}\n${GARIS_TEBAL}\n\n📸 *Kirim FOTO nota supplier*\n\nBot akan:\n1. Scan nama, HPP, Harga B & D\n2. Cocokkan dengan database\n3. Bandingkan harga\n4. Export Excel\n\nKetik *batal* untuk keluar.`,
+          `ðŸ  *INPUT BARANG HOMEBASE*\nðŸ¦ ${toko.nama}\nðŸ“… ${getTanggalIndonesia()}\n${GARIS_TEBAL}\n\nðŸ“¸ *Kirim FOTO nota supplier*\n\nBot akan:\n1. Scan nama, HPP, Harga B & D\n2. Cocokkan dengan database\n3. Bandingkan harga\n4. Export Excel\n\nKetik *batal* untuk keluar.`,
           { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' }
         );
       } catch(e) {
-        await kirim(chatId, `🏠 *HOMEBASE - ${toko.nama}*\n\n📸 Kirim foto nota.`);
+        await kirim(chatId, `ðŸ  *HOMEBASE - ${toko.nama}*\n\nðŸ“¸ Kirim foto nota.`);
       }
       return;
     }
     
-    try { await bot.editMessageText(`🏦 *${toko.nama}*\n📅 Pilih hari:`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbPilihHari(menuType, tokoKode) }); } catch(e) {}
+    try { await bot.editMessageText(`ðŸ¦ *${toko.nama}*\nðŸ“… Pilih hari:`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbPilihHari(menuType, tokoKode) }); } catch(e) {}
     return;
   }
   
-  // ════════════ PILIH HARI ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• PILIH HARI â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data.startsWith('hari:')) {
     const [, menuType, tokoKode, kemarinFlag] = data.split(':');
@@ -9275,7 +9284,7 @@ bot.on('callback_query', async (query) => {
       const steps = SCAN_STEPS[tokoKode];
       const si = steps[0];
       try {
-        await bot.editMessageText(`📸 *SCAN LAPORAN*\n🏦 ${toko.nama}\n📅 ${getTanggal(kemarin)}\n${GARIS_TEBAL}\n\n📊 Step 1/${steps.length}\n💵 *${si.label}*\n\n📸 Kirim FOTO atau ketik angka manual`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
+        await bot.editMessageText(`ðŸ“¸ *SCAN LAPORAN*\nðŸ¦ ${toko.nama}\nðŸ“… ${getTanggal(kemarin)}\n${GARIS_TEBAL}\n\nðŸ“Š Step 1/${steps.length}\nðŸ’µ *${si.label}*\n\nðŸ“¸ Kirim FOTO atau ketik angka manual`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
       } catch(e) {}
       return;
     }
@@ -9283,12 +9292,12 @@ bot.on('callback_query', async (query) => {
     if (menuType === '2') {
       updateSesi(userId, { menu: 2, toko: tokoKode, kemarin, hargaPilihMode: true, hargaData: { baru: [], naik: [], turun: [] } });
       try {
-        await bot.editMessageText(`📸 *WIZARD LAPORAN HARGA*\n🏦 ${toko?.nama || NAMA_TOKO[tokoKode]}\n📅 ${getTanggal(kemarin)}\n${GARIS_TEBAL}\n\n📋 *Pilih mode:*`, {
+        await bot.editMessageText(`ðŸ“¸ *WIZARD LAPORAN HARGA*\nðŸ¦ ${toko?.nama || NAMA_TOKO[tokoKode]}\nðŸ“… ${getTanggal(kemarin)}\n${GARIS_TEBAL}\n\nðŸ“‹ *Pilih mode:*`, {
           chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
           reply_markup: { inline_keyboard: [
-            [{ text: '1️⃣ Gabung (1 foto semua)', callback_data: 'hargamode:gabung' }],
-            [{ text: '2️⃣ Per Kategori (3 step)', callback_data: 'hargamode:perkat' }],
-            [{ text: '🔙 Batal', callback_data: 'menu:main' }],
+            [{ text: '1ï¸âƒ£ Gabung (1 foto semua)', callback_data: 'hargamode:gabung' }],
+            [{ text: '2ï¸âƒ£ Per Kategori (3 step)', callback_data: 'hargamode:perkat' }],
+            [{ text: 'ðŸ”™ Batal', callback_data: 'menu:main' }],
           ]}
         });
       } catch(e) {}
@@ -9298,17 +9307,17 @@ bot.on('callback_query', async (query) => {
     if (menuType === '3') {
       updateSesi(userId, { menu: 3, kemarin });
       try {
-        await bot.editMessageText(`🛒 *Laporan Marketplace*\n📅 ${getTanggal(kemarin)}\n\nKirim foto atau ketik format:\n\`\`\`\noesapa 0\ntdm 0\ncentral 21061000\n\`\`\``, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
+        await bot.editMessageText(`ðŸ›’ *Laporan Marketplace*\nðŸ“… ${getTanggal(kemarin)}\n\nKirim foto atau ketik format:\n\`\`\`\noesapa 0\ntdm 0\ncentral 21061000\n\`\`\``, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
       } catch(e) {}
       return;
     }
   }
   
-  // ════════════ HARGA MODE ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• HARGA MODE â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data === 'hargamode:gabung') {
     updateSesi(userId, { hargaPilihMode: false, hargaActive: true, hargaMode: 'GABUNG' });
-    kirim(chatId, '✅ *Mode: GABUNG*\n\n📸 Kirim 1 foto berisi semua kategori.', { reply_markup: { inline_keyboard: [[{ text: '🔙 Batal', callback_data: 'menu:main' }]] } });
+    kirim(chatId, 'âœ… *Mode: GABUNG*\n\nðŸ“¸ Kirim 1 foto berisi semua kategori.', { reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Batal', callback_data: 'menu:main' }]] } });
     return;
   }
   
@@ -9327,16 +9336,16 @@ bot.on('callback_query', async (query) => {
   
   if (data === 'harga:samekat') {
     const session = getSesi(userId);
-    if (!session.hargaActive) return kirim(chatId, '⚠️ Session expired.', { reply_markup: kbMainMenu(userId) });
+    if (!session.hargaActive) return kirim(chatId, 'âš ï¸ Session expired.', { reply_markup: kbMainMenu(userId) });
     const KATEGORI = ['baru', 'naik', 'turun'];
     const NAMA_KAT = { baru: 'BARANG BARU', naik: 'BARANG NAIK HARGA', turun: 'BARANG TURUN HARGA' };
     const currentKat = KATEGORI[session.hargaStepIdx || 0];
     const namaToko = NAMA_TOKO[session.toko] || 'Toko';
-    await kirim(chatId, `📸 *Kirim foto lagi:*\n🏪 ${namaToko}\n📋 ${NAMA_KAT[currentKat]}`, { reply_markup: { inline_keyboard: [[{ text: '⏭️ Lanjut Kategori', callback_data: 'harga:lanjut' }, { text: '✅ Selesai', callback_data: 'harga:selesai' }]] } });
+    await kirim(chatId, `ðŸ“¸ *Kirim foto lagi:*\nðŸª ${namaToko}\nðŸ“‹ ${NAMA_KAT[currentKat]}`, { reply_markup: { inline_keyboard: [[{ text: 'â­ï¸ Lanjut Kategori', callback_data: 'harga:lanjut' }, { text: 'âœ… Selesai', callback_data: 'harga:selesai' }]] } });
     return;
   }
   
-  // ════════════ DETAIL BARANG ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• DETAIL BARANG â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data.startsWith('detail:')) {
     const [, kode, tokoKode] = data.split(':');
@@ -9344,10 +9353,10 @@ bot.on('callback_query', async (query) => {
     if (!item) return;
     const buttons = [];
     TOKO_LIST.forEach(t => { if (t.kode !== tokoKode) buttons.push([{ text: `${t.icon} Lihat di ${t.nama}`, callback_data: `detail:${kode}:${t.kode}` }]); });
-    buttons.push([{ text: '🌐 Semua Toko', callback_data: `detail:${kode}:all` }]);
+    buttons.push([{ text: 'ðŸŒ Semua Toko', callback_data: `detail:${kode}:all` }]);
     const session = getSesi(userId);
-    if (session.lastSearch) buttons.push([{ text: '🔙 Kembali ke Hasil', callback_data: `caripage:${session.lastSearch.currentPage || 0}` }]);
-    buttons.push([{ text: '📋 Menu Utama', callback_data: 'menu:main' }]);
+    if (session.lastSearch) buttons.push([{ text: 'ðŸ”™ Kembali ke Hasil', callback_data: `caripage:${session.lastSearch.currentPage || 0}` }]);
+    buttons.push([{ text: 'ðŸ“‹ Menu Utama', callback_data: 'menu:main' }]);
     try {
       await bot.editMessageText(buildDetailBarang(item, tokoKode, 'semua'), { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } });
     } catch(e) {
@@ -9356,7 +9365,7 @@ bot.on('callback_query', async (query) => {
     return;
   }
   
-  // ════════════ STOCK OPNAME: BASIC ACTIONS ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• STOCK OPNAME: BASIC ACTIONS â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data.startsWith('so:pick:')) {
     const kode = data.replace('so:pick:', '');
@@ -9374,7 +9383,7 @@ bot.on('callback_query', async (query) => {
   if (data === 'so:pindahrak') { const session = getSesi(userId); await handleStockOpnameMode(chatId, userId, 'pindahrak', session); return; }
   if (data === 'so:editrak') { const session = getSesi(userId); await handleStockOpnameMode(chatId, userId, 'editrak', session); return; }
   
-  // ════════════ STOCK OPNAME: TAMBAH BARANG BARU ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• STOCK OPNAME: TAMBAH BARANG BARU â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data === 'so:tambahbaru') {
     const session = getSesi(userId);
@@ -9386,13 +9395,13 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     const namaBarang = session.soBaruNama;
     if (!namaBarang) {
-      await kirim(chatId, '⚠️ Data hilang, coba lagi.', { reply_markup: kbSOAktif() });
+      await kirim(chatId, 'âš ï¸ Data hilang, coba lagi.', { reply_markup: kbSOAktif() });
       return;
     }
     updateSesi(userId, { soTambahBaruStep: 'qty' });
     await kirim(chatId,
-      `✅ *Nama: ${escapeMd(namaBarang)}*\n${GARIS_TIPIS}\n\n` +
-      `📝 *STEP 2/3: Jumlah Barang*\n\nKetik:\n• \`TOKO 15\`\n• \`GUDANG 20\`\n\n📍 Rak: ${session.soInfo?.rakAktif || '-'}`
+      `âœ… *Nama: ${escapeMd(namaBarang)}*\n${GARIS_TIPIS}\n\n` +
+      `ðŸ“ *STEP 2/3: Jumlah Barang*\n\nKetik:\nâ€¢ \`TOKO 15\`\nâ€¢ \`GUDANG 20\`\n\nðŸ“ Rak: ${session.soInfo?.rakAktif || '-'}`
     );
     return;
   }
@@ -9402,22 +9411,22 @@ bot.on('callback_query', async (query) => {
     updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null, soBaruKode: null });
     const totalBaru = getBarangBaruSO(session.tokoKode).length;
     await kirim(chatId,
-      `✅ *Barang baru ditambahkan (tanpa foto)*\n\n📦 Total barang baru: *${totalBaru}*\n\n💬 Lanjutkan input barang:`,
+      `âœ… *Barang baru ditambahkan (tanpa foto)*\n\nðŸ“¦ Total barang baru: *${totalBaru}*\n\nðŸ’¬ Lanjutkan input barang:`,
       { reply_markup: kbSOAktif() }
     );
     return;
   }
   
-  // ════════════ STOCK OPNAME: JOIN / RESET ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• STOCK OPNAME: JOIN / RESET â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data === 'so:join') {
     const session = getSesi(userId);
     if (!session.tokoKode) return;
     updateSesi(userId, { soSetupStep: 'petugas' });
     const usersAktif = getAllUsersAktif(session.tokoKode);
-    let m = `➕ *BERGABUNG KE SO*\n🏦 ${NAMA_TOKO[session.tokoKode]}\n${GARIS_TEBAL}\n\n👥 *Petugas sudah ada:*\n`;
+    let m = `âž• *BERGABUNG KE SO*\nðŸ¦ ${NAMA_TOKO[session.tokoKode]}\n${GARIS_TEBAL}\n\nðŸ‘¥ *Petugas sudah ada:*\n`;
     Object.entries(usersAktif).forEach(([, info], i) => { m += `   ${i+1}. ${info.nama} (di ${info.rakAktif})\n`; });
-    m += `\n${GARIS_TIPIS}\n\n👤 *Siapa nama Anda?*\n\n*Contoh:* \`Joko\` atau \`Joko, Andi\`\n\nKetik *batal* untuk keluar.`;
+    m += `\n${GARIS_TIPIS}\n\nðŸ‘¤ *Siapa nama Anda?*\n\n*Contoh:* \`Joko\` atau \`Joko, Andi\`\n\nKetik *batal* untuk keluar.`;
     await kirim(chatId, m);
     return;
   }
@@ -9427,26 +9436,26 @@ bot.on('callback_query', async (query) => {
     if (!session.tokoKode) return;
     const allRacks = getAllRacks(session.tokoKode);
     const usersAktif = getAllUsersAktif(session.tokoKode);
-    if (Object.keys(allRacks).length === 0) return kirim(chatId, '⚠️ Belum ada rak.', { reply_markup: kbMainMenu(userId) });
+    if (Object.keys(allRacks).length === 0) return kirim(chatId, 'âš ï¸ Belum ada rak.', { reply_markup: kbMainMenu(userId) });
     const namaPetugas = getNama(userId) || 'User';
     updateSesi(userId, { mode: 'stockopname', soInfo: { petugas: [namaPetugas], rakHistory: [], rakAktif: 'EDIT_MODE', jamMulaiAktif: getJamSekarang() }, soData: { fisik: {}, gudang: {} }, soSetupStep: null, pendingBarangKode: null });
-    let m = `✏️ *EDIT RAK*\n🏦 ${NAMA_TOKO[session.tokoKode]}\n${GARIS_TEBAL}\n\nPilih rak:\n\n`;
+    let m = `âœï¸ *EDIT RAK*\nðŸ¦ ${NAMA_TOKO[session.tokoKode]}\n${GARIS_TEBAL}\n\nPilih rak:\n\n`;
     const buttons = [];
     Object.entries(allRacks).forEach(([rakName, rackData]) => {
       const itemCount = Object.keys(rackData.items || {}).length;
       const pegangRak = Object.values(usersAktif).find(u => u.rakAktif === rakName);
-      const statusIcon = pegangRak ? '🟢' : '⚪';
-      m += `${statusIcon} *${rakName}* — ${itemCount} barang ${pegangRak ? `(${pegangRak.nama})` : ''}\n`;
+      const statusIcon = pegangRak ? 'ðŸŸ¢' : 'âšª';
+      m += `${statusIcon} *${rakName}* â€” ${itemCount} barang ${pegangRak ? `(${pegangRak.nama})` : ''}\n`;
       if (itemCount > 20) {
         buttons.push([
-          { text: `📋 ${rakName} (Detail)`, callback_data: `so:editrak:${rakName}:0` },
-          { text: `⚡ Quick`, callback_data: `so:quickeditrak:${rakName}:0` },
+          { text: `ðŸ“‹ ${rakName} (Detail)`, callback_data: `so:editrak:${rakName}:0` },
+          { text: `âš¡ Quick`, callback_data: `so:quickeditrak:${rakName}:0` },
         ]);
       } else {
-        buttons.push([{ text: `✏️ ${rakName} (${itemCount})`, callback_data: `so:editrak:${rakName}:0` }]);
+        buttons.push([{ text: `âœï¸ ${rakName} (${itemCount})`, callback_data: `so:editrak:${rakName}:0` }]);
       }
     });
-    buttons.push([{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]);
+    buttons.push([{ text: 'ðŸ”™ Menu Utama', callback_data: 'menu:main' }]);
     await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons } });
     return;
   }
@@ -9457,7 +9466,7 @@ bot.on('callback_query', async (query) => {
     const allRacks = getAllRacks(session.tokoKode);
     let totalItems = 0;
     Object.values(allRacks).forEach(r => { totalItems += Object.keys(r.items || {}).length; });
-    await kirim(chatId, `⚠️ *PERINGATAN: RESET SO!*\n${GARIS_TEBAL}\n\n❌ *Data akan DIBACKUP & DIHAPUS:*\n   📦 ${Object.keys(allRacks).length} rak\n   📊 ${totalItems} jenis barang\n\n💡 Data lama disimpan ke history.\n\n*Yakin mau reset?*`, { reply_markup: { inline_keyboard: [[{ text: '🚨 YA, RESET', callback_data: 'so:reset_yes' }], [{ text: '❌ Batal', callback_data: 'menu:main' }]] } });
+    await kirim(chatId, `âš ï¸ *PERINGATAN: RESET SO!*\n${GARIS_TEBAL}\n\nâŒ *Data akan DIBACKUP & DIHAPUS:*\n   ðŸ“¦ ${Object.keys(allRacks).length} rak\n   ðŸ“Š ${totalItems} jenis barang\n\nðŸ’¡ Data lama disimpan ke history.\n\n*Yakin mau reset?*`, { reply_markup: { inline_keyboard: [[{ text: 'ðŸš¨ YA, RESET', callback_data: 'so:reset_yes' }], [{ text: 'âŒ Batal', callback_data: 'menu:main' }]] } });
     return;
   }
   
@@ -9468,11 +9477,11 @@ bot.on('callback_query', async (query) => {
     SO_SHARED[session.tokoKode] = { tanggal: getTanggalSlash(false), sesiAktif: false, racks: {}, usersAktif: {}, barangBaru: [] };
     saveJSON(CONFIG.paths.soShared, SO_SHARED);
     updateSesi(userId, { soSetupStep: 'petugas' });
-    await kirim(chatId, `✅ *Data lama di-backup & direset!*\n${GARIS_TEBAL}\n\n🆕 *SO BARU - ${NAMA_TOKO[session.tokoKode]}*\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\n*Contoh:* \`Budi\` atau \`Budi, Sari\``);
+    await kirim(chatId, `âœ… *Data lama di-backup & direset!*\n${GARIS_TEBAL}\n\nðŸ†• *SO BARU - ${NAMA_TOKO[session.tokoKode]}*\n\nðŸ‘¥ *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\n*Contoh:* \`Budi\` atau \`Budi, Sari\``);
     return;
   }
   
-  // ════════════ STOCK OPNAME: PILIH RAK / RAK BARU ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• STOCK OPNAME: PILIH RAK / RAK BARU â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data.startsWith('so:pilihrak:')) {
     const rakName = data.replace('so:pilihrak:', '');
@@ -9480,13 +9489,13 @@ bot.on('callback_query', async (query) => {
     if (session.soSetupStep === 'rak') {
       session.soInfo.rakAktif = rakName;
       updateSesi(userId, { soInfo: session.soInfo, soSetupStep: 'jam' });
-      await kirim(chatId, `✅ *Rak dipilih:* ${escapeMd(rakName)}\n${GARIS_TIPIS}\n\n⏰ *STEP 3/3: Jam Mulai*\nFormat: \`HH:MM\` atau *sekarang* (${getJamSekarang()})`);
+      await kirim(chatId, `âœ… *Rak dipilih:* ${escapeMd(rakName)}\n${GARIS_TIPIS}\n\nâ° *STEP 3/3: Jam Mulai*\nFormat: \`HH:MM\` atau *sekarang* (${getJamSekarang()})`);
     } else {
       session.soInfo.rakAktif = rakName;
       updateSesi(userId, { soInfo: session.soInfo, soSetupStep: null });
       if (typeof updateUserRakSO === 'function') updateUserRakSO(session.tokoKode, userId, rakName);
       const existingItems = Object.keys(getBarangDiRak(session.tokoKode, rakName)).length;
-      await kirim(chatId, `✅ *Pindah ke: ${escapeMd(rakName)}*\n${existingItems > 0 ? `📊 ${existingItems} jenis barang sudah ada.\n` : '🆕 Rak baru.\n'}\n📝 Lanjutkan input barang...`, { reply_markup: kbSOAktif() });
+      await kirim(chatId, `âœ… *Pindah ke: ${escapeMd(rakName)}*\n${existingItems > 0 ? `ðŸ“Š ${existingItems} jenis barang sudah ada.\n` : 'ðŸ†• Rak baru.\n'}\nðŸ“ Lanjutkan input barang...`, { reply_markup: kbSOAktif() });
     }
     return;
   }
@@ -9495,11 +9504,11 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     const step = session.soSetupStep === 'rak' ? 'rak_input' : 'rak_input_pindah';
     updateSesi(userId, { soSetupStep: step });
-    await kirim(chatId, `📦 *Input Nama Rak Baru*\n${GARIS_TIPIS}\n\n💡 *2 cara:*\n   1. 📸 Kirim FOTO barcode rak\n   2. Ketik manual\n\n*Contoh:* \`Rak C3\``);
+    await kirim(chatId, `ðŸ“¦ *Input Nama Rak Baru*\n${GARIS_TIPIS}\n\nðŸ’¡ *2 cara:*\n   1. ðŸ“¸ Kirim FOTO barcode rak\n   2. Ketik manual\n\n*Contoh:* \`Rak C3\``);
     return;
   }
   
-  // ════════════ STOCK OPNAME: EDIT RAK DENGAN PAGINATION ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• STOCK OPNAME: EDIT RAK DENGAN PAGINATION â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data.startsWith('so:editrak:')) {
     const parts = data.replace('so:editrak:', '').split(':');
@@ -9511,7 +9520,7 @@ bot.on('callback_query', async (query) => {
     const itemList = Object.entries(items);
     
     if (itemList.length === 0) {
-      await kirim(chatId, `📭 Rak *${rakName}* kosong.`, { reply_markup: kbSOAktif() });
+      await kirim(chatId, `ðŸ“­ Rak *${rakName}* kosong.`, { reply_markup: kbSOAktif() });
       return;
     }
     
@@ -9536,45 +9545,45 @@ bot.on('callback_query', async (query) => {
     const endIdx = Math.min(startIdx + ITEMS_PER_PAGE, sortedItems.length);
     const pageItems = sortedItems.slice(startIdx, endIdx);
     
-    let m = `✏️ *EDIT RAK: ${rakName}*\n${GARIS_TEBAL}\n📦 Total: ${sortedItems.length} jenis barang\n`;
-    if (totalPages > 1) m += `📄 Halaman ${currentPage + 1}/${totalPages} (item ${startIdx + 1}-${endIdx})\n`;
+    let m = `âœï¸ *EDIT RAK: ${rakName}*\n${GARIS_TEBAL}\nðŸ“¦ Total: ${sortedItems.length} jenis barang\n`;
+    if (totalPages > 1) m += `ðŸ“„ Halaman ${currentPage + 1}/${totalPages} (item ${startIdx + 1}-${endIdx})\n`;
     m += `\n`;
     
     const buttons = [];
     pageItems.forEach((si, i) => {
       const globalIdx = startIdx + i + 1;
-      const badge = si.isBaru ? ' 🆕' : '';
-      m += `*${globalIdx}. ${escapeMd(si.nama)}*${badge}\n   🔖 \`${si.kode}\` | 📊 Total: ${si.totalQty} | ${si.itemData.entries.length} entri\n`;
+      const badge = si.isBaru ? ' ðŸ†•' : '';
+      m += `*${globalIdx}. ${escapeMd(si.nama)}*${badge}\n   ðŸ”– \`${si.kode}\` | ðŸ“Š Total: ${si.totalQty} | ${si.itemData.entries.length} entri\n`;
       si.itemData.entries.forEach(e => {
-        const jenisIcon = e.jenis === 'fisik' ? '🏪' : '🏭';
+        const jenisIcon = e.jenis === 'fisik' ? 'ðŸª' : 'ðŸ­';
         m += `      ${e.namaPetugas}: ${jenisIcon} ${e.jenis} *${e.qty}*\n`;
       });
       m += '\n';
-      buttons.push([{ text: `✏️ ${globalIdx}. ${si.nama} (${si.totalQty})${badge}`, callback_data: `so:edititem:${rakName}:${si.kode}` }]);
+      buttons.push([{ text: `âœï¸ ${globalIdx}. ${si.nama} (${si.totalQty})${badge}`, callback_data: `so:edititem:${rakName}:${si.kode}` }]);
     });
     
     if (totalPages > 1) {
       const navButtons = [];
-      if (currentPage > 0) navButtons.push({ text: '⬅️ Sebelumnya', callback_data: `so:editrak:${rakName}:${currentPage - 1}` });
-      navButtons.push({ text: `📄 ${currentPage + 1}/${totalPages}`, callback_data: `so:pageinfo:${rakName}:${currentPage}` });
-      if (currentPage < totalPages - 1) navButtons.push({ text: 'Berikutnya ➡️', callback_data: `so:editrak:${rakName}:${currentPage + 1}` });
+      if (currentPage > 0) navButtons.push({ text: 'â¬…ï¸ Sebelumnya', callback_data: `so:editrak:${rakName}:${currentPage - 1}` });
+      navButtons.push({ text: `ðŸ“„ ${currentPage + 1}/${totalPages}`, callback_data: `so:pageinfo:${rakName}:${currentPage}` });
+      if (currentPage < totalPages - 1) navButtons.push({ text: 'Berikutnya âž¡ï¸', callback_data: `so:editrak:${rakName}:${currentPage + 1}` });
       buttons.push(navButtons);
       if (totalPages > 3) {
         const quickJump = [];
-        if (currentPage > 0) quickJump.push({ text: '⏮️ Awal', callback_data: `so:editrak:${rakName}:0` });
-        if (currentPage < totalPages - 1) quickJump.push({ text: 'Akhir ⏭️', callback_data: `so:editrak:${rakName}:${totalPages - 1}` });
+        if (currentPage > 0) quickJump.push({ text: 'â®ï¸ Awal', callback_data: `so:editrak:${rakName}:0` });
+        if (currentPage < totalPages - 1) quickJump.push({ text: 'Akhir â­ï¸', callback_data: `so:editrak:${rakName}:${totalPages - 1}` });
         if (quickJump.length > 0) buttons.push(quickJump);
       }
     }
     
-    buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
+    buttons.push([{ text: 'ðŸ”™ Kembali', callback_data: 'so:kembali' }]);
     
     await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons } });
     return;
   }
   
   if (data.startsWith('so:pageinfo:')) {
-    try { await bot.answerCallbackQuery(query.id, { text: '📄 Klik ⬅️ / ➡️ untuk navigasi', show_alert: false }); } catch(e) {}
+    try { await bot.answerCallbackQuery(query.id, { text: 'ðŸ“„ Klik â¬…ï¸ / âž¡ï¸ untuk navigasi', show_alert: false }); } catch(e) {}
     return;
   }
   
@@ -9585,7 +9594,7 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     const items = getBarangDiRak(session.tokoKode, rakName);
     const itemList = Object.entries(items);
-    if (itemList.length === 0) return kirim(chatId, `📭 Rak ${rakName} kosong.`, { reply_markup: kbSOAktif() });
+    if (itemList.length === 0) return kirim(chatId, `ðŸ“­ Rak ${rakName} kosong.`, { reply_markup: kbSOAktif() });
     
     const barangBaruList = getBarangBaruSO(session.tokoKode);
     
@@ -9608,7 +9617,7 @@ bot.on('callback_query', async (query) => {
     const endIdx = Math.min(startIdx + ITEMS_PER_PAGE, sortedItems.length);
     const pageItems = sortedItems.slice(startIdx, endIdx);
     
-    const m = `⚡ *QUICK EDIT: ${rakName}*\n${GARIS_TEBAL}\n📦 ${sortedItems.length} item ${totalPages > 1 ? `| Hal ${currentPage + 1}/${totalPages}` : ''}`;
+    const m = `âš¡ *QUICK EDIT: ${rakName}*\n${GARIS_TEBAL}\nðŸ“¦ ${sortedItems.length} item ${totalPages > 1 ? `| Hal ${currentPage + 1}/${totalPages}` : ''}`;
     const buttons = [];
     pageItems.forEach((si, i) => {
       const globalIdx = startIdx + i + 1;
@@ -9616,18 +9625,18 @@ bot.on('callback_query', async (query) => {
     });
     if (totalPages > 1) {
       const nav = [];
-      if (currentPage > 0) nav.push({ text: '⬅️', callback_data: `so:quickeditrak:${rakName}:${currentPage - 1}` });
+      if (currentPage > 0) nav.push({ text: 'â¬…ï¸', callback_data: `so:quickeditrak:${rakName}:${currentPage - 1}` });
       nav.push({ text: `${currentPage + 1}/${totalPages}`, callback_data: `so:pageinfo:${rakName}:${currentPage}` });
-      if (currentPage < totalPages - 1) nav.push({ text: '➡️', callback_data: `so:quickeditrak:${rakName}:${currentPage + 1}` });
+      if (currentPage < totalPages - 1) nav.push({ text: 'âž¡ï¸', callback_data: `so:quickeditrak:${rakName}:${currentPage + 1}` });
       buttons.push(nav);
     }
-    buttons.push([{ text: '📋 View Detail', callback_data: `so:editrak:${rakName}:0` }]);
-    buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
+    buttons.push([{ text: 'ðŸ“‹ View Detail', callback_data: `so:editrak:${rakName}:0` }]);
+    buttons.push([{ text: 'ðŸ”™ Kembali', callback_data: 'so:kembali' }]);
     await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons } });
     return;
   }
   
-  // ════════════ STOCK OPNAME: EDIT ITEM & ENTRY ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• STOCK OPNAME: EDIT ITEM & ENTRY â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data.startsWith('so:edititem:')) {
     const parts = data.replace('so:edititem:', '').split(':');
@@ -9636,7 +9645,7 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     const items = getBarangDiRak(session.tokoKode, rakName);
     const itemData = items[kode];
-    if (!itemData || !itemData.entries.length) return kirim(chatId, '⚠️ Item tidak ditemukan.', { reply_markup: kbSOAktif() });
+    if (!itemData || !itemData.entries.length) return kirim(chatId, 'âš ï¸ Item tidak ditemukan.', { reply_markup: kbSOAktif() });
     
     const item = DATA_BARANG.find(d => d.kode === kode);
     let nama = item?.nama || kode;
@@ -9647,14 +9656,14 @@ bot.on('callback_query', async (query) => {
     let totalQty = 0;
     itemData.entries.forEach(e => totalQty += e.qty);
     
-    let m = `✏️ *EDIT ITEM*\n${GARIS_TEBAL}\n📦 ${escapeMd(nama)}\n🔖 \`${kode}\`${kode.startsWith('NEW_') ? ' 🆕' : ''}\n📍 Rak: ${rakName}\n📊 Total: ${totalQty}\n\n`;
+    let m = `âœï¸ *EDIT ITEM*\n${GARIS_TEBAL}\nðŸ“¦ ${escapeMd(nama)}\nðŸ”– \`${kode}\`${kode.startsWith('NEW_') ? ' ðŸ†•' : ''}\nðŸ“ Rak: ${rakName}\nðŸ“Š Total: ${totalQty}\n\n`;
     const buttons = [];
     itemData.entries.forEach((entry, i) => {
-      m += `${i+1}. *${entry.namaPetugas}* | ${entry.jenis} | Qty: *${entry.qty}*\n   ⏰ ${entry.jamInput}\n\n`;
-      buttons.push([{ text: `✏️ Edit #${i+1} (${entry.qty})`, callback_data: `so:editentry:${rakName}:${kode}:${i}` }]);
+      m += `${i+1}. *${entry.namaPetugas}* | ${entry.jenis} | Qty: *${entry.qty}*\n   â° ${entry.jamInput}\n\n`;
+      buttons.push([{ text: `âœï¸ Edit #${i+1} (${entry.qty})`, callback_data: `so:editentry:${rakName}:${kode}:${i}` }]);
     });
-    buttons.push([{ text: '🗑️ Hapus Semua', callback_data: `so:hapusitem:${rakName}:${kode}` }]);
-    buttons.push([{ text: '🔙 Kembali ke Rak', callback_data: `so:editrak:${rakName}:0` }]);
+    buttons.push([{ text: 'ðŸ—‘ï¸ Hapus Semua', callback_data: `so:hapusitem:${rakName}:${kode}` }]);
+    buttons.push([{ text: 'ðŸ”™ Kembali ke Rak', callback_data: `so:editrak:${rakName}:0` }]);
     await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons } });
     return;
   }
@@ -9667,7 +9676,7 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     const items = getBarangDiRak(session.tokoKode, rakName);
     const entry = items[kode]?.entries?.[entryIndex];
-    if (!entry) return kirim(chatId, '⚠️ Entry tidak ditemukan.', { reply_markup: kbSOAktif() });
+    if (!entry) return kirim(chatId, 'âš ï¸ Entry tidak ditemukan.', { reply_markup: kbSOAktif() });
     const item = DATA_BARANG.find(d => d.kode === kode);
     let nama = item?.nama || kode;
     if (kode.startsWith('NEW_')) {
@@ -9675,7 +9684,7 @@ bot.on('callback_query', async (query) => {
       if (baru) nama = baru.nama;
     }
     updateSesi(userId, { soEditMode: true, soEditInfo: { rak: rakName, kode: kode, entryIndex: entryIndex } });
-    await kirim(chatId, `✏️ *EDIT QTY*\n${GARIS_TEBAL}\n📦 ${escapeMd(nama)}\n📍 Rak: ${rakName}\n👤 ${entry.namaPetugas}\n📊 Qty saat ini: *${entry.qty}*\n${GARIS_TIPIS}\n\n💬 *Ketik:*\n• Angka baru: \`10\`\n• Tambah: \`+5\`\n• Kurangi: \`-3\`\n• \`0\` atau \`hapus\` untuk hapus`);
+    await kirim(chatId, `âœï¸ *EDIT QTY*\n${GARIS_TEBAL}\nðŸ“¦ ${escapeMd(nama)}\nðŸ“ Rak: ${rakName}\nðŸ‘¤ ${entry.namaPetugas}\nðŸ“Š Qty saat ini: *${entry.qty}*\n${GARIS_TIPIS}\n\nðŸ’¬ *Ketik:*\nâ€¢ Angka baru: \`10\`\nâ€¢ Tambah: \`+5\`\nâ€¢ Kurangi: \`-3\`\nâ€¢ \`0\` atau \`hapus\` untuk hapus`);
     return;
   }
   
@@ -9691,27 +9700,27 @@ bot.on('callback_query', async (query) => {
       const baru = getBarangBaruSO(session.tokoKode).find(b => b.kode === kode);
       if (baru) nama = baru.nama;
     }
-    await kirim(chatId, `🗑️ *${escapeMd(nama)}* dihapus dari ${rakName}!`, { reply_markup: kbSOAktif() });
+    await kirim(chatId, `ðŸ—‘ï¸ *${escapeMd(nama)}* dihapus dari ${rakName}!`, { reply_markup: kbSOAktif() });
     return;
   }
   
-  // ════════════ STOCK OPNAME: EXPORT / SELESAI ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• STOCK OPNAME: EXPORT / SELESAI â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data === 'so:exportgabungan') {
     const session = getSesi(userId);
     if (!session.tokoKode) return;
     const namaToko = NAMA_TOKO[session.tokoKode];
-    await kirim(chatId, '📊 _Membuat laporan & Excel gabungan (dengan foto)..._\n_Ini mungkin memakan waktu jika banyak foto._');
+    await kirim(chatId, 'ðŸ“Š _Membuat laporan & Excel gabungan (dengan foto)..._\n_Ini mungkin memakan waktu jika banyak foto._');
     try {
       const laporan = generateLaporanSOGabungan(session.tokoKode, namaToko);
       await kirim(chatId, laporan);
       const excelPath = await generateExcelSOGabungan(session.tokoKode, namaToko);
       await bot.sendDocument(chatId, excelPath, {}, { filename: `SO_Gabungan_${session.tokoKode.toUpperCase()}_${getTanggalSlash(false).replace(/\//g, '-')}.xlsx` });
       try { fs.unlinkSync(excelPath); } catch(e) {}
-      await kirim(chatId, '✅ *Excel gabungan terkirim!*\n📸 Foto barang baru sudah embedded di Excel.', { reply_markup: kbSOAktif() });
+      await kirim(chatId, 'âœ… *Excel gabungan terkirim!*\nðŸ“¸ Foto barang baru sudah embedded di Excel.', { reply_markup: kbSOAktif() });
     } catch(err) {
       log.error('SO-EXPORT', err.message);
-      await kirim(chatId, '❌ Gagal: ' + err.message);
+      await kirim(chatId, 'âŒ Gagal: ' + err.message);
     }
     return;
   }
@@ -9720,7 +9729,7 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     if (!session.tokoKode) return;
     const namaToko = NAMA_TOKO[session.tokoKode];
-    await kirim(chatId, '📊 _Membuat Excel gabungan (dengan foto)..._');
+    await kirim(chatId, 'ðŸ“Š _Membuat Excel gabungan (dengan foto)..._');
     try {
       const laporan = generateLaporanSOGabungan(session.tokoKode, namaToko);
       await kirim(chatId, laporan);
@@ -9729,10 +9738,10 @@ bot.on('callback_query', async (query) => {
       try { fs.unlinkSync(excelPath); } catch(e) {}
       if (typeof leaveSesiSO === 'function') leaveSesiSO(session.tokoKode, userId);
       resetSesi(userId);
-      await kirim(chatId, '✅ *SO Anda selesai!*\n📥 Excel terkirim (dengan foto).\n💡 Data tetap tersimpan untuk user lain.', { reply_markup: kbMainMenu(userId) });
+      await kirim(chatId, 'âœ… *SO Anda selesai!*\nðŸ“¥ Excel terkirim (dengan foto).\nðŸ’¡ Data tetap tersimpan untuk user lain.', { reply_markup: kbMainMenu(userId) });
     } catch(err) {
       log.error('SO-FINISH', err.message);
-      await kirim(chatId, '❌ Gagal: ' + err.message);
+      await kirim(chatId, 'âŒ Gagal: ' + err.message);
     }
     return;
   }
@@ -9740,31 +9749,31 @@ bot.on('callback_query', async (query) => {
   if (data === 'so:kembali') {
     const session = getSesi(userId);
     if (!session.soInfo) return;
-    await kirim(chatId, `🔙 *Lanjut input barang*\n📍 Rak: *${escapeMd(session.soInfo.rakAktif)}*\n\nKetik nama/kode barang...`, { reply_markup: kbSOAktif() });
+    await kirim(chatId, `ðŸ”™ *Lanjut input barang*\nðŸ“ Rak: *${escapeMd(session.soInfo.rakAktif)}*\n\nKetik nama/kode barang...`, { reply_markup: kbSOAktif() });
     return;
   }
   
-  // ════════════ STOCK OPNAME: SCAN RAK ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• STOCK OPNAME: SCAN RAK â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data === 'so:scanrak:pakai') {
     const session = getSesi(userId);
     const namaRak = session.soScanRakPending;
-    if (!namaRak) return kirim(chatId, '⚠️ Data scan hilang.');
+    if (!namaRak) return kirim(chatId, 'âš ï¸ Data scan hilang.');
     const tokoKode = session.tokoKode;
     if (session.soSetupStep === 'rak' || session.soSetupStep === 'rak_input') {
       session.soInfo.rakAktif = namaRak;
       updateSesi(userId, { soInfo: session.soInfo, soSetupStep: 'jam', soScanRakPending: null });
-      await kirim(chatId, `✅ *Rak: ${escapeMd(namaRak)}*\n${GARIS_TIPIS}\n\n⏰ *STEP 3/3: Jam Mulai*\nFormat: \`HH:MM\` atau *sekarang* (${getJamSekarang()})`);
+      await kirim(chatId, `âœ… *Rak: ${escapeMd(namaRak)}*\n${GARIS_TIPIS}\n\nâ° *STEP 3/3: Jam Mulai*\nFormat: \`HH:MM\` atau *sekarang* (${getJamSekarang()})`);
     } else if (session.soSetupStep === 'pindahrak_namabaru' || session.soSetupStep === 'rak_input_pindah') {
       session.soInfo.rakAktif = namaRak;
       updateSesi(userId, { soInfo: session.soInfo, soSetupStep: null, soScanRakPending: null });
       if (typeof updateUserRakSO === 'function') updateUserRakSO(tokoKode, userId, namaRak);
       const existingItems = Object.keys(getBarangDiRak(tokoKode, namaRak)).length;
-      await kirim(chatId, `✅ *Pindah ke: ${escapeMd(namaRak)}*\n${existingItems > 0 ? `📊 ${existingItems} barang ada.\n` : '🆕 Rak baru.\n'}\n📝 Lanjutkan input...`, { reply_markup: kbSOAktif() });
+      await kirim(chatId, `âœ… *Pindah ke: ${escapeMd(namaRak)}*\n${existingItems > 0 ? `ðŸ“Š ${existingItems} barang ada.\n` : 'ðŸ†• Rak baru.\n'}\nðŸ“ Lanjutkan input...`, { reply_markup: kbSOAktif() });
     } else {
       session.soInfo.rakAktif = namaRak;
       updateSesi(userId, { soInfo: session.soInfo, soSetupStep: 'jam', soScanRakPending: null });
-      await kirim(chatId, `✅ *Rak: ${escapeMd(namaRak)}*\n\n⏰ Ketik jam mulai atau *sekarang*`);
+      await kirim(chatId, `âœ… *Rak: ${escapeMd(namaRak)}*\n\nâ° Ketik jam mulai atau *sekarang*`);
     }
     return;
   }
@@ -9774,57 +9783,57 @@ bot.on('callback_query', async (query) => {
     updateSesi(userId, { soScanRakPending: null });
     const step = (session.soSetupStep === 'rak' || session.soSetupStep === 'rak_input') ? 'rak_input' : 'rak_input_pindah';
     updateSesi(userId, { soSetupStep: step });
-    await kirim(chatId, `📦 Ketik nama rak ${data.includes('edit') ? 'yang benar' : 'baru'}:\n\n*Contoh:* \`Rak A1\``);
+    await kirim(chatId, `ðŸ“¦ Ketik nama rak ${data.includes('edit') ? 'yang benar' : 'baru'}:\n\n*Contoh:* \`Rak A1\``);
     return;
   }
   
   if (data === 'so:scanrak:pindah') {
     const session = getSesi(userId);
     const targetRak = session.soScanRakPindahPending;
-    if (!targetRak) return kirim(chatId, '⚠️ Data hilang.', { reply_markup: kbSOAktif() });
+    if (!targetRak) return kirim(chatId, 'âš ï¸ Data hilang.', { reply_markup: kbSOAktif() });
     session.soInfo.rakAktif = targetRak;
     updateSesi(userId, { soInfo: session.soInfo, soScanRakPindahPending: null });
     if (typeof updateUserRakSO === 'function') updateUserRakSO(session.tokoKode, userId, targetRak);
     const existingItems = Object.keys(getBarangDiRak(session.tokoKode, targetRak)).length;
-    await kirim(chatId, `✅ *Pindah ke: ${escapeMd(targetRak)}*\n${existingItems > 0 ? `📊 ${existingItems} barang ada.\n` : '🆕 Rak baru.\n'}\n📝 Lanjutkan input...`, { reply_markup: kbSOAktif() });
+    await kirim(chatId, `âœ… *Pindah ke: ${escapeMd(targetRak)}*\n${existingItems > 0 ? `ðŸ“Š ${existingItems} barang ada.\n` : 'ðŸ†• Rak baru.\n'}\nðŸ“ Lanjutkan input...`, { reply_markup: kbSOAktif() });
     return;
   }
   
   if (data === 'so:scanrak:batal') {
     updateSesi(userId, { soScanRakPending: null, soScanRakPindahPending: null });
     const session = getSesi(userId);
-    if (session.soSetupStep) await kirim(chatId, '🔙 Batal. Kirim foto lagi atau ketik nama manual.');
-    else await kirim(chatId, '🔙 Batal.', { reply_markup: kbSOAktif() });
+    if (session.soSetupStep) await kirim(chatId, 'ðŸ”™ Batal. Kirim foto lagi atau ketik nama manual.');
+    else await kirim(chatId, 'ðŸ”™ Batal.', { reply_markup: kbSOAktif() });
     return;
   }
   
-  // ════════════ BERITA ACARA ACTIONS ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• BERITA ACARA ACTIONS â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data.startsWith('ba:section:')) {
     const sectionNo = parseInt(data.split(':')[2]);
     updateSesi(userId, { baSection: sectionNo });
     const formats = {
-      1: { title: '📥 PENAMBAHAN STOK KASIR', format: 'NAMA | QTY | KET', contoh: 'PIRING BT PAUS BIRU | 1 PCS | SELISIH', scanable: true },
-      2: { title: '➕ PENYESUAIAN TAMBAH', format: 'NAMA | QTY | KET', contoh: 'WAJAN ALM 22 CM | 12 PCS | TAMBAH', scanable: true },
-      3: { title: '➖ PENYESUAIAN KURANGI', format: 'NAMA | QTY | KET', contoh: 'WAJAN ALM 22 CM | 2 PCS | RUSAK', scanable: true },
-      4: { title: '🔄 SALAH KETIK/RETUR', format: 'NO_NOTA | NAMA | QTY | NAMA_TUKAR | QTY_TUKAR | KET', contoh: '001103 | DISPENSER | 1 | DISPENSER B | 1 | TUKAR', scanable: false },
-      5: { title: '📦 BARANG MASUK', format: 'NAMA | QTY_NOTA | FISIK_MASUK | QTY_MASUK | KET', contoh: 'PANCI 24 | 10 | PANCI 26 | 10 | SALAH', scanable: false },
-      6: { title: '✏️ DICORET GUDANG', format: 'NAMA | QTY_AWAL | RUBAH | QTY_KOREKSI | KET', contoh: 'TEKO 1.8L | 5 | TEKO 2L | 5 | UPGRADE', scanable: false },
+      1: { title: 'ðŸ“¥ PENAMBAHAN STOK KASIR', format: 'NAMA | QTY | KET', contoh: 'PIRING BT PAUS BIRU | 1 PCS | SELISIH', scanable: true },
+      2: { title: 'âž• PENYESUAIAN TAMBAH', format: 'NAMA | QTY | KET', contoh: 'WAJAN ALM 22 CM | 12 PCS | TAMBAH', scanable: true },
+      3: { title: 'âž– PENYESUAIAN KURANGI', format: 'NAMA | QTY | KET', contoh: 'WAJAN ALM 22 CM | 2 PCS | RUSAK', scanable: true },
+      4: { title: 'ðŸ”„ SALAH KETIK/RETUR', format: 'NO_NOTA | NAMA | QTY | NAMA_TUKAR | QTY_TUKAR | KET', contoh: '001103 | DISPENSER | 1 | DISPENSER B | 1 | TUKAR', scanable: false },
+      5: { title: 'ðŸ“¦ BARANG MASUK', format: 'NAMA | QTY_NOTA | FISIK_MASUK | QTY_MASUK | KET', contoh: 'PANCI 24 | 10 | PANCI 26 | 10 | SALAH', scanable: false },
+      6: { title: 'âœï¸ DICORET GUDANG', format: 'NAMA | QTY_AWAL | RUBAH | QTY_KOREKSI | KET', contoh: 'TEKO 1.8L | 5 | TEKO 2L | 5 | UPGRADE', scanable: false },
     };
     const f = formats[sectionNo];
     let m = `${f.title}\n${GARIS_TEBAL}\n\n`;
-    if (f.scanable) m += `📸 *Bisa scan foto tabel iPos!*\n\n`;
-    m += `📝 *Format:*\n\`${f.format}\`\n\n*Contoh:*\n\`${f.contoh}\``;
-    try { await bot.editMessageText(m, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Menu BA', callback_data: 'ba:menu' }]] } }); }
-    catch(e) { await kirim(chatId, m, { reply_markup: { inline_keyboard: [[{ text: '🔙 Menu BA', callback_data: 'ba:menu' }]] } }); }
+    if (f.scanable) m += `ðŸ“¸ *Bisa scan foto tabel iPos!*\n\n`;
+    m += `ðŸ“ *Format:*\n\`${f.format}\`\n\n*Contoh:*\n\`${f.contoh}\``;
+    try { await bot.editMessageText(m, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Menu BA', callback_data: 'ba:menu' }]] } }); }
+    catch(e) { await kirim(chatId, m, { reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Menu BA', callback_data: 'ba:menu' }]] } }); }
     return;
   }
   
   if (data === 'ba:menu') {
     const session = getSesi(userId);
     updateSesi(userId, { baSection: null });
-    try { await bot.editMessageText(`📋 *MENU BERITA ACARA*\n🏦 ${NAMA_TOKO[session.tokoKode]}\n🆔 ${session.baData.nomorBA}`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbBaSection(session.baData) }); }
-    catch(e) { await kirim(chatId, `📋 *MENU BA*\n🆔 ${session.baData?.nomorBA}`, { reply_markup: kbBaSection(session.baData) }); }
+    try { await bot.editMessageText(`ðŸ“‹ *MENU BERITA ACARA*\nðŸ¦ ${NAMA_TOKO[session.tokoKode]}\nðŸ†” ${session.baData.nomorBA}`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: kbBaSection(session.baData) }); }
+    catch(e) { await kirim(chatId, `ðŸ“‹ *MENU BA*\nðŸ†” ${session.baData?.nomorBA}`, { reply_markup: kbBaSection(session.baData) }); }
     return;
   }
   
@@ -9839,7 +9848,7 @@ bot.on('callback_query', async (query) => {
     if (!session.baScanPending || session.baScanPending.length === 0) return;
     const item = session.baScanPending[0];
     updateSesi(userId, { baInputKeterangan: true });
-    await kirim(chatId, `📝 *Input Keterangan*\n${GARIS_TEBAL}\n\n*Item 1/${session.baScanPending.length}:*\n📦 ${escapeMd(item.nama)}\n📊 ${item.qty} ${item.satuan}\n\n${GARIS_TIPIS}\n💬 Ketik keterangan atau *skip*`);
+    await kirim(chatId, `ðŸ“ *Input Keterangan*\n${GARIS_TEBAL}\n\n*Item 1/${session.baScanPending.length}:*\nðŸ“¦ ${escapeMd(item.nama)}\nðŸ“Š ${item.qty} ${item.satuan}\n\n${GARIS_TIPIS}\nðŸ’¬ Ketik keterangan atau *skip*`);
     return;
   }
   
@@ -9851,92 +9860,92 @@ bot.on('callback_query', async (query) => {
     session.baScanPending.forEach(item => { session.baData[sectionField].push({ nama: item.nama, qty: `${item.qty} ${item.satuan}`, keterangan: '' }); });
     const total = session.baScanPending.length;
     updateSesi(userId, { baData: session.baData, baScanPending: null, baScanIndex: 0 });
-    await kirim(chatId, `✅ *${total} item tersimpan!*\n📊 Total section: *${session.baData[sectionField].length}*`, { reply_markup: { inline_keyboard: [[{ text: '🔙 Menu BA', callback_data: 'ba:menu' }, { text: '📊 Review', callback_data: 'ba:review' }]] } });
+    await kirim(chatId, `âœ… *${total} item tersimpan!*\nðŸ“Š Total section: *${session.baData[sectionField].length}*`, { reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Menu BA', callback_data: 'ba:menu' }, { text: 'ðŸ“Š Review', callback_data: 'ba:review' }]] } });
     return;
   }
   
   if (data === 'ba:scan:batal') {
     updateSesi(userId, { baScanPending: null, baScanIndex: 0, baInputKeterangan: null });
-    await kirim(chatId, '🔙 Scan dibatalkan.');
+    await kirim(chatId, 'ðŸ”™ Scan dibatalkan.');
     return;
   }
   
-  // ════════════ ADMIN ACTIONS ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• ADMIN ACTIONS â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data === 'admin:listmember' && isAdmin(userId)) {
-    let m = `👥 *MEMBERS (${MEMBERS.length})*\n${GARIS_TEBAL}\n\n`;
+    let m = `ðŸ‘¥ *MEMBERS (${MEMBERS.length})*\n${GARIS_TEBAL}\n\n`;
     if (MEMBERS.length === 0) m += '_Belum ada._';
-    else MEMBERS.forEach((id, i) => { m += `${i+1}. ${escapeMd(KONTAK[id] || 'Unknown')}\n   🆔 \`${id}\`\n\n`; });
-    try { await bot.editMessageText(m, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } }); }
-    catch(e) { await kirim(chatId, m, { reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } }); }
+    else MEMBERS.forEach((id, i) => { m += `${i+1}. ${escapeMd(KONTAK[id] || 'Unknown')}\n   ðŸ†” \`${id}\`\n\n`; });
+    try { await bot.editMessageText(m, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Admin', callback_data: 'menu:9' }]] } }); }
+    catch(e) { await kirim(chatId, m, { reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Admin', callback_data: 'menu:9' }]] } }); }
     return;
   }
   
   if (data === 'admin:listkontak' && isAdmin(userId)) {
-    let m = `📒 *KONTAK TERSIMPAN (${Object.keys(KONTAK).length})*\n${GARIS_TEBAL}\n\n`;
+    let m = `ðŸ“’ *KONTAK TERSIMPAN (${Object.keys(KONTAK).length})*\n${GARIS_TEBAL}\n\n`;
     const kontakEntries = Object.entries(KONTAK);
     if (kontakEntries.length === 0) m += '_Belum ada._';
     else {
       kontakEntries.slice(0, 25).forEach(([id, nama], i) => {
-        const isMemberStatus = MEMBERS.includes(id) ? '✅' : '⚠️';
-        m += `${i+1}. ${isMemberStatus} *${escapeMd(nama)}*\n   🆔 \`${id}\`\n\n`;
+        const isMemberStatus = MEMBERS.includes(id) ? 'âœ…' : 'âš ï¸';
+        m += `${i+1}. ${isMemberStatus} *${escapeMd(nama)}*\n   ðŸ†” \`${id}\`\n\n`;
       });
       if (kontakEntries.length > 25) m += `_... +${kontakEntries.length - 25} lainnya_\n\n`;
     }
-    m += `${GARIS_TIPIS}\n💡 *Kelola:*\n• \`/setnama [ID] [nama]\`\n• \`/carimember [nama]\`\n• \`/hapuskontak [ID]\``;
-    try { await bot.editMessageText(m, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } }); }
-    catch(e) { await kirim(chatId, m, { reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } }); }
+    m += `${GARIS_TIPIS}\nðŸ’¡ *Kelola:*\nâ€¢ \`/setnama [ID] [nama]\`\nâ€¢ \`/carimember [nama]\`\nâ€¢ \`/hapuskontak [ID]\``;
+    try { await bot.editMessageText(m, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Admin', callback_data: 'menu:9' }]] } }); }
+    catch(e) { await kirim(chatId, m, { reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Admin', callback_data: 'menu:9' }]] } }); }
     return;
   }
   
   if (data === 'admin:pending' && isAdmin(userId)) {
     const list = Object.entries(PENDING);
-    let m = `🔔 *PENDING (${list.length})*\n${GARIS_TEBAL}\n\n`;
+    let m = `ðŸ”” *PENDING (${list.length})*\n${GARIS_TEBAL}\n\n`;
     if (list.length === 0) m += '_Tidak ada._';
-    else list.forEach(([id, d], i) => { m += `${i+1}. ${escapeMd(d.nama)}\n   🆔 \`${id}\`\n   ✅ /approve ${id}\n   ❌ /reject ${id}\n\n`; });
-    try { await bot.editMessageText(m, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } }); }
-    catch(e) { await kirim(chatId, m, { reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } }); }
+    else list.forEach(([id, d], i) => { m += `${i+1}. ${escapeMd(d.nama)}\n   ðŸ†” \`${id}\`\n   âœ… /approve ${id}\n   âŒ /reject ${id}\n\n`; });
+    try { await bot.editMessageText(m, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Admin', callback_data: 'menu:9' }]] } }); }
+    catch(e) { await kirim(chatId, m, { reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Admin', callback_data: 'menu:9' }]] } }); }
     return;
   }
   
   if (data === 'admin:stats' && isAdmin(userId)) {
     const top5 = Object.entries(STATS.topSearches).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    let m = `📊 *STATISTICS*\n${GARIS_TEBAL}\n💬 ${STATS.chats}\n👥 ${STATS.users.size}\n🔍 ${STATS.searches}\n🤖 ${STATS.aiQueries}\n🎙️ ${STATS.voiceNotes}\n📸 ${STATS.photos}\n\n`;
-    if (top5.length) { m += `🔝 *Top:*\n`; top5.forEach((s, i) => m += `${i+1}. ${s[0]} (${s[1]}x)\n`); }
-    try { await bot.editMessageText(m, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } }); }
-    catch(e) { await kirim(chatId, m, { reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } }); }
+    let m = `ðŸ“Š *STATISTICS*\n${GARIS_TEBAL}\nðŸ’¬ ${STATS.chats}\nðŸ‘¥ ${STATS.users.size}\nðŸ” ${STATS.searches}\nðŸ¤– ${STATS.aiQueries}\nðŸŽ™ï¸ ${STATS.voiceNotes}\nðŸ“¸ ${STATS.photos}\n\n`;
+    if (top5.length) { m += `ðŸ” *Top:*\n`; top5.forEach((s, i) => m += `${i+1}. ${s[0]} (${s[1]}x)\n`); }
+    try { await bot.editMessageText(m, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Admin', callback_data: 'menu:9' }]] } }); }
+    catch(e) { await kirim(chatId, m, { reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Admin', callback_data: 'menu:9' }]] } }); }
     return;
   }
   
   if (data === 'admin:reload' && isAdmin(userId)) {
     loadExcel();
-    try { await bot.editMessageText(`✅ *Reloaded!*\n📦 ${DATA_BARANG.length} barang`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } }); }
-    catch(e) { await kirim(chatId, `✅ Reloaded! ${DATA_BARANG.length} barang`); }
+    try { await bot.editMessageText(`âœ… *Reloaded!*\nðŸ“¦ ${DATA_BARANG.length} barang`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Admin', callback_data: 'menu:9' }]] } }); }
+    catch(e) { await kirim(chatId, `âœ… Reloaded! ${DATA_BARANG.length} barang`); }
     return;
   }
   
   if (data === 'admin:info' && isAdmin(userId)) {
     const uptime = Math.floor(process.uptime());
-    try { await bot.editMessageText(`ℹ️ *INFO SISTEM*\n${GARIS_TEBAL}\n🤖 ${CONFIG.appName}\n📦 ${DATA_BARANG.length}\n👥 ${MEMBERS.length}/${CONFIG.maxMember}\n⏱️ ${Math.floor(uptime / 3600)}j ${Math.floor((uptime % 3600) / 60)}m\n💬 ${STATS.chats}`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } }); } catch(e) {}
+    try { await bot.editMessageText(`â„¹ï¸ *INFO SISTEM*\n${GARIS_TEBAL}\nðŸ¤– ${CONFIG.appName}\nðŸ“¦ ${DATA_BARANG.length}\nðŸ‘¥ ${MEMBERS.length}/${CONFIG.maxMember}\nâ±ï¸ ${Math.floor(uptime / 3600)}j ${Math.floor((uptime % 3600) / 60)}m\nðŸ’¬ ${STATS.chats}`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Admin', callback_data: 'menu:9' }]] } }); } catch(e) {}
     return;
   }
   
   if (data === 'admin:broadcast' && isAdmin(userId)) {
-    try { await bot.editMessageText('📢 *Broadcast*\n\nKetik: `/broadcast [pesan]`', { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } }); } catch(e) {}
+    try { await bot.editMessageText('ðŸ“¢ *Broadcast*\n\nKetik: `/broadcast [pesan]`', { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'ðŸ”™ Admin', callback_data: 'menu:9' }]] } }); } catch(e) {}
     return;
   }
   
-  // ════════════ APPROVE/REJECT ════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â• APPROVE/REJECT â•â•â•â•â•â•â•â•â•â•â•â•
   
   if (data.startsWith('approve:') && isAdmin(userId)) {
     approveUser(chatId, data.replace('approve:', ''));
-    try { await bot.editMessageReplyMarkup({ inline_keyboard: [[{ text: '✅ Approved', callback_data: 'noop' }]] }, { chat_id: chatId, message_id: msgId }); } catch(e) {}
+    try { await bot.editMessageReplyMarkup({ inline_keyboard: [[{ text: 'âœ… Approved', callback_data: 'noop' }]] }, { chat_id: chatId, message_id: msgId }); } catch(e) {}
     return;
   }
   
   if (data.startsWith('reject:') && isAdmin(userId)) {
     rejectUser(chatId, data.replace('reject:', ''));
-    try { await bot.editMessageReplyMarkup({ inline_keyboard: [[{ text: '❌ Rejected', callback_data: 'noop' }]] }, { chat_id: chatId, message_id: msgId }); } catch(e) {}
+    try { await bot.editMessageReplyMarkup({ inline_keyboard: [[{ text: 'âŒ Rejected', callback_data: 'noop' }]] }, { chat_id: chatId, message_id: msgId }); } catch(e) {}
     return;
   }
   
@@ -9944,9 +9953,9 @@ bot.on('callback_query', async (query) => {
   
 }); // END callback_query handler
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   38. WEB DASHBOARD (LENGKAP DENGAN CHAT LOG)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const webApp = express();
 webApp.use(express.json({ limit: '10mb' }));
@@ -9977,7 +9986,7 @@ function requireLogin(req, res, next) {
 
 const loginAttempts = {};
 
-// ── ENHANCED CHAT LOG STORAGE ──
+// â”€â”€ ENHANCED CHAT LOG STORAGE â”€â”€
 
 const CHAT_LOG = [];
 const MAX_CHAT_LOG = 1000;
@@ -10020,7 +10029,7 @@ function trackChat(userId, message, type = 'text') {
   addChatLog(userId, nama, '', message, type, 'incoming');
 }
 
-// ── CSS STYLES ──
+// â”€â”€ CSS STYLES â”€â”€
 
 const DASHBOARD_CSS = `
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -10107,7 +10116,7 @@ const DASHBOARD_CSS = `
   }
 `;
 
-// ── ROUTES ──
+// â”€â”€ ROUTES â”€â”€
 
 webApp.get('/', (req, res) => {
   res.send(`<html><head><title>${escapeHtml(CONFIG.appName)}</title>
@@ -10115,23 +10124,23 @@ webApp.get('/', (req, res) => {
 .box{background:white;padding:50px;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.3);text-align:center;max-width:600px}
 h1{color:#667eea}.stat{display:inline-block;margin:10px;padding:15px;background:#f5f5f5;border-radius:10px;min-width:100px}
 .stat b{color:#667eea;font-size:24px}a{color:#667eea;font-weight:bold}</style></head>
-<body><div class="box"><h1>🤖 ${escapeHtml(CONFIG.appName)}</h1>
-<p>📱 Bot: <a href="https://t.me/${escapeHtml(CONFIG.botUsername)}" target="_blank">@${escapeHtml(CONFIG.botUsername)}</a></p>
-<div><div class="stat"><b>${DATA_BARANG.length}</b><br>📦 Barang</div>
-<div class="stat"><b>${MEMBERS.length}</b><br>👥 Members</div>
-<div class="stat"><b>${STATS.chats}</b><br>💬 Chats</div></div>
-<p><a href="/login">🔐 Login Dashboard</a></p></div></body></html>`);
+<body><div class="box"><h1>ðŸ¤– ${escapeHtml(CONFIG.appName)}</h1>
+<p>ðŸ“± Bot: <a href="https://t.me/${escapeHtml(CONFIG.botUsername)}" target="_blank">@${escapeHtml(CONFIG.botUsername)}</a></p>
+<div><div class="stat"><b>${DATA_BARANG.length}</b><br>ðŸ“¦ Barang</div>
+<div class="stat"><b>${MEMBERS.length}</b><br>ðŸ‘¥ Members</div>
+<div class="stat"><b>${STATS.chats}</b><br>ðŸ’¬ Chats</div></div>
+<p><a href="/login">ðŸ” Login Dashboard</a></p></div></body></html>`);
 });
 
 webApp.get('/login', (req, res) => {
-  const error = req.query.error ? '<p style="color:red;margin-top:10px">❌ Username atau password salah</p>' : '';
+  const error = req.query.error ? '<p style="color:red;margin-top:10px">âŒ Username atau password salah</p>' : '';
   res.send(`<html><head><title>Login</title><style>body{font-family:Arial;background:linear-gradient(135deg,#667eea,#764ba2);min-height:100vh;display:flex;align-items:center;justify-content:center;margin:0}
 .box{background:white;padding:40px;border-radius:20px;width:350px}h2{color:#667eea}
 input{width:100%;padding:12px;margin:8px 0;border:2px solid #e0e0e0;border-radius:8px;box-sizing:border-box;font-size:14px}
 input:focus{border-color:#667eea;outline:none}
 button{width:100%;padding:12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:14px}
 button:hover{opacity:0.9}</style></head>
-<body><div class="box"><h2>🔐 Admin Login</h2><form method="POST" action="/login">
+<body><div class="box"><h2>ðŸ” Admin Login</h2><form method="POST" action="/login">
 <input name="username" placeholder="Username" required><input name="password" type="password" placeholder="Password" required>
 <button>Login</button></form>${error}</div></body></html>`);
 });
@@ -10143,31 +10152,31 @@ webApp.post('/login', (req, res) => {
   if (now - loginAttempts[ip].firstAttempt > 15 * 60 * 1000) loginAttempts[ip] = { count: 0, firstAttempt: now };
   
   if (loginAttempts[ip].count >= 5) {
-    // ★ ALERT ADMIN kalau ada brute force!
+    // â˜… ALERT ADMIN kalau ada brute force!
     if (CONFIG.adminId && loginAttempts[ip].count === 5) {
       try {
         bot.sendMessage(CONFIG.adminId, 
-          `🚨 *SECURITY ALERT*\n\n⚠️ Brute force login attempt!\n🌐 IP: \`${ip}\`\n🕐 ${getJamSekarang()}\n\nAccount temporarily locked.`,
+          `ðŸš¨ *SECURITY ALERT*\n\nâš ï¸ Brute force login attempt!\nðŸŒ IP: \`${ip}\`\nðŸ• ${getJamSekarang()}\n\nAccount temporarily locked.`,
           { parse_mode: 'Markdown' }
         );
       } catch(e) {}
     }
-    return res.status(429).send('<h1>⛔ Too Many Attempts</h1>');
+    return res.status(429).send('<h1>â›” Too Many Attempts</h1>');
   }
   
   if (req.body.username === CONFIG.dashboardUser && req.body.password === CONFIG.dashboardPass) {
     loginAttempts[ip] = { count: 0, firstAttempt: now };
     req.session.loggedIn = true;
-    log.info('LOGIN', `✅ Success from IP: ${ip}`);
+    log.info('LOGIN', `âœ… Success from IP: ${ip}`);
     return res.redirect('/dashboard');
   }
   
   loginAttempts[ip].count++;
-  log.warn('LOGIN', `❌ Failed from IP: ${ip} (attempt ${loginAttempts[ip].count})`);
+  log.warn('LOGIN', `âŒ Failed from IP: ${ip} (attempt ${loginAttempts[ip].count})`);
   res.redirect('/login?error=1');
 });
 
-// ── MAIN DASHBOARD ──
+// â”€â”€ MAIN DASHBOARD â”€â”€
 
 webApp.get('/dashboard', requireLogin, (req, res) => {
   const uptime = Math.floor(process.uptime());
@@ -10180,37 +10189,37 @@ webApp.get('/dashboard', requireLogin, (req, res) => {
 <style>${DASHBOARD_CSS}</style></head>
 <body>
 <div class="navbar">
-  <h1>📊 ${escapeHtml(CONFIG.appName)}</h1>
+  <h1>ðŸ“Š ${escapeHtml(CONFIG.appName)}</h1>
   <div class="nav-links">
-    <a href="/dashboard">📊 Stats</a>
-    <a href="/dashboard/chats">💬 Chat Log</a>
-    <a href="/dashboard/members">👥 Members</a>
-    <a href="/dashboard/searches">🔍 Searches</a>
-    <a href="/logout">🚪 Logout</a>
+    <a href="/dashboard">ðŸ“Š Stats</a>
+    <a href="/dashboard/chats">ðŸ’¬ Chat Log</a>
+    <a href="/dashboard/members">ðŸ‘¥ Members</a>
+    <a href="/dashboard/searches">ðŸ” Searches</a>
+    <a href="/logout">ðŸšª Logout</a>
   </div>
 </div>
 <div class="container">
   <div class="grid">
-    <div class="stat"><h2>${STATS.chats}</h2><p>💬 Total Chats</p></div>
-    <div class="stat"><h2>${STATS.users.size}</h2><p>👥 Active Users</p></div>
-    <div class="stat"><h2>${STATS.searches}</h2><p>🔍 Searches</p></div>
-    <div class="stat"><h2>${STATS.aiQueries}</h2><p>🤖 AI Queries</p></div>
-    <div class="stat"><h2>${STATS.voiceNotes}</h2><p>🎙️ Voice</p></div>
-    <div class="stat"><h2>${STATS.photos}</h2><p>📸 Photos</p></div>
-    <div class="stat"><h2>${MEMBERS.length}</h2><p>👥 Members</p></div>
-    <div class="stat"><h2>${DATA_BARANG.length}</h2><p>📦 Barang</p></div>
-    <div class="stat"><h2>${uptimeStr}</h2><p>⏱️ Uptime</p></div>
+    <div class="stat"><h2>${STATS.chats}</h2><p>ðŸ’¬ Total Chats</p></div>
+    <div class="stat"><h2>${STATS.users.size}</h2><p>ðŸ‘¥ Active Users</p></div>
+    <div class="stat"><h2>${STATS.searches}</h2><p>ðŸ” Searches</p></div>
+    <div class="stat"><h2>${STATS.aiQueries}</h2><p>ðŸ¤– AI Queries</p></div>
+    <div class="stat"><h2>${STATS.voiceNotes}</h2><p>ðŸŽ™ï¸ Voice</p></div>
+    <div class="stat"><h2>${STATS.photos}</h2><p>ðŸ“¸ Photos</p></div>
+    <div class="stat"><h2>${MEMBERS.length}</h2><p>ðŸ‘¥ Members</p></div>
+    <div class="stat"><h2>${DATA_BARANG.length}</h2><p>ðŸ“¦ Barang</p></div>
+    <div class="stat"><h2>${uptimeStr}</h2><p>â±ï¸ Uptime</p></div>
   </div>
   
   <div class="section">
-    <h2>🔝 Top Searches</h2>
+    <h2>ðŸ” Top Searches</h2>
     <table><tr><th>#</th><th>Keyword</th><th>Count</th></tr>
     ${top10.length === 0 ? '<tr><td colspan="3" class="empty">No data</td></tr>' : top10.map((s,i) => `<tr><td>${i+1}</td><td>${escapeHtml(s[0])}</td><td><b>${s[1]}</b></td></tr>`).join('')}
     </table>
   </div>
   
   <div class="section">
-    <h2>💬 Recent Chats (Last 20)</h2>
+    <h2>ðŸ’¬ Recent Chats (Last 20)</h2>
     <table><tr><th>Time</th><th>User</th><th>Type</th><th>Message</th></tr>
     ${CHAT_LOG.slice(-20).reverse().map(c => `<tr>
       <td class="time-info"><span class="time-clock">${escapeHtml(c.date)}</span></td>
@@ -10219,14 +10228,14 @@ webApp.get('/dashboard', requireLogin, (req, res) => {
       <td class="msg-text">${escapeHtml(c.message)}</td>
     </tr>`).join('')}
     </table>
-    <p style="text-align:center;margin-top:10px"><a href="/dashboard/chats" style="color:#667eea">Lihat Semua Chat →</a></p>
+    <p style="text-align:center;margin-top:10px"><a href="/dashboard/chats" style="color:#667eea">Lihat Semua Chat â†’</a></p>
   </div>
   
   <div class="refresh-info">Auto-refresh 15 detik | ${getJamSekarang()} WITA</div>
 </div></body></html>`);
 });
 
-// ── CHAT LOG PAGE (FULL) ──
+// â”€â”€ CHAT LOG PAGE (FULL) â”€â”€
 
 webApp.get('/dashboard/chats', requireLogin, (req, res) => {
   const page = parseInt(req.query.page || '1');
@@ -10283,9 +10292,9 @@ webApp.get('/dashboard/chats', requireLogin, (req, res) => {
     paginationHtml = '<div class="pagination">';
     if (currentPage > 1) {
       params.set('page', '1');
-      paginationHtml += `<a href="/dashboard/chats?${params}">⏮️</a>`;
+      paginationHtml += `<a href="/dashboard/chats?${params}">â®ï¸</a>`;
       params.set('page', String(currentPage - 1));
-      paginationHtml += `<a href="/dashboard/chats?${params}">⬅️</a>`;
+      paginationHtml += `<a href="/dashboard/chats?${params}">â¬…ï¸</a>`;
     }
     
     const startPage = Math.max(1, currentPage - 3);
@@ -10297,9 +10306,9 @@ webApp.get('/dashboard/chats', requireLogin, (req, res) => {
     
     if (currentPage < totalPages) {
       params.set('page', String(currentPage + 1));
-      paginationHtml += `<a href="/dashboard/chats?${params}">➡️</a>`;
+      paginationHtml += `<a href="/dashboard/chats?${params}">âž¡ï¸</a>`;
       params.set('page', String(totalPages));
-      paginationHtml += `<a href="/dashboard/chats?${params}">⏭️</a>`;
+      paginationHtml += `<a href="/dashboard/chats?${params}">â­ï¸</a>`;
     }
     paginationHtml += '</div>';
   }
@@ -10309,27 +10318,27 @@ webApp.get('/dashboard/chats', requireLogin, (req, res) => {
 <style>${DASHBOARD_CSS}</style></head>
 <body>
 <div class="navbar">
-  <h1>💬 Chat Log</h1>
+  <h1>ðŸ’¬ Chat Log</h1>
   <div class="nav-links">
-    <a href="/dashboard">📊 Stats</a>
-    <a href="/dashboard/chats" style="background:rgba(255,255,255,0.3)">💬 Chats</a>
-    <a href="/dashboard/members">👥 Members</a>
-    <a href="/logout">🚪</a>
+    <a href="/dashboard">ðŸ“Š Stats</a>
+    <a href="/dashboard/chats" style="background:rgba(255,255,255,0.3)">ðŸ’¬ Chats</a>
+    <a href="/dashboard/members">ðŸ‘¥ Members</a>
+    <a href="/logout">ðŸšª</a>
   </div>
 </div>
 <div class="container">
   <div class="section">
-    <h2>💬 Semua Chat (${totalItems} pesan)</h2>
+    <h2>ðŸ’¬ Semua Chat (${totalItems} pesan)</h2>
     
     <form method="GET" action="/dashboard/chats" class="search-bar">
-      <input name="search" placeholder="🔍 Cari pesan, nama, atau ID..." value="${escapeHtml(search)}">
+      <input name="search" placeholder="ðŸ” Cari pesan, nama, atau ID..." value="${escapeHtml(search)}">
       <select name="type">
         <option value="">Semua Tipe</option>
-        <option value="text" ${typeFilter === 'text' ? 'selected' : ''}>💬 Text</option>
-        <option value="voice" ${typeFilter === 'voice' ? 'selected' : ''}>🎙️ Voice</option>
-        <option value="photo" ${typeFilter === 'photo' ? 'selected' : ''}>📸 Photo</option>
-        <option value="command" ${typeFilter === 'command' ? 'selected' : ''}>⚡ Command</option>
-        <option value="ai" ${typeFilter === 'ai' ? 'selected' : ''}>🤖 AI</option>
+        <option value="text" ${typeFilter === 'text' ? 'selected' : ''}>ðŸ’¬ Text</option>
+        <option value="voice" ${typeFilter === 'voice' ? 'selected' : ''}>ðŸŽ™ï¸ Voice</option>
+        <option value="photo" ${typeFilter === 'photo' ? 'selected' : ''}>ðŸ“¸ Photo</option>
+        <option value="command" ${typeFilter === 'command' ? 'selected' : ''}>âš¡ Command</option>
+        <option value="ai" ${typeFilter === 'ai' ? 'selected' : ''}>ðŸ¤– AI</option>
       </select>
       <select name="user">
         <option value="">Semua User</option>
@@ -10337,18 +10346,18 @@ webApp.get('/dashboard/chats', requireLogin, (req, res) => {
           `<option value="${escapeHtml(id)}" ${userFilter === id ? 'selected' : ''}>${escapeHtml(nama)} (${id})</option>`
         ).join('')}
       </select>
-      <button type="submit">🔍 Filter</button>
-      <a href="/dashboard/chats" style="padding:10px 16px;background:#16213e;color:#888;border-radius:8px;text-decoration:none;font-size:13px">🔄 Reset</a>
+      <button type="submit">ðŸ” Filter</button>
+      <a href="/dashboard/chats" style="padding:10px 16px;background:#16213e;color:#888;border-radius:8px;text-decoration:none;font-size:13px">ðŸ”„ Reset</a>
     </form>
     
     <div style="overflow-x:auto">
     <table>
       <tr>
         <th style="width:60px">#</th>
-        <th style="width:140px">📅 Waktu</th>
-        <th style="width:180px">👤 User</th>
-        <th style="width:80px">📎 Tipe</th>
-        <th>💬 Pesan</th>
+        <th style="width:140px">ðŸ“… Waktu</th>
+        <th style="width:180px">ðŸ‘¤ User</th>
+        <th style="width:80px">ðŸ“Ž Tipe</th>
+        <th>ðŸ’¬ Pesan</th>
       </tr>
       ${pageItems.length === 0 ? '<tr><td colspan="5" class="empty">Tidak ada chat ditemukan</td></tr>' : 
         pageItems.map((c, i) => {
@@ -10392,7 +10401,7 @@ webApp.get('/dashboard/chats', requireLogin, (req, res) => {
 </div></body></html>`);
 });
 
-// ── MEMBERS PAGE ──
+// â”€â”€ MEMBERS PAGE â”€â”€
 
 webApp.get('/dashboard/members', requireLogin, (req, res) => {
   res.send(`<html><head><title>Members</title>
@@ -10400,27 +10409,27 @@ webApp.get('/dashboard/members', requireLogin, (req, res) => {
 <style>${DASHBOARD_CSS}</style></head>
 <body>
 <div class="navbar">
-  <h1>👥 Members</h1>
+  <h1>ðŸ‘¥ Members</h1>
   <div class="nav-links">
-    <a href="/dashboard">📊 Stats</a>
-    <a href="/dashboard/chats">💬 Chats</a>
-    <a href="/dashboard/members" style="background:rgba(255,255,255,0.3)">👥 Members</a>
-    <a href="/logout">🚪</a>
+    <a href="/dashboard">ðŸ“Š Stats</a>
+    <a href="/dashboard/chats">ðŸ’¬ Chats</a>
+    <a href="/dashboard/members" style="background:rgba(255,255,255,0.3)">ðŸ‘¥ Members</a>
+    <a href="/logout">ðŸšª</a>
   </div>
 </div>
 <div class="container">
   <div class="section">
-    <h2>👥 Members (${MEMBERS.length}/${CONFIG.maxMember})</h2>
+    <h2>ðŸ‘¥ Members (${MEMBERS.length}/${CONFIG.maxMember})</h2>
     <div class="member-list">
       ${MEMBERS.length === 0 ? '<p class="empty">Belum ada member</p>' :
         MEMBERS.map((id, i) => {
           const nama = KONTAK[id] || 'Unknown';
-          const role = isAdmin(id) ? '👑 Admin' : ROLE_LAPORAN.includes(id) ? '📊 Staff' : '✅ Member';
+          const role = isAdmin(id) ? 'ðŸ‘‘ Admin' : ROLE_LAPORAN.includes(id) ? 'ðŸ“Š Staff' : 'âœ… Member';
           const chatCount = CHAT_LOG.filter(c => c.userId === id).length;
           return `<div class="member-card">
             <div class="name">${i+1}. ${escapeHtml(nama)}</div>
             <div class="id">ID: ${id}</div>
-            <div class="role">${role} | 💬 ${chatCount} chat</div>
+            <div class="role">${role} | ðŸ’¬ ${chatCount} chat</div>
           </div>`;
         }).join('')
       }
@@ -10429,26 +10438,26 @@ webApp.get('/dashboard/members', requireLogin, (req, res) => {
   
   ${Object.keys(PENDING).length > 0 ? `
   <div class="section">
-    <h2>🔔 Pending Approval (${Object.keys(PENDING).length})</h2>
+    <h2>ðŸ”” Pending Approval (${Object.keys(PENDING).length})</h2>
     <div class="member-list">
       ${Object.entries(PENDING).map(([id, d]) => `
         <div class="member-card" style="border-left-color: #fbbf24">
           <div class="name">${escapeHtml(d.nama)}</div>
           <div class="id">ID: ${id}</div>
-          <div class="role">⏳ Pending | @${escapeHtml(d.username || '-')}</div>
+          <div class="role">â³ Pending | @${escapeHtml(d.username || '-')}</div>
         </div>
       `).join('')}
     </div>
   </div>` : ''}
   
   <div class="section">
-    <h2>📊 Staff Laporan (${ROLE_LAPORAN.length})</h2>
+    <h2>ðŸ“Š Staff Laporan (${ROLE_LAPORAN.length})</h2>
     ${ROLE_LAPORAN.length === 0 ? '<p class="empty">Belum ada staff laporan</p>' :
       `<div class="member-list">${ROLE_LAPORAN.map(id => `
         <div class="member-card" style="border-left-color: #4ade80">
           <div class="name">${escapeHtml(KONTAK[id] || 'Unknown')}</div>
           <div class="id">ID: ${id}</div>
-          <div class="role">📊 Staff Laporan</div>
+          <div class="role">ðŸ“Š Staff Laporan</div>
         </div>
       `).join('')}</div>`
     }
@@ -10456,7 +10465,7 @@ webApp.get('/dashboard/members', requireLogin, (req, res) => {
 </div></body></html>`);
 });
 
-// ── SEARCH ANALYTICS PAGE ──
+// â”€â”€ SEARCH ANALYTICS PAGE â”€â”€
 
 webApp.get('/dashboard/searches', requireLogin, (req, res) => {
   const allSearches = Object.entries(STATS.topSearches).sort((a,b) => b[1]-a[1]);
@@ -10466,17 +10475,17 @@ webApp.get('/dashboard/searches', requireLogin, (req, res) => {
 <style>${DASHBOARD_CSS}</style></head>
 <body>
 <div class="navbar">
-  <h1>🔍 Search Analytics</h1>
+  <h1>ðŸ” Search Analytics</h1>
   <div class="nav-links">
-    <a href="/dashboard">📊 Stats</a>
-    <a href="/dashboard/chats">💬 Chats</a>
-    <a href="/dashboard/searches" style="background:rgba(255,255,255,0.3)">🔍 Searches</a>
-    <a href="/logout">🚪</a>
+    <a href="/dashboard">ðŸ“Š Stats</a>
+    <a href="/dashboard/chats">ðŸ’¬ Chats</a>
+    <a href="/dashboard/searches" style="background:rgba(255,255,255,0.3)">ðŸ” Searches</a>
+    <a href="/logout">ðŸšª</a>
   </div>
 </div>
 <div class="container">
   <div class="section">
-    <h2>🔍 Search Analytics (${allSearches.length} keywords, ${STATS.searches} total)</h2>
+    <h2>ðŸ” Search Analytics (${allSearches.length} keywords, ${STATS.searches} total)</h2>
     <table>
       <tr><th>#</th><th>Keyword</th><th>Count</th><th>Bar</th></tr>
       ${allSearches.length === 0 ? '<tr><td colspan="4" class="empty">No searches yet</td></tr>' :
@@ -10496,7 +10505,7 @@ webApp.get('/dashboard/searches', requireLogin, (req, res) => {
 </div></body></html>`);
 });
 
-// ── API ENDPOINTS ──
+// â”€â”€ API ENDPOINTS â”€â”€
 
 webApp.get('/api/chats', requireLogin, (req, res) => {
   const limit = parseInt(req.query.limit || '50');
@@ -10526,26 +10535,26 @@ webApp.get('/logout', (req, res) => {
   res.redirect('/');
 });
 
-// ── START WEB SERVER ──
+// â”€â”€ START WEB SERVER â”€â”€
 
 const PORT = process.env.PORT || CONFIG.webPort || 3000;
 const HOST = '0.0.0.0';
 
 const server = webApp.listen(PORT, HOST, () => {
-  console.log('═'.repeat(60));
-  console.log(`🌐 Web Dashboard READY`);
-  console.log(`🌐 Listening: ${HOST}:${PORT}`);
-  console.log(`🌐 Local: http://localhost:${PORT}`);
-  console.log('═'.repeat(60));
+  console.log('â•'.repeat(60));
+  console.log(`ðŸŒ Web Dashboard READY`);
+  console.log(`ðŸŒ Listening: ${HOST}:${PORT}`);
+  console.log(`ðŸŒ Local: http://localhost:${PORT}`);
+  console.log('â•'.repeat(60));
 });
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') log.error('WEB', `Port ${PORT} already in use!`);
   else log.error('WEB', 'Server error: ' + err.message);
 });
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //   39. ERROR HANDLERS & GRACEFUL SHUTDOWN
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 let isShuttingDown = false;
 
@@ -10555,7 +10564,7 @@ bot.on('polling_error', (err) => {
   
   // Error 409 = conflict (ada bot lain running)
   if (msg.includes('409') || msg.includes('Conflict')) {
-    log.error('POLLING', '⚠️ Bot conflict! Cek apakah ada instance lain running.');
+    log.error('POLLING', 'âš ï¸ Bot conflict! Cek apakah ada instance lain running.');
     // Tunggu 30 detik baru retry
     if (!isShuttingDown) {
       setTimeout(() => {
@@ -10602,35 +10611,35 @@ async function gracefulShutdown(signal) {
   if (isShuttingDown) return;
   isShuttingDown = true;
   
-  console.log(`\n👋 Received ${signal}, shutting down gracefully...`);
+  console.log(`\nðŸ‘‹ Received ${signal}, shutting down gracefully...`);
   
   try {
-     // ⬇️ TAMBAH INI: Emergency backup SO ke admin
-    console.log('🚨 Emergency backup SO data...');
+     // â¬‡ï¸ TAMBAH INI: Emergency backup SO ke admin
+    console.log('ðŸš¨ Emergency backup SO data...');
     await emergencyBackup();
     // 1. Stop polling DULU agar tidak conflict saat restart
-    console.log('🛑 Stopping bot polling...');
+    console.log('ðŸ›‘ Stopping bot polling...');
     await bot.stopPolling({ cancel: true });
-    console.log('✅ Bot polling stopped');
+    console.log('âœ… Bot polling stopped');
     
     // 2. Close web server
     if (server) {
-      console.log('🛑 Closing web server...');
+      console.log('ðŸ›‘ Closing web server...');
       await new Promise((resolve) => server.close(resolve));
-      console.log('✅ Web server closed');
+      console.log('âœ… Web server closed');
     }
     
     // 3. Save semua data sebelum exit
-    console.log('💾 Saving data...');
+    console.log('ðŸ’¾ Saving data...');
     if (sesiSaveTimer) clearTimeout(sesiSaveTimer);
     saveJSON(CONFIG.paths.sesi, SESI);
     saveJSON(CONFIG.paths.soShared, SO_SHARED);
-    console.log('✅ Data saved');
+    console.log('âœ… Data saved');
     
-    console.log('👋 Goodbye!\n');
+    console.log('ðŸ‘‹ Goodbye!\n');
     process.exit(0);
   } catch(err) {
-    console.error('❌ Error during shutdown:', err.message);
+    console.error('âŒ Error during shutdown:', err.message);
     process.exit(1);
   }
 }
@@ -10640,15 +10649,15 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));   // Ctrl+C
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM')); // Railway restart
 process.on('SIGHUP', () => gracefulShutdown('SIGHUP'));   // Terminal close
 
-console.log('═'.repeat(60));
+console.log('â•'.repeat(60));
 // Start auto-backup SO ke admin
 if (CONFIG.adminId) {
   startAutoBackup();
-  log.info('BACKUP', `✅ Auto-backup SO aktif, target admin: ${CONFIG.adminId}`);
+  log.info('BACKUP', `âœ… Auto-backup SO aktif, target admin: ${CONFIG.adminId}`);
 } else {
-  log.warn('BACKUP', '⚠️ Admin ID belum diset, auto-backup DISABLED');
+  log.warn('BACKUP', 'âš ï¸ Admin ID belum diset, auto-backup DISABLED');
 }
-console.log('🚀 Bot polling started...');
-console.log(`📱 Test: https://t.me/${CONFIG.botUsername}`);
-console.log('═'.repeat(60));
+console.log('ðŸš€ Bot polling started...');
+console.log(`ðŸ“± Test: https://t.me/${CONFIG.botUsername}`);
+console.log('â•'.repeat(60));
 console.log('');
