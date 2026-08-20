@@ -1840,7 +1840,7 @@ async function visionGemini(imageBuffer, prompt) {
   
   const imageBase64 = imageBuffer.toString('base64');
   const keys = [CONFIG.geminiKey, CONFIG.geminiKey2, CONFIG.geminiKey3].filter(Boolean);
-  const MODELS = ['gemini-2.5-flash'];
+  const MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest'];
   const MAX_RETRY = 3;
   
   for (const key of keys) {
@@ -1925,37 +1925,51 @@ async function visionGroq(imageBuffer, prompt) {
 async function visionOpenRouter(imageBuffer, prompt) {
   if (!CONFIG.openrouterKey || !Buffer.isBuffer(imageBuffer)) return null;
   const MODELS = [
-    'google/gemini-3.1-flash-lite',
-    'google/gemini-3.5-flash',
+    'nvidia/nemotron-nano-12b-v2-vl:free',
+    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+    'google/gemma-4-31b-it:free',
+    'google/gemma-4-26b-a4b-it:free',
+    'dots-studio/dots-3-note-preview:free',
   ];
   const imageBase64 = imageBuffer.toString('base64');
   
   for (const model of MODELS) {
-    try {
-      const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-        model,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt },
-            { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + imageBase64 }}
-          ]
-        }],
-        temperature: 0.1, max_tokens: 8192,
-      }, {
-        headers: {
-          'Authorization': `Bearer ${CONFIG.openrouterKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/bot-telegram-perabot',
-          'X-Title': 'Bot Telegram Toko Perabot',
-        },
-        timeout: 90000,
-      });
-      
-      const text = response.data?.choices?.[0]?.message?.content;
-      if (text) return { provider: 'OPENROUTER', model, text };
-    } catch(err) {
-      console.warn(`[OR ${model}]`, err.response?.status || err.message);
+    let attempt = 0;
+    while (attempt < 2) {
+      attempt++;
+      try {
+        const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+          model,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + imageBase64 }}
+            ]
+          }],
+          temperature: 0.1, max_tokens: 8192,
+        }, {
+          headers: {
+            'Authorization': `Bearer ${CONFIG.openrouterKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://github.com/bot-telegram-perabot',
+            'X-Title': 'Bot Telegram Toko Perabot',
+          },
+          timeout: 90000,
+        });
+        
+        const text = response.data?.choices?.[0]?.message?.content;
+        if (text) return { provider: 'OPENROUTER', model, text };
+      } catch(err) {
+        const status = err.response?.status;
+        if (status === 429 || status === 503) {
+          console.warn(`[OR ${model}] ${status}, retry ${attempt}/2...`);
+          await new Promise(r => setTimeout(r, 3000 * attempt));
+          continue;
+        }
+        console.warn(`[OR ${model}]`, status || err.message);
+        break;
+      }
     }
   }
   return null;
@@ -1971,7 +1985,7 @@ async function analisaGambarBuffer(imageBuffer, prompt) {
   const providers = [
     { name: 'GEMINI', fn: visionGemini, enabled: !!CONFIG.geminiKey },
     { name: 'GROQ', fn: visionGroq, enabled: false },
-    { name: 'OPENROUTER', fn: visionOpenRouter, enabled: false },
+    { name: 'OPENROUTER', fn: visionOpenRouter, enabled: !!CONFIG.openrouterKey },
   ].filter(p => p.enabled);
   
   if (providers.length === 0) throw new Error('Tidak ada AI provider');
