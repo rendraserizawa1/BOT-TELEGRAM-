@@ -572,6 +572,17 @@ async function saveExcelToGitHub(tokoKode, fileBuffer, retryCount = 0) {
       githubFileSHA[filePath] = response.data.content.sha;
     }
     
+    // Refresh lastUpdated untuk toko ini (langsung, tanpa tunggu restart)
+    try {
+      const now = new Date();
+      const tgl = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`;
+      DATA_BARANG.forEach(item => {
+        if (item.tokoList && item.tokoList.includes(tokoKode)) {
+          item.lastUpdated = tgl;
+        }
+      });
+    } catch(e) {}
+    
     console.log(`✅ [GITHUB] Saved ${filePath} to GitHub repo!`);
     return true;
   } catch(err) {
@@ -3230,6 +3241,7 @@ function loadExcel() {
           satuan: item.satuan,
           satuanPerToko: { [tokoKode]: item.satuan },
           namaPerToko: { [tokoKode]: item.nama },
+          tokoList: [tokoKode],
           lastUpdated: '',
           harga: {
             nk: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
@@ -3253,6 +3265,7 @@ function loadExcel() {
       // Simpan satuan & nama spesifik per toko
       existing.satuanPerToko[tokoKode] = item.satuan;
       existing.namaPerToko[tokoKode] = item.nama;
+      if (!existing.tokoList.includes(tokoKode)) existing.tokoList.push(tokoKode);
     });
   });
   
@@ -3285,6 +3298,8 @@ async function syncLastUpdatedFromGitHub() {
   
   console.log('🔄 [LASTUPDATED] Sync tanggal update dari GitHub...');
   
+  // 1. Ambil tanggal commit terakhir per file toko (path filter = benar per file)
+  const tokoDate = {}; // tokoKode -> { date: Date, tanggal: 'DD/MM/YYYY' }
   for (const tokoKode of Object.keys(CONFIG.paths.excelPerToko)) {
     const fileName = `${tokoKode}.xlsx`;
     const filePath = `harga_toko/${fileName}`;
@@ -3297,18 +3312,12 @@ async function syncLastUpdatedFromGitHub() {
         per_page: 1
       });
       if (response.data && response.data.length > 0) {
-        const commitDate = new Date(response.data[0].commit.author.date);
-        const tanggal = `${String(commitDate.getDate()).padStart(2, '0')}/${String(commitDate.getMonth() + 1).padStart(2, '0')}/${commitDate.getFullYear()}`;
-        
-        // Update semua item yang punya harga untuk toko ini
-        DATA_BARANG.forEach(item => {
-          if (item.harga[tokoKode]) {
-            if (!item.lastUpdated || tanggal > item.lastUpdated) {
-              item.lastUpdated = tanggal;
-            }
-          }
-        });
-        console.log(`   📅 ${NAMA_TOKO[tokoKode]}: ${tanggal}`);
+        const d = new Date(response.data[0].commit.author.date);
+        tokoDate[tokoKode] = {
+          date: d,
+          tanggal: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`,
+        };
+        console.log(`   📅 ${NAMA_TOKO[tokoKode]}: ${tokoDate[tokoKode].tanggal}`);
       } else {
         console.log(`   ⚠️ ${NAMA_TOKO[tokoKode]}: Tidak ada commit ditemukan`);
       }
@@ -3318,6 +3327,20 @@ async function syncLastUpdatedFromGitHub() {
     // Jeda 200ms biar tidak rate-limit
     await new Promise(r => setTimeout(r, 200));
   }
+  
+  // 2. Set lastUpdated per item berdasarkan toko ASAL (item.tokoList),
+  //    pakai perbandingan Date beneran (bukan string).
+  DATA_BARANG.forEach(item => {
+    const tokos = (item.tokoList && item.tokoList.length) ? item.tokoList : [];
+    let latest = null;
+    tokos.forEach(tk => {
+      const td = tokoDate[tk];
+      if (td && (!latest || td.date.getTime() > latest.date.getTime())) {
+        latest = td;
+      }
+    });
+    item.lastUpdated = latest ? latest.tanggal : '';
+  });
   
   const updatedCount = DATA_BARANG.filter(d => d.lastUpdated).length;
   console.log(`✅ [LASTUPDATED] ${updatedCount}/${DATA_BARANG.length} barang punya tanggal update`);
