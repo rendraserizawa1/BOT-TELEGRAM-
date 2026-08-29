@@ -8926,7 +8926,7 @@ async function prosesUpdateExcelToko(chatId, userId, tokoKode, fileId, fileName)
 bot.on('message', async (msg) => {
   if (msg.text && msg.text.startsWith('/')) return;
   if (!msg.text) return;
-  if (msg.voice || msg.photo || msg.document) return;
+  if (msg.voice || msg.photo) return;
   
   const chatId = msg.chat.id;
   const userId = msg.from.id;
