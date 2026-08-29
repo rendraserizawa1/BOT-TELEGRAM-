@@ -528,6 +528,64 @@ async function loadAllFromGitHubSync() {
   console.log('═'.repeat(60));
 }
 
+// ═══ SAVE FILE BINARY/EXCEL TO GITHUB ═══
+async function saveExcelToGitHub(tokoKode, fileBuffer, retryCount = 0) {
+  if (!isGitHubEnabled) {
+    console.warn('⚠️ [GITHUB] Skip save excel: GitHub tidak aktif');
+    return false;
+  }
+  
+  const fileName = `${tokoKode}.xlsx`;
+  const filePath = `harga_toko/${fileName}`;
+  const contentBase64 = fileBuffer.toString('base64');
+  
+  try {
+    let fileSha = githubFileSHA[filePath];
+    if (!fileSha) {
+      try {
+        const existing = await githubClient.repos.getContent({
+          owner: GITHUB_CONFIG.owner,
+          repo: GITHUB_CONFIG.repo,
+          path: filePath,
+          ref: GITHUB_CONFIG.branch,
+        });
+        if (existing.data.sha) {
+          fileSha = existing.data.sha;
+          githubFileSHA[filePath] = fileSha;
+        }
+      } catch(e) {}
+    }
+    
+    const params = {
+      owner: GITHUB_CONFIG.owner,
+      repo: GITHUB_CONFIG.repo,
+      path: filePath,
+      message: `excel: update harga toko ${tokoKode.toUpperCase()} via Telegram Bot [${new Date().toISOString()}]`,
+      content: contentBase64,
+      branch: GITHUB_CONFIG.branch,
+    };
+    
+    if (fileSha) params.sha = fileSha;
+    
+    const response = await githubClient.repos.createOrUpdateFileContents(params);
+    if (response.data && response.data.content && response.data.content.sha) {
+      githubFileSHA[filePath] = response.data.content.sha;
+    }
+    
+    console.log(`✅ [GITHUB] Saved ${filePath} to GitHub repo!`);
+    return true;
+  } catch(err) {
+    if (err.status === 409 && retryCount < 3) {
+      console.warn(`⚠️ [GITHUB] ${filePath}: Conflict, retry ${retryCount + 1}...`);
+      delete githubFileSHA[filePath];
+      await new Promise(r => setTimeout(r, 1000));
+      return saveExcelToGitHub(tokoKode, fileBuffer, retryCount + 1);
+    }
+    console.error(`❌ [GITHUB] Save ${filePath} FAIL: ${err.message}`);
+    return false;
+  }
+}
+
 // ═══ DEBOUNCED SAVE (biar tidak spam commit) ═══
 const githubSaveTimers = {};
 const DEBOUNCE_DELAY = 30000; // 30 detik (lebih cepat dari 60)
@@ -8757,6 +8815,111 @@ function isKodeBarang(text) {
 }
 
 // ════════════════════════════════════════════════════════════════
+//   34C. DOCUMENT / EXCEL UPLOAD HANDLER
+// ════════════════════════════════════════════════════════════════
+
+bot.on('document', async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  
+  if (!isMember(userId)) return kirim(chatId, buildGuestWelcome(msg.from.first_name, userId));
+  
+  const doc = msg.document;
+  const fileName = (doc.file_name || '').toLowerCase();
+  
+  // Cek apakah file Excel (.xlsx atau .xls)
+  if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
+    return kirim(chatId, '⚠️ Silakan kirim file dengan format Excel (`.xlsx` atau `.xls`).');
+  }
+  
+  // Hanya admin atau staff yang diizinkan update harga toko
+  if (!isAdmin(userId) && !isStaff(userId)) {
+    return kirim(chatId, '🚫 Hanya Admin atau Staff yang diizinkan mengupdate file Excel harga toko.');
+  }
+  
+  // Deteksi kode toko dari nama file (misal: nk.xlsx, tdm.xlsx, oesapa.xlsx, kefa.xlsx, cp.xlsx)
+  let tokoKode = null;
+  for (const t of TOKO_LIST) {
+    if (fileName.includes(t.kode)) {
+      tokoKode = t.kode;
+      break;
+    }
+  }
+  
+  // Jika nama file tidak mengandung kode toko, minta konfirmasi pilihan toko via Inline Keyboard
+  if (!tokoKode) {
+    const inlineButtons = TOKO_LIST.map(t => [{
+      text: `${t.icon} ${t.nama} (${t.kode.toUpperCase()})`,
+      callback_data: `upload_excel:${t.kode}:${doc.file_id}`
+    }]);
+    
+    return kirim(chatId, 
+      `📊 *FILE EXCEL DITERIMA: ${doc.file_name}*\n${GARIS_TEBAL}\n\n` +
+      `Silakan pilih toko mana yang akan di-update harga tokonya:`, 
+      { reply_markup: { inline_keyboard: inlineButtons } }
+    );
+  }
+  
+  // Proses upload Excel jika toko sudah terdeteksi dari nama file
+  await prosesUpdateExcelToko(chatId, userId, tokoKode, doc.file_id, doc.file_name);
+});
+
+// Helper untuk memproses file Excel & commit ke GitHub
+async function prosesUpdateExcelToko(chatId, userId, tokoKode, fileId, fileName) {
+  const toko = TOKO_LIST.find(t => t.kode === tokoKode);
+  const namaToko = toko ? toko.nama : tokoKode.toUpperCase();
+  
+  const statusMsg = await kirim(chatId, `⏳ _Mengunduh & memproses file Excel ${fileName} untuk ${namaToko}..._`);
+  
+  try {
+    const fileLink = await bot.getFileLink(fileId);
+    const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
+    const fileBuffer = Buffer.from(response.data);
+    
+    // Simpan file Excel ke lokal server
+    const targetPath = CONFIG.paths.excelPerToko[tokoKode];
+    fs.writeFileSync(targetPath, fileBuffer);
+    
+    // Reload data Excel di memori bot
+    if (typeof loadExcelPerToko === 'function') {
+      loadExcelPerToko(tokoKode);
+    } else if (typeof loadExcel === 'function') {
+      loadExcel();
+    }
+    
+    let resultMsg = `✅ *SUKSES UPDATE HARGA TOKO ${namaToko.toUpperCase()}*\n${GARIS_TEBAL}\n\n` +
+      `📁 File lokal: \`harga_toko/${tokoKode}.xlsx\` berhasil diperbarui.\n` +
+      `🔄 Memory bot telah di-reload dengan data baru.`;
+      
+    // Upload & Commit ke GitHub Repository
+    if (isGitHubEnabled) {
+      await bot.editMessageText(`⏳ _Melakukan commit & push ke GitHub repository..._`, {
+        chat_id: chatId,
+        message_id: statusMsg.message_id,
+        parse_mode: 'Markdown'
+      });
+      
+      const githubSuccess = await saveExcelToGitHub(tokoKode, fileBuffer);
+      if (githubSuccess) {
+        resultMsg += `\n🚀 *GitHub Sync*: File \`harga_toko/${tokoKode}.xlsx\` berhasil dipush & dicommit ke branch \`${GITHUB_CONFIG.branch}\`!`;
+      } else {
+        resultMsg += `\n⚠️ *GitHub Sync*: Gagal meng-push ke GitHub. (Tetap tersimpan secara lokal)`;
+      }
+    }
+    
+    await bot.editMessageText(resultMsg, {
+      chat_id: chatId,
+      message_id: statusMsg.message_id,
+      parse_mode: 'Markdown'
+    });
+    
+  } catch(err) {
+    log.error('EXCEL_UPLOAD', err.message);
+    await kirim(chatId, `❌ Gagal memproses file Excel: ${err.message}`);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
 //   36B. MAIN MESSAGE HANDLER (SMART ROUTING + KONFIRMASI)
 // ════════════════════════════════════════════════════════════════
 
@@ -8967,6 +9130,18 @@ bot.on('callback_query', async (query) => {
   
   try { await bot.answerCallbackQuery(query.id); } catch(e) {}
   
+  // ════════════ UPLOAD EXCEL HANDLER ════════════
+  
+  if (data.startsWith('upload_excel:')) {
+    const parts = data.split(':');
+    const tokoKode = parts[1];
+    const fileId = parts[2];
+    
+    try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
+    await prosesUpdateExcelToko(chatId, userId, tokoKode, fileId, `${tokoKode}.xlsx`);
+    return;
+  }
+
   // ════════════ PAGINATION CARI BARANG ════════════
   
   if (data.startsWith('caripage:')) {
