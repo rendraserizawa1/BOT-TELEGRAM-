@@ -3205,20 +3205,12 @@ function loadExcelPerToko(tokoKode) {
 function loadExcel() {
   const perTokoItems = {};
   const totalPerToko = {};
-  const fileDateMap = {}; // Map kode toko -> tanggal modifikasi file terakhir
   
   // Load setiap toko
   Object.keys(CONFIG.paths.excelPerToko).forEach(tokoKode => {
-    const filePath = CONFIG.paths.excelPerToko[tokoKode];
     const items = loadExcelPerToko(tokoKode);
     perTokoItems[tokoKode] = items;
     totalPerToko[tokoKode] = items.length;
-    // Dapatkan tanggal modifikasi file Excel
-    if (fs.existsSync(filePath)) {
-      const stat = fs.statSync(filePath);
-      const tanggal = new Date(stat.mtime);
-      fileDateMap[tokoKode] = `${String(tanggal.getDate()).padStart(2, '0')}/${String(tanggal.getMonth() + 1).padStart(2, '0')}/${tanggal.getFullYear()}`;
-    }
   });
   
   // Merge: barang dengan kode SAMA di multi-toko → 1 entry
@@ -3229,8 +3221,7 @@ function loadExcel() {
       const key = item.kode;
       
       if (!mergedMap.has(key)) {
-        // Barang baru
-        const tanggalTerbaru = fileDateMap[tokoKode] || '';
+        // Baru
         mergedMap.set(key, {
           kode: item.kode,
           nama: item.nama,
@@ -3239,7 +3230,7 @@ function loadExcel() {
           satuan: item.satuan,
           satuanPerToko: { [tokoKode]: item.satuan },
           namaPerToko: { [tokoKode]: item.nama },
-          lastUpdated: tanggalTerbaru,
+          lastUpdated: '',
           harga: {
             nk: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
             tdm: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
@@ -3251,10 +3242,7 @@ function loadExcel() {
       }
       
       const existing = mergedMap.get(key);
-      // Update lastUpdated jika ada tanggal yang lebih baru dari toko ini
-      if (fileDateMap[tokoKode] && fileDateMap[tokoKode] > existing.lastUpdated) {
-        existing.lastUpdated = fileDateMap[tokoKode];
-      }
+      // lastUpdated akan diisi oleh syncLastUpdatedFromGitHub() setelahnya
       // Set harga & stok untuk toko ini
       existing.harga[tokoKode] = {
         ecer: item.ecer,
@@ -3288,8 +3276,53 @@ function loadExcel() {
   return DATA_BARANG.length > 0;
 }
 
+// ═══ SYNC LAST UPDATED DATES FROM GITHUB COMMITS ═══
+async function syncLastUpdatedFromGitHub() {
+  if (!isGitHubEnabled) {
+    console.log('⚠️ [LASTUPDATED] Skip: GitHub tidak aktif');
+    return;
+  }
+  
+  console.log('🔄 [LASTUPDATED] Sync tanggal update dari GitHub...');
+  
+  for (const tokoKode of Object.keys(CONFIG.paths.excelPerToko)) {
+    const fileName = `${tokoKode}.xlsx`;
+    const filePath = `harga_toko/${fileName}`;
+    try {
+      const response = await githubClient.repos.listCommits({
+        owner: GITHUB_CONFIG.owner,
+        repo: GITHUB_CONFIG.repo,
+        path: filePath,
+        per_page: 1
+      });
+      if (response.data && response.data.length > 0) {
+        const commitDate = new Date(response.data[0].commit.author.date);
+        const tanggal = `${String(commitDate.getDate()).padStart(2, '0')}/${String(commitDate.getMonth() + 1).padStart(2, '0')}/${commitDate.getFullYear()}`;
+        
+        // Update semua item yang punya harga untuk toko ini
+        DATA_BARANG.forEach(item => {
+          if (item.harga[tokoKode] && item.harga[tokoKode].ecer > 0) {
+            if (!item.lastUpdated || tanggal > item.lastUpdated) {
+              item.lastUpdated = tanggal;
+            }
+          }
+        });
+        console.log(`   📅 ${NAMA_TOKO[tokoKode]}: ${tanggal}`);
+      }
+    } catch(e) {
+      // Fallback: tidak bisa ambil dari GitHub, skip
+    }
+    // Jeda 200ms biar tidak rate-limit
+    await new Promise(r => setTimeout(r, 200));
+  }
+  
+  const updatedCount = DATA_BARANG.filter(d => d.lastUpdated).length;
+  console.log(`✅ [LASTUPDATED] ${updatedCount}/${DATA_BARANG.length} barang punya tanggal update`);
+}
+
 // Load saat startup
 loadExcel();
+syncLastUpdatedFromGitHub();
 
 // ════════════════════════════════════════════════════════════════
 //   14. SEARCH ENGINE
