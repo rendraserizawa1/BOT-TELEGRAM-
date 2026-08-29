@@ -3205,12 +3205,20 @@ function loadExcelPerToko(tokoKode) {
 function loadExcel() {
   const perTokoItems = {};
   const totalPerToko = {};
+  const fileDateMap = {}; // Map kode toko -> tanggal modifikasi file terakhir
   
   // Load setiap toko
   Object.keys(CONFIG.paths.excelPerToko).forEach(tokoKode => {
+    const filePath = CONFIG.paths.excelPerToko[tokoKode];
     const items = loadExcelPerToko(tokoKode);
     perTokoItems[tokoKode] = items;
     totalPerToko[tokoKode] = items.length;
+    // Dapatkan tanggal modifikasi file Excel
+    if (fs.existsSync(filePath)) {
+      const stat = fs.statSync(filePath);
+      const tanggal = new Date(stat.mtime);
+      fileDateMap[tokoKode] = `${String(tanggal.getDate()).padStart(2, '0')}/${String(tanggal.getMonth() + 1).padStart(2, '0')}/${tanggal.getFullYear()}`;
+    }
   });
   
   // Merge: barang dengan kode SAMA di multi-toko → 1 entry
@@ -3222,6 +3230,7 @@ function loadExcel() {
       
       if (!mergedMap.has(key)) {
         // Barang baru
+        const tanggalTerbaru = fileDateMap[tokoKode] || '';
         mergedMap.set(key, {
           kode: item.kode,
           nama: item.nama,
@@ -3230,6 +3239,7 @@ function loadExcel() {
           satuan: item.satuan,
           satuanPerToko: { [tokoKode]: item.satuan },
           namaPerToko: { [tokoKode]: item.nama },
+          lastUpdated: tanggalTerbaru,
           harga: {
             nk: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
             tdm: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
@@ -3241,6 +3251,10 @@ function loadExcel() {
       }
       
       const existing = mergedMap.get(key);
+      // Update lastUpdated jika ada tanggal yang lebih baru dari toko ini
+      if (fileDateMap[tokoKode] && fileDateMap[tokoKode] > existing.lastUpdated) {
+        existing.lastUpdated = fileDateMap[tokoKode];
+      }
       // Set harga & stok untuk toko ini
       existing.harga[tokoKode] = {
         ecer: item.ecer,
@@ -4693,6 +4707,8 @@ function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
       msg += `💵 Ecer: ${formatRp(h.ecer)}\n📦 Ambil: ${formatRp(h.ambil)}\n`;
     }
     msg += `📊 Stok: ${h.stok} ${h.stok > 0 ? '✅' : '⚠️'}`;
+    if (item.lastUpdated) msg += ` 📅 ${item.lastUpdated}`;
+    msg += '\n';
   } else {
     msg += `💰 *HARGA 5 TOKO:*\n\n`;
     TOKO_LIST.forEach(t => {
@@ -4706,8 +4722,9 @@ function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
       } else {
         msg += `   💵 Ecer: ${formatRp(h.ecer)} | 📦 Ambil: ${formatRp(h.ambil)}\n`;
       }
-      msg += `   📊 Stok: ${h.stok} ${item.satuan}\n\n`;
-    });
+       msg += `   📊 Stok: ${h.stok} ${item.satuan}\n`;
+      });
+      if (item.lastUpdated) msg += `\n📅 *Terakhir update:* ${item.lastUpdated}`;
   }
   return msg;
 }
@@ -4827,7 +4844,8 @@ async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
     if (tokoKode) {
       const h = item.harga[tokoKode];
       const harga = tipeHarga === 'grosir' ? h.ambil : h.ecer;
-      msg += `   💰 ${formatRp(harga)} | 📊 ${h.stok} ${h.stok > 0 ? '✅' : '⚠️'}\n`;
+      const lastUpd = item.lastUpdated ? ` 📅 ${item.lastUpdated}` : '';
+      msg += `   💰 ${formatRp(harga)} | 📊 ${h.stok} ${h.stok > 0 ? '✅' : '⚠️'}${lastUpd}\n`;
     }
     msg += '\n';
     buttons.push([{ 
