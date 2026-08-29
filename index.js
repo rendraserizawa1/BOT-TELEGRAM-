@@ -3243,6 +3243,7 @@ function loadExcel() {
           namaPerToko: { [tokoKode]: item.nama },
           tokoList: [tokoKode],
           lastUpdated: '',
+          lastUpdatedPerToko: {},
           harga: {
             nk: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
             tdm: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
@@ -3340,6 +3341,10 @@ async function syncLastUpdatedFromGitHub() {
       }
     });
     item.lastUpdated = latest ? latest.tanggal : '';
+    item.lastUpdatedPerToko = {};
+    (item.tokoList || []).forEach(tk => {
+      if (tokoDate[tk]) item.lastUpdatedPerToko[tk] = tokoDate[tk].tanggal;
+    });
   });
   
   const updatedCount = DATA_BARANG.filter(d => d.lastUpdated).length;
@@ -4766,7 +4771,8 @@ function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
       msg += `💵 Ecer: ${formatRp(h.ecer)}\n📦 Ambil: ${formatRp(h.ambil)}\n`;
     }
     msg += `📊 Stok: ${h.stok} ${h.stok > 0 ? '✅' : '⚠️'}`;
-    if (item.lastUpdated) msg += ` 📅 ${item.lastUpdated}`;
+    const tglT = (item.lastUpdatedPerToko && item.lastUpdatedPerToko[tokoKode]) || item.lastUpdated || '';
+    if (tglT) msg += ` 📅 ${tglT}`;
     msg += '\n';
   } else {
     msg += `💰 *HARGA 5 TOKO:*\n\n`;
@@ -4781,9 +4787,9 @@ function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
       } else {
         msg += `   💵 Ecer: ${formatRp(h.ecer)} | 📦 Ambil: ${formatRp(h.ambil)}\n`;
       }
-       msg += `   📊 Stok: ${h.stok} ${item.satuan}\n`;
+      const tglP = (item.lastUpdatedPerToko && item.lastUpdatedPerToko[t.kode]) || '';
+      msg += `   📊 Stok: ${h.stok} ${item.satuan}${tglP ? ` 📅 ${tglP}` : ''}\n`;
       });
-      if (item.lastUpdated) msg += `\n📅 *Terakhir update:* ${item.lastUpdated}`;
   }
   return msg;
 }
@@ -4903,7 +4909,8 @@ async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
     if (tokoKode) {
       const h = item.harga[tokoKode];
       const harga = tipeHarga === 'grosir' ? h.ambil : h.ecer;
-      const lastUpd = item.lastUpdated ? ` 📅 ${item.lastUpdated}` : '';
+      const tglT = (item.lastUpdatedPerToko && item.lastUpdatedPerToko[tokoKode]) || '';
+      const lastUpd = tglT ? ` 📅 ${tglT}` : '';
       msg += `   💰 ${formatRp(harga)} | 📊 ${h.stok} ${h.stok > 0 ? '✅' : '⚠️'}${lastUpd}\n`;
     }
     msg += '\n';
