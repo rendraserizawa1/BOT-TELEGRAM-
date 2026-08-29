@@ -3278,8 +3278,8 @@ function loadExcel() {
 
 // ═══ SYNC LAST UPDATED DATES FROM GITHUB COMMITS ═══
 async function syncLastUpdatedFromGitHub() {
-  if (!isGitHubEnabled) {
-    console.log('⚠️ [LASTUPDATED] Skip: GitHub tidak aktif');
+  if (!isGitHubEnabled || !githubClient) {
+    console.log('⚠️ [LASTUPDATED] Skip: GitHub tidak aktif atau client belum ready');
     return;
   }
   
@@ -3293,6 +3293,7 @@ async function syncLastUpdatedFromGitHub() {
         owner: GITHUB_CONFIG.owner,
         repo: GITHUB_CONFIG.repo,
         path: filePath,
+        ref: GITHUB_CONFIG.branch,
         per_page: 1
       });
       if (response.data && response.data.length > 0) {
@@ -3301,16 +3302,18 @@ async function syncLastUpdatedFromGitHub() {
         
         // Update semua item yang punya harga untuk toko ini
         DATA_BARANG.forEach(item => {
-          if (item.harga[tokoKode] && item.harga[tokoKode].ecer > 0) {
+          if (item.harga[tokoKode]) {
             if (!item.lastUpdated || tanggal > item.lastUpdated) {
               item.lastUpdated = tanggal;
             }
           }
         });
         console.log(`   📅 ${NAMA_TOKO[tokoKode]}: ${tanggal}`);
+      } else {
+        console.log(`   ⚠️ ${NAMA_TOKO[tokoKode]}: Tidak ada commit ditemukan`);
       }
     } catch(e) {
-      // Fallback: tidak bisa ambil dari GitHub, skip
+      console.log(`   ❌ ${NAMA_TOKO[tokoKode]}: ${e.message}`);
     }
     // Jeda 200ms biar tidak rate-limit
     await new Promise(r => setTimeout(r, 200));
