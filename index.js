@@ -8924,6 +8924,47 @@ async function prosesUpdateExcelToko(chatId, userId, tokoKode, fileId, fileName)
 // ════════════════════════════════════════════════════════════════
 
 bot.on('message', async (msg) => {
+  // HANDLER DOCUMENT/EXCEL
+  if (msg.document) {
+    const doc = msg.document;
+    const fileName = (doc.file_name || '').toLowerCase();
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    if (!isMember(userId)) return kirim(chatId, buildGuestWelcome(msg.from.first_name, userId));
+    
+    if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
+      return kirim(chatId, '⚠️ Silakan kirim file dengan format Excel (`.xlsx` atau `.xls`).');
+    }
+    
+    if (!isAdmin(userId) && !isStaff(userId)) {
+      return kirim(chatId, '🚫 Hanya Admin atau Staff yang diizinkan mengupdate file Excel harga toko.');
+    }
+    
+    let tokoKode = null;
+    for (const t of TOKO_LIST) {
+      if (fileName.includes(t.kode)) {
+        tokoKode = t.kode;
+        break;
+      }
+    }
+    
+    if (!tokoKode) {
+      const inlineButtons = TOKO_LIST.map(t => [{
+        text: `${t.icon} ${t.nama} (${t.kode.toUpperCase()})`,
+        callback_data: `upload_excel:${t.kode}:${doc.file_id}`
+      }]);
+      return kirim(chatId, 
+        `📊 *FILE EXCEL DITERIMA: ${doc.file_name}*\n${GARIS_TEBAL}\n\n` +
+        `Silakan pilih toko mana yang akan di-update harga tokonya:`, 
+        { reply_markup: { inline_keyboard: inlineButtons } }
+      );
+    }
+    
+    await prosesUpdateExcelToko(chatId, userId, tokoKode, doc.file_id, doc.file_name);
+    return;
+  }
+  
   if (msg.text && msg.text.startsWith('/')) return;
   if (!msg.text) return;
   if (msg.voice || msg.photo) return;
