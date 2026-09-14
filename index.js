@@ -295,7 +295,7 @@ function encrypt(text) {
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
     return iv.toString('hex') + ':' + encrypted;
-  } catch(e) { return text; }
+  } catch(e) { log.warn('CRYPTO', 'Encrypt gagal, data disimpan plaintext: ' + e.message); return text; }
 }
 
 function decrypt(text) {
@@ -308,7 +308,7 @@ function decrypt(text) {
     let decrypted = decipher.update(encrypted, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
     return decrypted;
-  } catch(e) { return text; }
+  } catch(e) { log.warn('CRYPTO', 'Decrypt gagal, pakai nilai asli: ' + e.message); return text; }
 }
 // ════════════════════════════════════════════════════════════════
 //   4B. GITHUB STORAGE - Data Permanent (FIXED - Reliable Sync)
@@ -742,18 +742,7 @@ if (isGitHubEnabled) {
   }, 2000);
 }
 
-// Flush pending saves saat shutdown
-process.on('SIGTERM', async () => {
-  console.log('🛑 SIGTERM received, flushing GitHub saves...');
-  await flushGitHubSaves();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  console.log('🛑 SIGINT received, flushing GitHub saves...');
-  await flushGitHubSaves();
-  process.exit(0);
-});
+// Flush pending saves saat shutdown: DITANGANI gracefulShutdown() (satu jalur, hindari race dobel-exit)
 // ════════════════════════════════════════════════════════════════
 //   5. ROLE & MEMBER HELPERS
 // ════════════════════════════════════════════════════════════════
@@ -5316,8 +5305,14 @@ function kbSOAktif() {
       { text: '📊 Export Gabungan', callback_data: 'so:exportgabungan' },
       { text: '✅ Selesai', callback_data: 'so:selesai' },
     ],
+    [
+      { text: '🔙 Kembali', callback_data: 'so:kembali' },
+    ],
   ]};
 }
+
+// Tombol batal standar untuk pesan SO yang tidak pakai kbSOAktif()
+const KB_KEMBALI_SO = { inline_keyboard: [[{ text: '🔙 Kembali', callback_data: 'so:kembali' }]] };
 
 function tampilkanBarangPilihan(item, tokoKode, userId, rakAktif) {
   const h = item.harga[tokoKode];
@@ -5391,11 +5386,12 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
         buttons.push([{ text: `📦 ${rak} (${items} barang)`, callback_data: `so:pilihrak:${rak}` }]);
       });
       buttons.push([{ text: '🆕 Buat Rak Baru', callback_data: 'so:rakbaru' }]);
+      buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
       rakMsg += `\n💡 *3 cara input rak:*\n   1. Pilih dari tombol\n   2. 📸 Kirim FOTO barcode rak\n   3. Ketik nama manual`;
       await kirim(chatId, rakMsg, { reply_markup: { inline_keyboard: buttons }});
     } else {
       rakMsg += `💡 *2 cara input rak:*\n   1. 📸 Kirim FOTO barcode rak\n   2. Ketik manual\n\n*Contoh:* \`Rak A1\``;
-      await kirim(chatId, rakMsg);
+      await kirim(chatId, rakMsg, { reply_markup: KB_KEMBALI_SO });
     }
     return;
   }
@@ -5408,7 +5404,8 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     const jamSekarang = getJamSekarang();
     await kirim(chatId,
       `✅ *Rak:* ${escapeMd(soInfo.rakAktif)}\n${GARIS_TIPIS}\n\n` +
-      `⏰ *STEP 3/3: Jam Mulai*\n\nFormat: \`HH:MM\`\n\n💡 Atau ketik *sekarang* (${jamSekarang})`
+      `⏰ *STEP 3/3: Jam Mulai*\n\nFormat: \`HH:MM\`\n\n💡 Atau ketik *sekarang* (${jamSekarang})`,
+      { reply_markup: KB_KEMBALI_SO }
     );
     return;
   }
@@ -5554,7 +5551,8 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       `*Contoh:*\n` +
       `• \`RAK PIRING STAINLESS 3 SUSUN\`\n` +
       `• \`TEMPAT BUMBU KACA SET 6\`\n\n` +
-      `Ketik *batal* untuk keluar.`
+      `Ketik *batal* untuk keluar.`,
+      { reply_markup: KB_KEMBALI_SO }
     );
     return;
   }
@@ -5585,7 +5583,7 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
         { reply_markup: { inline_keyboard: [
           [{ text: `✅ Pakai "${existing.nama.substring(0, 30)}"`, callback_data: `so:pick:${existing.kode}` }],
           [{ text: '➕ Tetap Tambah Baru', callback_data: 'so:konfirmtambahbaru' }],
-          [{ text: '🔙 Batal', callback_data: 'so:kembali' }],
+          [{ text: '🔙 Kembali', callback_data: 'so:kembali' }],
         ]}}
       );
       
@@ -5601,7 +5599,8 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       `Ketik seperti biasa:\n` +
       `• \`TOKO 15\` — stok di toko/rak\n` +
       `• \`GUDANG 20\` — stok di gudang\n\n` +
-      `📍 Rak: ${soInfo.rakAktif}`
+      `📍 Rak: ${soInfo.rakAktif}`,
+      { reply_markup: KB_KEMBALI_SO }
     );
     return;
   }
@@ -5685,7 +5684,7 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       return;
     }
     
-    await kirim(chatId, '📸 Kirim foto barang, atau ketik *skip* untuk lewati.');
+    await kirim(chatId, '📸 Kirim foto barang, atau ketik *skip* untuk lewati.', { reply_markup: KB_KEMBALI_SO });
     return;
   }
   
@@ -5696,7 +5695,7 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     const userLainList = Object.entries(usersAktif).filter(([uid]) => String(uid) !== String(userId));
     
     if (!userLainList.length) {
-      return kirim(chatId, `👥 Hanya kamu yang SO di ${namaToko} saat ini.`);
+      return kirim(chatId, `👥 Hanya kamu yang SO di ${namaToko} saat ini.`, { reply_markup: KB_KEMBALI_SO });
     }
     
     let m = `👥 *USER AKTIF SO DI ${namaToko}*\n${GARIS_TEBAL}\n\n`;
@@ -5889,14 +5888,14 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     const exactItem = DATA_BARANG.find(d => d.kode === message.trim().toUpperCase());
     if (exactItem) {
       updateSesi(userId, { pendingBarangKode: exactItem.kode });
-      await kirim(chatId, tampilkanBarangPilihan(exactItem, tokoKode, userId, soInfo.rakAktif));
+      await kirim(chatId, tampilkanBarangPilihan(exactItem, tokoKode, userId, soInfo.rakAktif), { reply_markup: KB_KEMBALI_SO });
       return;
     }
     
     const hasil = cariBarang(message);
     if (hasil.hasil.length === 1) {
       updateSesi(userId, { pendingBarangKode: hasil.hasil[0].kode });
-      await kirim(chatId, tampilkanBarangPilihan(hasil.hasil[0], tokoKode, userId, soInfo.rakAktif));
+      await kirim(chatId, tampilkanBarangPilihan(hasil.hasil[0], tokoKode, userId, soInfo.rakAktif), { reply_markup: KB_KEMBALI_SO });
       return;
     }
     
@@ -5916,7 +5915,7 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
         }]);
       });
       buttons.push([{ text: '➕ Tambah Barang Baru (Tidak Ada di List)', callback_data: 'so:tambahbaru' }]);
-      buttons.push([{ text: '🔙 Batal', callback_data: 'so:kembali' }]);
+      buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
       await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons }});
       return;
     }
@@ -7626,16 +7625,6 @@ bot.onText(/\/gambar (.+)/, async (msg, match) => {
   }
 });
 
-bot.onText(/\/approve (\d+)/, (msg, match) => {
-  if (!isAdmin(msg.from.id)) return;
-  approveUser(msg.chat.id, match[1]);
-});
-
-bot.onText(/\/reject (\d+)/, (msg, match) => {
-  if (!isAdmin(msg.from.id)) return;
-  rejectUser(msg.chat.id, match[1]);
-});
-
 bot.onText(/\/addstaff (\d+)/, (msg, match) => {
   if (!isAdmin(msg.from.id)) return;
   const r = tambahRoleLaporan(match[1]);
@@ -7648,11 +7637,6 @@ bot.onText(/\/removestaff (\d+)/, (msg, match) => {
   kirim(msg.chat.id, r.ok ? '✅ Staff laporan dihapus' : '❌ ' + r.alasan);
 });
 
-bot.onText(/\/removemember (\d+)/, (msg, match) => {
-  if (!isAdmin(msg.from.id)) return;
-  const r = hapusMember(match[1]);
-  kirim(msg.chat.id, r.ok ? '✅ Member dihapus' : '❌ ' + r.alasan);
-});
 // Ubah nama member (admin)
 bot.onText(/\/setnama (\d+) (.+)/, (msg, match) => {
   if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
@@ -9613,9 +9597,9 @@ bot.on('callback_query', async (query) => {
       
       updateSesi(userId, { soSetupStep: 'petugas' });
       try {
-        await bot.editMessageText(`📦 *STOCK OPNAME*\n🏦 ${toko.nama}\n📅 ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n✨ *SO BARU*\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\nJika lebih dari 1, pisah koma.\n\n*Contoh:* \`Budi\` atau \`Budi, Sari\`\n\nKetik *batal* untuk keluar.`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
+        await bot.editMessageText(`📦 *STOCK OPNAME*\n🏦 ${toko.nama}\n📅 ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n✨ *SO BARU*\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\nJika lebih dari 1, pisah koma.\n\n*Contoh:* \`Budi\` atau \`Budi, Sari\`\n\nKetik *batal* untuk keluar.`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: KB_KEMBALI_SO });
       } catch(e) {
-        await kirim(chatId, `📦 *SO - ${toko.nama}*\n\n👥 *STEP 1/3: Nama Petugas*\nKetik nama petugas.`);
+        await kirim(chatId, `📦 *SO - ${toko.nama}*\n\n👥 *STEP 1/3: Nama Petugas*\nKetik nama petugas.`, { reply_markup: KB_KEMBALI_SO });
       }
       return;
     }
@@ -9750,7 +9734,7 @@ bot.on('callback_query', async (query) => {
     if (!item) return;
     const session = getSesi(userId);
     updateSesi(userId, { pendingBarangKode: kode });
-    kirim(chatId, tampilkanBarangPilihan(item, session.tokoKode, userId, session.soInfo?.rakAktif));
+    kirim(chatId, tampilkanBarangPilihan(item, session.tokoKode, userId, session.soInfo?.rakAktif), { reply_markup: KB_KEMBALI_SO });
     return;
   }
   
@@ -9778,7 +9762,8 @@ bot.on('callback_query', async (query) => {
     updateSesi(userId, { soTambahBaruStep: 'qty' });
     await kirim(chatId,
       `✅ *Nama: ${escapeMd(namaBarang)}*\n${GARIS_TIPIS}\n\n` +
-      `📝 *STEP 2/3: Jumlah Barang*\n\nKetik:\n• \`TOKO 15\`\n• \`GUDANG 20\`\n\n📍 Rak: ${session.soInfo?.rakAktif || '-'}`
+      `📝 *STEP 2/3: Jumlah Barang*\n\nKetik:\n• \`TOKO 15\`\n• \`GUDANG 20\`\n\n📍 Rak: ${session.soInfo?.rakAktif || '-'}`,
+      { reply_markup: KB_KEMBALI_SO }
     );
     return;
   }
@@ -9804,7 +9789,7 @@ bot.on('callback_query', async (query) => {
     let m = `➕ *BERGABUNG KE SO*\n🏦 ${NAMA_TOKO[session.tokoKode]}\n${GARIS_TEBAL}\n\n👥 *Petugas sudah ada:*\n`;
     Object.entries(usersAktif).forEach(([, info], i) => { m += `   ${i+1}. ${info.nama} (di ${info.rakAktif})\n`; });
     m += `\n${GARIS_TIPIS}\n\n👤 *Siapa nama Anda?*\n\n*Contoh:* \`Joko\` atau \`Joko, Andi\`\n\nKetik *batal* untuk keluar.`;
-    await kirim(chatId, m);
+    await kirim(chatId, m, { reply_markup: KB_KEMBALI_SO });
     return;
   }
   
@@ -9832,7 +9817,7 @@ bot.on('callback_query', async (query) => {
         buttons.push([{ text: `✏️ ${rakName} (${itemCount})`, callback_data: `so:editrak:${rakName}:0` }]);
       }
     });
-    buttons.push([{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]);
+    buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
     await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons } });
     return;
   }
@@ -9854,7 +9839,7 @@ bot.on('callback_query', async (query) => {
     SO_SHARED[session.tokoKode] = { tanggal: getTanggalSlash(false), sesiAktif: false, racks: {}, usersAktif: {}, barangBaru: [] };
     saveJSON(CONFIG.paths.soShared, SO_SHARED);
     updateSesi(userId, { soSetupStep: 'petugas' });
-    await kirim(chatId, `✅ *Data lama di-backup & direset!*\n${GARIS_TEBAL}\n\n🆕 *SO BARU - ${NAMA_TOKO[session.tokoKode]}*\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\n*Contoh:* \`Budi\` atau \`Budi, Sari\``);
+    await kirim(chatId, `✅ *Data lama di-backup & direset!*\n${GARIS_TEBAL}\n\n🆕 *SO BARU - ${NAMA_TOKO[session.tokoKode]}*\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\n*Contoh:* \`Budi\` atau \`Budi, Sari\``, { reply_markup: KB_KEMBALI_SO });
     return;
   }
   
@@ -9866,7 +9851,7 @@ bot.on('callback_query', async (query) => {
     if (session.soSetupStep === 'rak') {
       session.soInfo.rakAktif = rakName;
       updateSesi(userId, { soInfo: session.soInfo, soSetupStep: 'jam' });
-      await kirim(chatId, `✅ *Rak dipilih:* ${escapeMd(rakName)}\n${GARIS_TIPIS}\n\n⏰ *STEP 3/3: Jam Mulai*\nFormat: \`HH:MM\` atau *sekarang* (${getJamSekarang()})`);
+      await kirim(chatId, `✅ *Rak dipilih:* ${escapeMd(rakName)}\n${GARIS_TIPIS}\n\n⏰ *STEP 3/3: Jam Mulai*\nFormat: \`HH:MM\` atau *sekarang* (${getJamSekarang()})`, { reply_markup: KB_KEMBALI_SO });
     } else {
       session.soInfo.rakAktif = rakName;
       updateSesi(userId, { soInfo: session.soInfo, soSetupStep: null });
@@ -9881,7 +9866,7 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     const step = session.soSetupStep === 'rak' ? 'rak_input' : 'rak_input_pindah';
     updateSesi(userId, { soSetupStep: step });
-    await kirim(chatId, `📦 *Input Nama Rak Baru*\n${GARIS_TIPIS}\n\n💡 *2 cara:*\n   1. 📸 Kirim FOTO barcode rak\n   2. Ketik manual\n\n*Contoh:* \`Rak C3\``);
+    await kirim(chatId, `📦 *Input Nama Rak Baru*\n${GARIS_TIPIS}\n\n💡 *2 cara:*\n   1. 📸 Kirim FOTO barcode rak\n   2. Ketik manual\n\n*Contoh:* \`Rak C3\``, { reply_markup: KB_KEMBALI_SO });
     return;
   }
   
@@ -10125,9 +10110,69 @@ bot.on('callback_query', async (query) => {
   
   if (data === 'so:kembali') {
     const session = getSesi(userId);
-    if (!session.soInfo) return;
-    await kirim(chatId, `🔙 *Lanjut input barang*\n📍 Rak: *${escapeMd(session.soInfo.rakAktif)}*\n\nKetik nama/kode barang...`, { reply_markup: kbSOAktif() });
-    return;
+    if (!session.soInfo) {
+      resetSesi(userId);
+      return kirim(chatId, '📋 *MENU UTAMA*', { reply_markup: kbMainMenu(userId) });
+    }
+    const soInfo = session.soInfo;
+
+    // Layer 1: tambah barang baru (foto → qty → nama → input)
+    if (session.soTambahBaruStep === 'foto') {
+      updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null, soBaruKode: null });
+      return kirim(chatId, `🔙 *Kembali*\n\n💬 Lanjutkan input barang:`, { reply_markup: kbSOAktif() });
+    }
+    if (session.soTambahBaruStep === 'qty') {
+      updateSesi(userId, { soTambahBaruStep: 'nama', soBaruNama: null });
+      return kirim(chatId, `🔙 *Kembali*\n${GARIS_TIPIS}\n\n📝 *STEP 1/3: Nama Barang*\n\nKetik nama barang lengkap:`, { reply_markup: KB_KEMBALI_SO });
+    }
+    if (session.soTambahBaruStep === 'nama') {
+      updateSesi(userId, { soTambahBaruStep: null, soBaruNama: null });
+      return kirim(chatId, `🔙 *Kembali*\n\n💬 Lanjutkan input barang:`, { reply_markup: kbSOAktif() });
+    }
+
+    // Layer 2: edit qty
+    if (session.soEditMode) {
+      updateSesi(userId, { soEditMode: false, soEditInfo: null });
+      return kirim(chatId, `🔙 *Kembali*\n\n💬 Lanjutkan input barang:`, { reply_markup: kbSOAktif() });
+    }
+
+    // Layer 3: pilih barang (menunggu TOKO/GUDANG)
+    if (session.pendingBarangKode) {
+      updateSesi(userId, { pendingBarangKode: null });
+      return kirim(chatId, `🔙 *Kembali*\n\n💬 Ketik nama/kode barang lain:`, { reply_markup: kbSOAktif() });
+    }
+
+    // Layer 4: wizard setup (jam → rak → petugas → pilih toko)
+    if (session.soSetupStep === 'jam') {
+      updateSesi(userId, { soSetupStep: 'rak' });
+      const buttons = [];
+      Object.keys(getAllRacks(session.tokoKode)).forEach(rak => {
+        const items = Object.keys(getBarangDiRak(session.tokoKode, rak)).length;
+        buttons.push([{ text: `📦 ${rak} (${items} barang)`, callback_data: `so:pilihrak:${rak}` }]);
+      });
+      buttons.push([{ text: '🆕 Buat Rak Baru', callback_data: 'so:rakbaru' }]);
+      buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
+      return kirim(chatId, `🔙 *Kembali*\n${GARIS_TIPIS}\n\n✅ Petugas: *${escapeMd((soInfo.petugas || []).join(', '))}*\n\n📦 *STEP 2/3: Pilih/Buat Rak*`, { reply_markup: { inline_keyboard: buttons } });
+    }
+    if (session.soSetupStep === 'rak' || session.soSetupStep === 'rak_input') {
+      updateSesi(userId, { soSetupStep: 'petugas' });
+      return kirim(chatId, `🔙 *Kembali*\n${GARIS_TIPIS}\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\n*Contoh:* \`Budi\` atau \`Budi, Sari\``, { reply_markup: KB_KEMBALI_SO });
+    }
+    if (session.soSetupStep === 'petugas') {
+      updateSesi(userId, { soSetupStep: null, mode: null });
+      return kirim(chatId, `🔙 *Kembali*\n\n🏦 Pilih toko untuk Stock Opname:`, { reply_markup: kbPilihToko(5) });
+    }
+    if (session.soSetupStep === 'pindahrak_namabaru' || session.soSetupStep === 'rak_input_pindah') {
+      updateSesi(userId, { soSetupStep: null });
+      return kirim(chatId, `🔙 *Kembali*\n\n💬 Lanjutkan input di rak *${escapeMd(soInfo.rakAktif)}*:`, { reply_markup: kbSOAktif() });
+    }
+    if (session.soScanRakPending || session.soScanRakPindahPending) {
+      updateSesi(userId, { soScanRakPending: null, soScanRakPindahPending: null });
+      return kirim(chatId, `🔙 *Kembali*\n\n💬 Lanjutkan input barang:`, { reply_markup: kbSOAktif() });
+    }
+
+    // Root: input barang
+    return kirim(chatId, `🔙 *Kembali*\n📍 Rak: *${escapeMd(soInfo.rakAktif)}*\n\n💬 Ketik nama/kode barang...`, { reply_markup: kbSOAktif() });
   }
   
   // ════════════ STOCK OPNAME: SCAN RAK ════════════
@@ -10140,7 +10185,7 @@ bot.on('callback_query', async (query) => {
     if (session.soSetupStep === 'rak' || session.soSetupStep === 'rak_input') {
       session.soInfo.rakAktif = namaRak;
       updateSesi(userId, { soInfo: session.soInfo, soSetupStep: 'jam', soScanRakPending: null });
-      await kirim(chatId, `✅ *Rak: ${escapeMd(namaRak)}*\n${GARIS_TIPIS}\n\n⏰ *STEP 3/3: Jam Mulai*\nFormat: \`HH:MM\` atau *sekarang* (${getJamSekarang()})`);
+      await kirim(chatId, `✅ *Rak: ${escapeMd(namaRak)}*\n${GARIS_TIPIS}\n\n⏰ *STEP 3/3: Jam Mulai*\nFormat: \`HH:MM\` atau *sekarang* (${getJamSekarang()})`, { reply_markup: KB_KEMBALI_SO });
     } else if (session.soSetupStep === 'pindahrak_namabaru' || session.soSetupStep === 'rak_input_pindah') {
       session.soInfo.rakAktif = namaRak;
       updateSesi(userId, { soInfo: session.soInfo, soSetupStep: null, soScanRakPending: null });
@@ -10150,7 +10195,7 @@ bot.on('callback_query', async (query) => {
     } else {
       session.soInfo.rakAktif = namaRak;
       updateSesi(userId, { soInfo: session.soInfo, soSetupStep: 'jam', soScanRakPending: null });
-      await kirim(chatId, `✅ *Rak: ${escapeMd(namaRak)}*\n\n⏰ Ketik jam mulai atau *sekarang*`);
+      await kirim(chatId, `✅ *Rak: ${escapeMd(namaRak)}*\n\n⏰ Ketik jam mulai atau *sekarang*`, { reply_markup: KB_KEMBALI_SO });
     }
     return;
   }
@@ -10160,7 +10205,7 @@ bot.on('callback_query', async (query) => {
     updateSesi(userId, { soScanRakPending: null });
     const step = (session.soSetupStep === 'rak' || session.soSetupStep === 'rak_input') ? 'rak_input' : 'rak_input_pindah';
     updateSesi(userId, { soSetupStep: step });
-    await kirim(chatId, `📦 Ketik nama rak ${data.includes('edit') ? 'yang benar' : 'baru'}:\n\n*Contoh:* \`Rak A1\``);
+    await kirim(chatId, `📦 Ketik nama rak ${data.includes('edit') ? 'yang benar' : 'baru'}:\n\n*Contoh:* \`Rak A1\``, { reply_markup: KB_KEMBALI_SO });
     return;
   }
   
@@ -11006,7 +11051,9 @@ async function gracefulShutdown(signal) {
       console.log('✅ Web server closed');
     }
     
-    // 3. Save semua data sebelum exit
+    // 3. Flush pending GitHub saves + save data lokal sebelum exit
+    console.log('🔄 Flushing GitHub saves...');
+    await flushGitHubSaves();
     console.log('💾 Saving data...');
     if (sesiSaveTimer) clearTimeout(sesiSaveTimer);
     saveJSON(CONFIG.paths.sesi, SESI);
