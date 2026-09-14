@@ -80,6 +80,16 @@ cekJenis('guadang 7', 'gudang', 7);
 cekJenis('gudag 4', 'gudang', 4);
 cekJenis('gdng 6', 'gudang', 6);
 cekJenis('gdg 9', 'gudang', 9);
+cekJenis('gudg 4', 'gudang', 4);
+cekJenis('gdug 4', 'gudang', 4);
+cekJenis('kudang 5', 'gudang', 5);
+cekJenis('tudang 5', 'gudang', 5);
+cekJenis('gudangggg 20', 'gudang', 20);
+cekJenis('gundeeng 20', 'gudang', 20);
+cekJenis('gu dang 20', 'gudang', 20);
+cekJenis('tokoh 2', 'fisik', 2);
+cekJenis('tooko 4', 'fisik', 4);
+cekJenis('toko an 15', 'fisik', 15);
 cekJenis('abrakadabra 5', null, null);
 cekJenis('toko tanpa angka', null, null);
 

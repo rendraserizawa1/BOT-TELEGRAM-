@@ -3451,7 +3451,7 @@ function ekstrakAngkaSaja(str) {
 // Mirip typo: exact/prefix/Levenshtein longgar + toleran huruf tertukar posisi ("guadng" = "gudang")
 function miripTypo(w, t) {
   if (w === t || t.startsWith(w) || w.startsWith(t)) return true;
-  const maxJ = w.length <= 4 ? 1 : (w.length >= 7 ? 3 : 2);
+  const maxJ = w.length <= 4 ? 1 : (w.length <= 6 ? 2 : (w.length <= 8 ? 3 : 4));
   if (levenshtein(w, t) <= maxJ) return true;
   for (let i = 0; i < w.length - 1; i++) {
     const v = w.slice(0, i) + w[i + 1] + w[i] + w.slice(i + 2);
@@ -3470,11 +3470,14 @@ function parseInputJenisQty(text) {
   if (!Number.isFinite(qty)) return null;
 
   const kata = raw.replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
+  // Kandidat: kata tunggal + gabungan 2 kata berdekatan ("gu dang" → "gudang")
+  const kandidat = [...kata];
+  for (let i = 0; i < kata.length - 1; i++) kandidat.push(kata[i] + kata[i + 1]);
   const TARGET = {
-    fisik: ['toko', 'fisik', 'tokoan', 'store', 'tko'],
-    gudang: ['gudang', 'gdg', 'gdng', 'warehouse'],
+    fisik: ['toko', 'fisik', 'tokoan', 'store', 'tko', 'tkoh'],
+    gudang: ['gudang', 'gdg', 'gdng', 'warehouse', 'gudg', 'gdug', 'gudag'],
   };
-  for (const w of kata) {
+  for (const w of kandidat) {
     if (w.length < 3) continue;
     for (const [jenis, daftar] of Object.entries(TARGET)) {
       for (const t of daftar) {
