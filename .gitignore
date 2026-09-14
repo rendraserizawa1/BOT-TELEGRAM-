@@ -94,9 +94,8 @@ $RECYCLE.BIN/
 # EXCEL FILES (Optional - kalau super rahasia)
 # ══════════════════════════════════════════
 
-# Uncomment kalau mau exclude file Excel:
-# harga_toko/*.xlsx
-# *.xlsx
+# Excel harga = source of truth di repo BOT-TELEGRAM-DATA (branch data-storage), jangan commit di repo kode
+harga_toko/
 
 # ══════════════════════════════════════════
 # RAILWAY / DEPLOYMENT
