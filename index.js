@@ -598,6 +598,58 @@ async function saveExcelToGitHub(tokoKode, fileBuffer, retryCount = 0) {
 }
 
 // ═══ DEBOUNCED SAVE (biar tidak spam commit) ═══
+// ════════════ SYNC XLSX: GITHUB → LOKAL (lokal & GitHub selalu sama) ════════════
+// GitHub = sumber kebenaran. Beda → tarik ke lokal + reload Excel + reset DB index.
+// Terjadi: saat startup + tiap SYNC_XLSX_INTERVAL_MENIT menit.
+// Upload via bot: simpan lokal → push GitHub (saveExcelToGitHub) → GitHub jadi acuan.
+const SYNC_XLSX_INTERVAL_MENIT = 10;
+
+async function syncExcelFromGitHub(verbose = false) {
+  if (!isGitHubEnabled) return { updated: [] };
+  const updated = [];
+  for (const tokoKode of Object.keys(CONFIG.paths.excelPerToko)) {
+    const filePath = `harga_toko/${tokoKode}.xlsx`;
+    const localPath = CONFIG.paths.excelPerToko[tokoKode];
+    try {
+      const res = await githubClient.repos.getContent({
+        owner: GITHUB_CONFIG.owner,
+        repo: GITHUB_CONFIG.repo,
+        path: filePath,
+        ref: GITHUB_CONFIG.branch,
+      });
+      const remoteBuf = Buffer.from(res.data.content, 'base64');
+      const remoteSha = res.data.sha;
+      let same = false;
+      if (fs.existsSync(localPath)) {
+        same = fs.readFileSync(localPath).equals(remoteBuf);
+      }
+      // Refresh cache SHA agar saveExcelToGitHub tidak kena 409 conflict
+      githubFileSHA[filePath] = remoteSha;
+      if (!same) {
+        fs.writeFileSync(localPath, remoteBuf);
+        updated.push(tokoKode);
+        console.log(`[GITHUB] ${filePath} DIPERBARUI dari GitHub (${remoteBuf.length} bytes)`);
+      } else if (verbose) {
+        console.log(`[GITHUB] ${filePath} sudah sinkron`);
+      }
+      await new Promise(r => setTimeout(r, 300));
+    } catch (err) {
+      if (err.status === 404) {
+        if (verbose) console.log(`[GITHUB] ${filePath} belum ada di GitHub (lokal jadi acuan)`);
+      } else {
+        console.warn(`[GITHUB] Sync ${filePath} gagal: ${err.message}`);
+      }
+    }
+  }
+  if (updated.length) {
+    updated.forEach(k => loadExcelPerToko(k));
+    loadExcel();
+    try { syncLastUpdatedFromGitHub(); } catch (e) {}
+    console.log(`[GITHUB] Excel ${updated.join(', ')} di-reload dari GitHub`);
+  }
+  return { updated };
+}
+
 const githubSaveTimers = {};
 const DEBOUNCE_DELAY = 30000; // 30 detik (lebih cepat dari 60)
 
@@ -3354,6 +3406,9 @@ async function syncLastUpdatedFromGitHub() {
 // Load saat startup
 loadExcel();
 syncLastUpdatedFromGitHub();
+// [SYNC-XLSX] tarik xlsx terbaru dari GitHub → lokal (biar selalu sama), reload bila berubah
+syncExcelFromGitHub(true);
+setInterval(() => syncExcelFromGitHub(false), SYNC_XLSX_INTERVAL_MENIT * 60 * 1000);
 
 // ════════════════════════════════════════════════════════════════
 //   14. SEARCH ENGINE
