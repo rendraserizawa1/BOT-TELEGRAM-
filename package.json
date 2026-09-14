@@ -24,5 +24,8 @@
     "qrcode-reader": "^1.0.4",
     "sharp": "^0.33.0",
     "@octokit/rest": "^20.0.0"
+  },
+  "allowScripts": {
+    "sharp@0.33.5": true
   }
 }

@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+logs
+storage
+harga_toko
+.env
+.env.*
+*.log
+kredensial.txt
+password.txt
+secrets.txt
+secrets/
