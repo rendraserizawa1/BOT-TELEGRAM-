@@ -3411,6 +3411,7 @@ setInterval(() => syncExcelFromGitHub(false), SYNC_XLSX_INTERVAL_MENIT * 60 * 10
 //   14. SEARCH ENGINE
 // ════════════════════════════════════════════════════════════════
 
+// ── [MESIN MATCHING] START (diextrak test_cari.js) ──
 function levenshtein(a, b) {
   if (a.length > 50) a = a.substring(0, 50);
   if (b.length > 50) b = b.substring(0, 50);
@@ -3432,12 +3433,19 @@ function bersihkanTeks(str) {
   return String(str).toUpperCase().replace(/[^A-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function kataMirip(kata, target) {
-  if (kata === target) return true;
-  if (kata.length <= 2 || target.length <= 2) return kata === target;
-  if (target.includes(kata) || kata.includes(target)) return true;
-  const maxJ = kata.length <= 4 ? 1 : 2;
-  return levenshtein(kata, target) <= maxJ;
+// Versi padat: buang SEMUA spasi & tanda baca ("wajan-32" → "WAJAN32")
+function padatkan(str) {
+  return String(str).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+// Tanda khusus yang diketik user: - , . ( ) / dll (selain huruf/angka/spasi)
+function ekstrakTandaKhusus(str) {
+  return String(str).toUpperCase().replace(/[A-Z0-9\s]/g, '');
+}
+
+// Angka saja: "1.8L" → ["1","8"]; "EAGLE 20" → ["20"]
+function ekstrakAngkaSaja(str) {
+  return String(str).match(/\d+/g) || [];
 }
 
 function bersihkanKeywordDariToko(pesan) {
@@ -3461,26 +3469,29 @@ function bersihkanKeywordDariToko(pesan) {
 
 function cariBarang(keyword) {
   if (!keyword || typeof keyword !== 'string') return { hasil: [], saran: [], tipeHasil: 'kosong' };
-  
+
   const qOri = keyword.trim().toUpperCase();
-  const qBersih = qOri.replace(/[^A-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-  const words = qBersih.split(/\s+/).filter(w => w.length > 0);
-  
-  if (!words.length) return { hasil: [], saran: [], tipeHasil: 'kosong' };
-  
+  if (!qOri) return { hasil: [], saran: [], tipeHasil: 'kosong' };
+
   const byKode = DATA_BARANG.filter(d => d.kode === qOri);
   if (byKode.length > 0) return { hasil: byKode, saran: [], tipeHasil: 'exact', totalDitemukan: byKode.length };
-  
+
+  const qNorm = bersihkanTeks(qOri);
+  const qPadat = padatkan(qOri);
+  const qTanda = ekstrakTandaKhusus(qOri);
+  const qAngka = ekstrakAngkaSaja(qOri);
+  const words = qNorm.split(/\s+/).filter(Boolean);
+  if (!words.length && !qPadat) return { hasil: [], saran: [], tipeHasil: 'kosong' };
+
+  // 2. Semua kata cocok (tanda baca user jadi pemisah → spasi)
   const fullMatch = DATA_BARANG.filter(item => {
-    const fullText = `${item.nama} ${item.kode} ${item.merek} ${item.jenis || ''}`.toUpperCase();
-    return words.every(w => {
-      if (w.length <= 2) {
-        return new RegExp(`(^|\\s)${w}(\\s|$)`, 'i').test(fullText);
-      }
+    const fullText = bersihkanTeks(`${item.nama} ${item.kode} ${item.merek || ''} ${item.jenis || ''}`);
+    return words.length > 0 && words.every(w => {
+      if (w.length <= 2) return new RegExp(`(^|\\s)${w}(\\s|$)`).test(fullText);
       return fullText.includes(w);
     });
   });
-  
+
   if (fullMatch.length > 0) {
     fullMatch.sort((a, b) => {
       const aWords = a.nama.split(/\s+/).length;
@@ -3490,39 +3501,86 @@ function cariBarang(keyword) {
     });
     return { hasil: fullMatch.slice(0, CONFIG.maxHasilCari), saran: [], tipeHasil: 'exact', totalDitemukan: fullMatch.length };
   }
-  
-  const minMatch = Math.max(1, Math.floor(words.length * 0.7));
+
+  // 3. Skor fuzzy: huruf per kata + spasi + tanda khusus + angka + bentuk padat
+  const minMatch = Math.max(1, Math.floor(words.length * 0.6));
   const scored = [];
+
   DATA_BARANG.forEach(item => {
     const nama = item.nama.toUpperCase();
     const kode = item.kode.toUpperCase();
     const merek = (item.merek || '').toUpperCase();
-    const fullText = `${nama} ${kode} ${merek}`;
-    
-    let score = 0, matchCount = 0;
+    const jenis = (item.jenis || '').toUpperCase();
+    const namaNorm = bersihkanTeks(nama);
+    const namaWords = namaNorm.split(/\s+/).filter(Boolean);
+    const namaPadat = padatkan(nama);
+    const itemPadat = padatkan(`${nama} ${kode} ${merek} ${jenis}`);
+    const itemTanda = ekstrakTandaKhusus(`${nama} ${merek}`);
+
+    let score = 0;
+    let matchCount = 0;
+
+    // 3a. tanda khusus (, . - ( ) /) cocok → poin tambah
+    if (qTanda) {
+      if (itemTanda === qTanda) score += 12;
+      else if (itemTanda && (itemTanda.includes(qTanda) || qTanda.includes(itemTanda))) score += 8;
+    }
+
+    // 3b. bentuk padat tanpa spasi/tanda: "wajan32" → "WAJAN 32"
+    if (qPadat.length >= 3) {
+      if (namaPadat === qPadat) score += 40;
+      else if (namaPadat.includes(qPadat)) score += 22;
+      else if (namaPadat.length >= 4 && qPadat.includes(namaPadat)) score += 14;
+      else if (itemPadat.includes(qPadat)) score += 16;
+    }
+
+    // 3c. per kata: huruf kombinasi apa pun, spasi, typo ringan
     words.forEach(w => {
-      let matched = false;
+      const wPadat = padatkan(w);
+      let best = 0;
       if (w.length <= 2) {
-        if (new RegExp(`(^|\\s)${w}(\\s|$)`, 'i').test(fullText)) { score += 10; matched = true; }
+        if (namaWords.includes(w)) best = 12;
+        else if (namaWords.some(nw => nw.startsWith(w))) best = 8;
+      } else if (namaWords.includes(w)) {
+        best = 18;
+      } else if (namaWords.some(nw => nw.startsWith(w) || (nw.length >= 4 && w.startsWith(nw)))) {
+        best = 14;
+      } else if (nama.includes(w)) {
+        best = 16;
+      } else if (kode.includes(w)) {
+        best = 20;
+      } else if (merek.includes(w)) {
+        best = 10;
+      } else if (jenis.includes(w)) {
+        best = 6;
+      } else if (wPadat.length >= 3 && namaPadat.includes(wPadat)) {
+        best = 14;
       } else {
-        if (nama.includes(w)) { score += 15; matched = true; if (nama.startsWith(w)) score += 5; }
-        else if (kode.includes(w)) { score += 20; matched = true; }
-        else if (merek.includes(w)) { score += 8; matched = true; }
-        else {
-          const namaWords = nama.split(/\s+/);
-          for (const nw of namaWords) {
-            if (kataMirip(w, nw)) { score += 3; matched = true; break; }
-          }
-        }
+        let bestDist = 99;
+        namaWords.forEach(nw => {
+          const maxJ = w.length <= 4 ? 1 : 2;
+          const d = levenshtein(w, nw);
+          if (d <= maxJ && d < bestDist) bestDist = d;
+        });
+        if (bestDist < 99) best = 8 - bestDist * 2;
       }
-      if (matched) matchCount++;
+      if (best > 0) { score += best; matchCount++; }
     });
-    if (matchCount >= minMatch) {
-      if (matchCount === words.length) score += 50;
+
+    // 3d. angka ikut memperkuat
+    if (qAngka.length) {
+      const itemAngka = ekstrakAngkaSaja(`${nama} ${kode} ${merek}`);
+      const cocok = qAngka.filter(a => itemAngka.includes(a)).length;
+      score += cocok * 6;
+      if (cocok === qAngka.length && matchCount > 0) score += 6;
+    }
+
+    if (matchCount >= minMatch || score >= 30) {
+      if (words.length > 0 && matchCount === words.length) score += 50;
       scored.push({ item, score, matchCount });
     }
   });
-  
+
   if (scored.length > 0) {
     scored.sort((a, b) => {
       if (b.matchCount !== a.matchCount) return b.matchCount - a.matchCount;
@@ -3531,26 +3589,32 @@ function cariBarang(keyword) {
     return {
       hasil: scored.slice(0, CONFIG.maxHasilCari).map(s => s.item),
       saran: [],
-      tipeHasil: scored[0].matchCount === words.length ? 'exact' : 'fuzzy',
+      tipeHasil: (words.length > 0 && scored[0].matchCount === words.length) ? 'exact' : 'fuzzy',
       totalDitemukan: scored.length,
     };
   }
-  
+
+  // 4. Saran terakhir: potongan huruf apa pun (spasi/tanda diabaikan)
   const saranScored = [];
   DATA_BARANG.forEach(item => {
-    const fullText = `${item.nama} ${item.kode} ${item.merek || ''}`.toUpperCase();
+    const fullText = `${item.nama} ${item.kode} ${item.merek || ''} ${item.jenis || ''}`.toUpperCase();
+    const fullPadat = padatkan(fullText);
     let matchCount = 0;
-    words.forEach(w => { if (w.length >= 2 && fullText.includes(w)) matchCount++; });
+    words.forEach(w => {
+      const wPadat = padatkan(w);
+      if ((w.length >= 2 && fullText.includes(w)) || (wPadat.length >= 3 && fullPadat.includes(wPadat))) matchCount++;
+    });
     if (matchCount > 0) saranScored.push({ item, matchCount });
   });
-  
+
   if (saranScored.length > 0) {
     saranScored.sort((a, b) => b.matchCount - a.matchCount);
     return { hasil: [], saran: saranScored.slice(0, 5).map(s => s.item), tipeHasil: 'saran' };
   }
-  
+
   return { hasil: [], saran: [], tipeHasil: 'kosong' };
 }
+// ── [MESIN MATCHING] END ──
 
 function cariBarangPrioritas(kw) {
   const q = kw.trim().toUpperCase();
