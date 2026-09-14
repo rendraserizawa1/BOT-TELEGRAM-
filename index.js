@@ -3448,8 +3448,20 @@ function ekstrakAngkaSaja(str) {
   return String(str).match(/\d+/g) || [];
 }
 
+// Mirip typo: exact/prefix/Levenshtein longgar + toleran huruf tertukar posisi ("guadng" = "gudang")
+function miripTypo(w, t) {
+  if (w === t || t.startsWith(w) || w.startsWith(t)) return true;
+  const maxJ = w.length <= 4 ? 1 : (w.length >= 7 ? 3 : 2);
+  if (levenshtein(w, t) <= maxJ) return true;
+  for (let i = 0; i < w.length - 1; i++) {
+    const v = w.slice(0, i) + w[i + 1] + w[i] + w.slice(i + 2);
+    if (v === t) return true;
+  }
+  return false;
+}
+
 // Deteksi jenis (toko/fisik/gudang) + qty TAHAN TYPO & tanda baca.
-// "toko 15", "tko 15", "toko15", "Toko: 15 pcs", "gudng 20" → { jenis, qty }
+// "toko 15", "tko 15", "toko15", "Toko: 15 pcs", "gudng 20", "guadng 20" → { jenis, qty }
 function parseInputJenisQty(text) {
   const raw = String(text || '').toLowerCase();
   const angka = raw.match(/\d+/g);
@@ -3459,16 +3471,14 @@ function parseInputJenisQty(text) {
 
   const kata = raw.replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
   const TARGET = {
-    fisik: ['toko', 'fisik', 'tokoan', 'store'],
-    gudang: ['gudang', 'gudang', 'gdg', 'warehouse'],
+    fisik: ['toko', 'fisik', 'tokoan', 'store', 'tko'],
+    gudang: ['gudang', 'gdg', 'gdng', 'warehouse'],
   };
   for (const w of kata) {
     if (w.length < 3) continue;
     for (const [jenis, daftar] of Object.entries(TARGET)) {
       for (const t of daftar) {
-        if (w === t || t.startsWith(w) || w.startsWith(t)) return { jenis, qty };
-        const maxJ = w.length <= 4 ? 1 : 2;
-        if (levenshtein(w, t) <= maxJ) return { jenis, qty };
+        if (miripTypo(w, t)) return { jenis, qty };
       }
     }
   }
