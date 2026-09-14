@@ -611,14 +611,22 @@ async function syncExcelFromGitHub(verbose = false) {
     const filePath = `harga_toko/${tokoKode}.xlsx`;
     const localPath = CONFIG.paths.excelPerToko[tokoKode];
     try {
-      const res = await githubClient.repos.getContent({
+      // Metadata (sha) via Contents API — aman untuk file >1MB (content bisa kosong)
+      const meta = await githubClient.repos.getContent({
         owner: GITHUB_CONFIG.owner,
         repo: GITHUB_CONFIG.repo,
         path: filePath,
         ref: GITHUB_CONFIG.branch,
       });
-      const remoteBuf = Buffer.from(res.data.content, 'base64');
-      const remoteSha = res.data.sha;
+      const remoteSha = meta.data.sha;
+      // Isi file via raw.githubusercontent (Contents API kosongkan content untuk >1MB)
+      const rawUrl = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${filePath}`;
+      const rawRes = await axios.get(rawUrl, {
+        headers: { Authorization: `token ${GITHUB_CONFIG.token}` },
+        responseType: 'arraybuffer',
+        maxContentLength: Infinity,
+      });
+      const remoteBuf = Buffer.from(rawRes.data);
       let same = false;
       if (fs.existsSync(localPath)) {
         same = fs.readFileSync(localPath).equals(remoteBuf);
