@@ -1,5 +1,5 @@
 'use strict';
-// Self-test mesin matching cariBarang (jalankan: node test_cari.js)
+// Self-test mesin matching cariBarang + parser input jenis/qty (jalankan: node test_cari.js)
 // Ekstrak blok [MESIN MATCHING] dari index.js supaya logika tetap satu sumber.
 const fs = require('fs');
 const path = require('path');
@@ -19,8 +19,8 @@ const DATA_BARANG = [
   { kode: 'NN005', nama: 'KASUR BIGFOAM 160', merek: 'BIGFOAM', jenis: 'KASUR', harga: {} },
 ];
 
-const factory = new Function('CONFIG', 'DATA_BARANG', code + '\nreturn cariBarang;');
-const cariBarang = factory(CONFIG, DATA_BARANG);
+const factory = new Function('CONFIG', 'DATA_BARANG', code + '\nreturn { cariBarang, parseInputJenisQty };');
+const { cariBarang, parseInputJenisQty } = factory(CONFIG, DATA_BARANG);
 
 let gagal = 0;
 function cek(query, kodeHarusAda, catatan) {
@@ -28,6 +28,13 @@ function cek(query, kodeHarusAda, catatan) {
   const kodes = r.hasil.map(h => h.kode);
   const ok = kodes.includes(kodeHarusAda);
   console.log(`${ok ? 'OK  ' : 'FAIL'} "${query}" → [${r.tipeHasil}] ${kodes.join(', ') || '-'}${ok ? '' : ' | harap ' + kodeHarusAda + ' (' + catatan + ')'}`);
+  if (!ok) gagal++;
+}
+
+function cekJenis(input, jenisHarap, qtyHarap) {
+  const r = parseInputJenisQty(input);
+  const ok = jenisHarap === null ? r === null : (r && r.jenis === jenisHarap && r.qty === qtyHarap);
+  console.log(`${ok ? 'OK  ' : 'FAIL'} jenis "${input}" → ${r ? `{${r.jenis}, ${r.qty}}` : 'null'}${ok ? '' : ` | harap ${jenisHarap === null ? 'null' : `{${jenisHarap}, ${qtyHarap}}`}`}`);
   if (!ok) gagal++;
 }
 
@@ -46,6 +53,22 @@ cek('teko 18l', 'NN003', 'tanpa titik');
 cek('panci (24)', 'NN004', 'kurung');
 cek('panci sus304 24', 'NN004', 'kode dalam nama');
 cek('kasur bigfoam 160', 'NN005', 'normal');
+
+// input qty SO: normal, typo, tanda baca, tanpa spasi, urutan dibalik
+cekJenis('toko 15', 'fisik', 15);
+cekJenis('tko 15', 'fisik', 15);
+cekJenis('toko15', 'fisik', 15);
+cekJenis('Toko: 15 pcs', 'fisik', 15);
+cekJenis('tokoo 15', 'fisik', 15);
+cekJenis('fisik 3', 'fisik', 3);
+cekJenis('15 toko', 'fisik', 15);
+cekJenis('gudang 20', 'gudang', 20);
+cekJenis('gudng 20', 'gudang', 20);
+cekJenis('gduang 7', 'gudang', 7);
+cekJenis('GUDANG: 20', 'gudang', 20);
+cekJenis('gdg 9', 'gudang', 9);
+cekJenis('abrakadabra 5', null, null);
+cekJenis('toko tanpa angka', null, null);
 
 console.log(gagal === 0 ? '\nSEMUA LULUS' : `\n${gagal} GAGAL`);
 process.exit(gagal === 0 ? 0 : 1);

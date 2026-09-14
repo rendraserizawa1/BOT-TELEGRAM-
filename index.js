@@ -3448,6 +3448,33 @@ function ekstrakAngkaSaja(str) {
   return String(str).match(/\d+/g) || [];
 }
 
+// Deteksi jenis (toko/fisik/gudang) + qty TAHAN TYPO & tanda baca.
+// "toko 15", "tko 15", "toko15", "Toko: 15 pcs", "gudng 20" → { jenis, qty }
+function parseInputJenisQty(text) {
+  const raw = String(text || '').toLowerCase();
+  const angka = raw.match(/\d+/g);
+  if (!angka) return null;
+  const qty = parseInt(angka[angka.length - 1], 10);
+  if (!Number.isFinite(qty)) return null;
+
+  const kata = raw.replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
+  const TARGET = {
+    fisik: ['toko', 'fisik', 'tokoan', 'store'],
+    gudang: ['gudang', 'gudang', 'gdg', 'warehouse'],
+  };
+  for (const w of kata) {
+    if (w.length < 3) continue;
+    for (const [jenis, daftar] of Object.entries(TARGET)) {
+      for (const t of daftar) {
+        if (w === t || t.startsWith(w) || w.startsWith(t)) return { jenis, qty };
+        const maxJ = w.length <= 4 ? 1 : 2;
+        if (levenshtein(w, t) <= maxJ) return { jenis, qty };
+      }
+    }
+  }
+  return null;
+}
+
 function bersihkanKeywordDariToko(pesan) {
   if (!pesan) return '';
   let cleaned = pesan;
@@ -5676,8 +5703,8 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       return;
     }
     
-    const match = message.trim().match(/^(toko|fisik|gudang)\s+(\d+)$/i);
-    if (!match) {
+    const parsedQty = parseInputJenisQty(message);
+    if (!parsedQty) {
       const angka = message.replace(/[^0-9]/g, '');
       if (angka) {
         await kirim(chatId, `⚠️ Ketik:\n• \`TOKO ${angka}\`\n• \`GUDANG ${angka}\``);
@@ -5687,9 +5714,8 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       return;
     }
     
-    const jenis = match[1].toLowerCase();
-    const jumlah = parseInt(match[2]);
-    const jenisKey = (jenis === 'toko' || jenis === 'fisik') ? 'fisik' : 'gudang';
+    const jumlah = parsedQty.qty;
+    const jenisKey = parsedQty.jenis;
     const namaBarang = session.soBaruNama;
     const namaPetugas = soInfo.petugas[0] || getNama(userId) || 'User';
     
@@ -5908,16 +5934,15 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     const item = DATA_BARANG.find(d => d.kode === kode);
     if (!item) { updateSesi(userId, { pendingBarangKode: null }); return; }
     
-    const match = message.trim().match(/^(toko|fisik|gudang)\s+(\d+)$/i);
-    if (!match) {
+    const parsedQty = parseInputJenisQty(message);
+    if (!parsedQty) {
       const angka = message.replace(/[^0-9]/g, '');
       if (angka) return kirim(chatId, `⚠️ Ketik:\n• \`TOKO ${angka}\`\n• \`GUDANG ${angka}\``);
       return;
     }
     
-    const jenis = match[1].toLowerCase();
-    const jumlah = parseInt(match[2]);
-    const jenisKey = (jenis === 'toko' || jenis === 'fisik') ? 'fisik' : 'gudang';
+    const jumlah = parsedQty.qty;
+    const jenisKey = parsedQty.jenis;
     const namaPetugas = soInfo.petugas[0] || getNama(userId) || 'User';
     
     tambahQtyItemSO(tokoKode, soInfo.rakAktif, kode, userId, namaPetugas, jumlah, jenisKey);
