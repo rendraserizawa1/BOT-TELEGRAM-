@@ -62,6 +62,9 @@ const CONFIG = {
   maxHasilCari: 20,
   sesiTimeoutMenit: 30,
   webPort: process.env.PORT || 3000,
+  notaTokoFolder: {
+    ELT: 'E:\\TOKO NASIONAL KITCHEN\\Nota Toko Nasional Kitchen',
+  },
 };
 
 if (!CONFIG.botToken) {
@@ -4652,6 +4655,7 @@ function kbMainMenu(userId) {
     ]);
         buttons.push([
       { text: '🏠 Input Homebase', callback_data: 'menu:7' },
+      { text: '📸 Simpan Nota', callback_data: 'menu:10' },
     ]);
   } else if (isMember(userId)) {
     buttons.push([
@@ -8411,6 +8415,119 @@ async function prosesVoiceSearch(chatId, userId, searchText, originalText) {
 }
 
 // ════════════════════════════════════════════════════════════════
+//   33B. SIMPAN NOTA (Simpan foto nota ke folder disk via OCR)
+// ════════════════════════════════════════════════════════════════
+
+const BULAN_NOTA = ['januari','februari','maret','april','mei','juni','juli','agustus','september','oktober','november','desember'];
+
+const SCAN_PROMPT_NOTA = 'Baca foto faktur/nota penjualan ini. Ekstrak data dari kop nota. Jawab HANYA JSON tanpa penjelasan lain: {"kode": "huruf kode pada Nomor, contoh ELT", "nomor": "angka nomor nota, contoh 000001", "tanggal": <tanggal 1-31>, "bulan": "nama bulan Indonesia, contoh September", "tahun": <tahun 4 digit>}';
+
+// ── [MESIN NOTA] START
+function parseNotaOCR(text) {
+  const m = String(text || '').match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    const d = JSON.parse(m[0]);
+    return validasiNota(String(d.kode), String(d.nomor), parseInt(d.tanggal), String(d.bulan || '').toLowerCase().trim(), parseInt(d.tahun));
+  } catch(e) { return null; }
+}
+
+function parseNotaManual(text) {
+  const p = String(text || '').trim().split(/\s+/);
+  if (p.length < 5) return null;
+  return validasiNota(p[0], p[1], parseInt(p[2]), p[3].toLowerCase(), parseInt(p[4]));
+}
+
+function validasiNota(kode, nomor, tanggal, bulan, tahun) {
+  kode = String(kode || '').toUpperCase().replace(/[^A-Z]/g, '');
+  nomor = String(nomor || '').replace(/[^0-9]/g, '');
+  let bulanIdx = BULAN_NOTA.indexOf(String(bulan || ''));
+  if (bulanIdx < 0) { const bm = parseInt(bulan); if (bm >= 1 && bm <= 12) bulanIdx = bm - 1; }
+  if (!/^[A-Z]{2,5}$/.test(kode) || !nomor || !(tanggal >= 1 && tanggal <= 31) || bulanIdx < 0 || !(tahun >= 2000 && tahun <= 2100)) return null;
+  return { kode, nomor, tanggal, bulanIdx, tahun };
+}
+
+function buildNamaFileNota(info) {
+  const dd = String(info.tanggal).padStart(2, '0');
+  const mm = String(info.bulanIdx + 1).padStart(2, '0');
+  const yy = String(info.tahun).slice(-2);
+  return `${info.kode} ${info.nomor}-${dd}${mm}${yy}.jpg`;
+}
+// ── [MESIN NOTA] END
+
+async function handleSimpanNotaFoto(chatId, userId, imageBuffer, fileId, session) {
+  await kirim(chatId, '📸 _Membaca kode, nomor & tanggal nota..._');
+  let info = null;
+  try {
+    const enh = await enhanceImageForOCR(imageBuffer);
+    info = parseNotaOCR(await analisaGambarBuffer(enh, SCAN_PROMPT_NOTA));
+  } catch(e) { log.warn('NOTA', 'OCR enhanced: ' + e.message); }
+  if (!info) {
+    try { info = parseNotaOCR(await analisaGambarBuffer(imageBuffer, SCAN_PROMPT_NOTA)); }
+    catch(e) { log.warn('NOTA', 'OCR original: ' + e.message); }
+  }
+  if (!info) {
+    updateSesi(userId, { notaMenungguManual: true, notaPendingFileId: fileId });
+    return kirim(chatId,
+      '⚠️ *Gagal membaca nota otomatis.*\n' + GARIS_TEBAL +
+      '\n\nKetik manual dengan format:\n`KODE NOMOR TANGGAL BULAN TAHUN`\n\n*Contoh:* `ELT 000162 12 september 2026`');
+  }
+  await simpanFileNota(chatId, userId, imageBuffer, info);
+}
+
+async function handleSimpanNotaText(chatId, userId, text, session) {
+  const low = text.toLowerCase();
+  if (KATA_RESET.includes(low)) {
+    resetSesi(userId);
+    return kirim(chatId, '👌 Keluar mode Simpan Nota.', { reply_markup: kbMainMenu(userId) });
+  }
+  if (!session.notaMenungguManual) {
+    return kirim(chatId, '📸 Kirim *foto nota* untuk disimpan, atau ketik *batal* untuk keluar.');
+  }
+  const info = parseNotaManual(text);
+  if (!info) {
+    return kirim(chatId, '⚠️ Format salah. Ketik: `ELT 000162 12 september 2026`');
+  }
+  let imageBuffer = null;
+  if (session.notaPendingFileId) {
+    try {
+      const fileLink = await bot.getFileLink(session.notaPendingFileId);
+      const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
+      imageBuffer = Buffer.from(response.data);
+    } catch(e) { log.warn('NOTA', 'Re-download foto gagal: ' + e.message); }
+  }
+  updateSesi(userId, { notaMenungguManual: false, notaPendingFileId: null });
+  await simpanFileNota(chatId, userId, imageBuffer, info);
+}
+
+async function simpanFileNota(chatId, userId, imageBuffer, info) {
+  if (!imageBuffer) return kirim(chatId, '⚠️ Foto nota tidak tersedia. Kirim ulang fotonya.');
+  const base = CONFIG.notaTokoFolder[info.kode];
+  if (!base) {
+    return kirim(chatId, `🚫 Kode *${escapeMd(info.kode)}* belum punya folder tujuan.`);
+  }
+  const bulan = BULAN_NOTA[info.bulanIdx];
+  const folder = path.join(base, `Nota bulan ${bulan} ${info.tahun}`);
+  const fullPath = path.join(folder, buildNamaFileNota(info));
+  try {
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(fullPath, imageBuffer);
+    log.info('NOTA', `Disimpan: ${fullPath}`);
+    await kirim(chatId,
+      '✅ *NOTA TERSIMPAN!*\n' + GARIS_TEBAL +
+      `\n🔖 ${escapeMd(buildNamaFileNota(info))}` +
+      `\n📅 ${info.tanggal} ${bulan} ${info.tahun}` +
+      `\n📁 \`${escapeMd(fullPath)}\`` +
+      '\n\n📸 Kirim foto nota lain, atau ketik *batal*.',
+      { reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]] } }
+    );
+  } catch(err) {
+    log.error('NOTA', err.message);
+    await kirim(chatId, '❌ Gagal simpan: ' + err.message);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
 //   34. PHOTO HANDLER (Tunggal - Route Semua Mode + Foto Barang Baru)
 // ════════════════════════════════════════════════════════════════
 
@@ -8432,6 +8549,12 @@ bot.on('photo', async (msg) => {
     // ★ Homebase mode - scan nota supplier
     if (session.mode === 'homebase') {
       await handleHomebaseMode(chatId, userId, msg.caption || '', imageBuffer, session);
+      return;
+    }
+    
+    // ★ Simpan Nota mode
+    if (session.mode === 'nota') {
+      await handleSimpanNotaFoto(chatId, userId, imageBuffer, photo.file_id, session);
       return;
     }
     
@@ -9224,6 +9347,11 @@ bot.on('message', async (msg) => {
     return handleHomebaseMode(chatId, userId, text, null, session);
   }
   
+  // ★ Simpan Nota mode
+  if (session.mode === 'nota') {
+    return handleSimpanNotaText(chatId, userId, text, session);
+  }
+  
   if (session.hargaActive) {
     return handleHargaMode(chatId, userId, text, null, session);
   }
@@ -9610,6 +9738,17 @@ bot.on('callback_query', async (query) => {
         }
       );
     } catch(e) {}
+    return;
+  }
+  
+  if (data === 'menu:10') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak.');
+    resetSesi(userId);
+    updateSesi(userId, { mode: 'nota' });
+    kirim(chatId,
+      '📸 *SIMPAN NOTA*\n' + GARIS_TEBAL + '\n\nKirim *FOTO nota/faktur* ke bot.\n\nBot akan:\n1️⃣ Baca kode & nomor nota\n2️⃣ Baca tanggal, bulan, tahun\n3️⃣ Simpan ke folder bulan yang sesuai\n4️⃣ Nama file: `ELT 000001-010926.jpg`\n\nJika scan gagal, ketik manual:\n`ELT 000162 12 september 2026`\n\nKetik *batal* untuk keluar.',
+      { reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]] } }
+    );
     return;
   }
   
