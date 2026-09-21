@@ -8469,15 +8469,19 @@ function buildFolderNota(info, folderCfg) {
 // ── [MESIN NOTA] END
 
 async function handleSimpanNotaFoto(chatId, userId, imageBuffer, fileId, session) {
-  await kirim(chatId, '📸 _Membaca kode, nomor & tanggal nota..._');
+  kirim(chatId, '📸 _Membaca kode, nomor & tanggal nota..._').catch(() => {});
+  const ambil = async (buf) => {
+    const info = parseNotaOCR(await analisaGambarBuffer(buf, SCAN_PROMPT_NOTA));
+    if (!info) throw new Error('parse kosong');
+    return info;
+  };
   let info = null;
   try {
-    const enh = await enhanceImageForOCR(imageBuffer);
-    info = parseNotaOCR(await analisaGambarBuffer(enh, SCAN_PROMPT_NOTA));
-  } catch(e) { log.warn('NOTA', 'OCR enhanced: ' + e.message); }
-  if (!info) {
-    try { info = parseNotaOCR(await analisaGambarBuffer(imageBuffer, SCAN_PROMPT_NOTA)); }
-    catch(e) { log.warn('NOTA', 'OCR original: ' + e.message); }
+    const pEnh = enhanceImageForOCR(imageBuffer).then(buf => ambil(buf));
+    const pRaw = ambil(imageBuffer);
+    info = await Promise.any([pEnh, pRaw]);
+  } catch(e) {
+    log.warn('NOTA', 'OCR gagal semua: ' + (e && e.message ? e.message : ''));
   }
   if (!info) {
     updateSesi(userId, { notaMenungguManual: true, notaPendingFileId: fileId });
