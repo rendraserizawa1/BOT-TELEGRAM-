@@ -8490,18 +8490,24 @@ async function siapkanGambarNota(imageBuffer) {
   try {
     const image = await Jimp.read(imageBuffer);
     const w = image.bitmap.width;
-    if (w > 1800) image.resize(1800, Jimp.AUTO);
-    image.normalize().contrast(0.2);
+    if (w > 1600) image.resize(1600, Jimp.AUTO);
+    image.contrast(0.2).quality(82);
     return await image.getBufferAsync(Jimp.MIME_JPEG);
   } catch(err) { return imageBuffer; }
 }
+
+let notaModelFavorit = null;
+const notaModelSkipSampai = {};
 
 async function notaOCRRace(imageBuffer) {
   const keys = [CONFIG.geminiKey, CONFIG.geminiKey2, CONFIG.geminiKey3].filter(Boolean);
   if (!keys.length || !Buffer.isBuffer(imageBuffer)) throw new Error('Tidak ada AI provider');
   const imageBase64 = imageBuffer.toString('base64');
-  const MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest'];
-  for (const model of MODELS) {
+  const MODELS = ['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest'];
+  const urut = notaModelFavorit ? [notaModelFavorit, ...MODELS.filter(m => m !== notaModelFavorit)] : MODELS;
+  const now = Date.now();
+  for (const model of urut) {
+    if ((notaModelSkipSampai[model] || 0) > now) continue;
     try {
       return await Promise.any(keys.map(async (key, ki) => {
         for (let attempt = 1; attempt <= 2; attempt++) {
@@ -8513,16 +8519,19 @@ async function notaOCRRace(imageBuffer) {
                   { text: SCAN_PROMPT_NOTA },
                   { inline_data: { mime_type: 'image/jpeg', data: imageBase64 } },
                 ]}],
-                generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+                generationConfig: { temperature: 0.1, maxOutputTokens: 512, thinkingConfig: { thinkingBudget: 0 } },
               },
               { timeout: 60000 }
             );
             const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
             const info = text ? parseNotaOCR(text) : null;
             if (!info) throw new Error('hasil tidak valid');
+            notaModelFavorit = model;
             return info;
           } catch(err) {
             const status = err.response?.status;
+            if (status === 404) notaModelSkipSampai[model] = Number.MAX_SAFE_INTEGER;
+            else if (status === 429 || status === 503) notaModelSkipSampai[model] = Date.now() + 60000;
             if (attempt < 2 && (status === 429 || status === 503)) {
               await new Promise(r => setTimeout(r, 2500));
               continue;
