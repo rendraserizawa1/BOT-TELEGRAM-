@@ -63,7 +63,8 @@ const CONFIG = {
   sesiTimeoutMenit: 30,
   webPort: process.env.PORT || 3000,
   notaTokoFolder: {
-    ELT: 'E:\\TOKO NASIONAL KITCHEN\\Nota Toko Nasional Kitchen',
+    ELT: { base: 'E:\\TOKO NASIONAL KITCHEN\\Nota Toko Nasional Kitchen', formatBulan: 'Nota bulan {bulan} {tahun}' },
+    KEF: { base: 'E:\\Nota Toko Perabot Mamaku Kefamenanu', formatBulan: '{BULAN} {tahun}' },
   },
 };
 
@@ -8420,7 +8421,7 @@ async function prosesVoiceSearch(chatId, userId, searchText, originalText) {
 
 const BULAN_NOTA = ['januari','februari','maret','april','mei','juni','juli','agustus','september','oktober','november','desember'];
 
-const SCAN_PROMPT_NOTA = 'Baca foto faktur/nota penjualan ini. Ekstrak data dari kop nota. Jawab HANYA JSON tanpa penjelasan lain: {"kode": "huruf kode pada Nomor, contoh ELT", "nomor": "angka nomor nota, contoh 000001", "tanggal": <tanggal 1-31>, "bulan": "nama bulan Indonesia, contoh September", "tahun": <tahun 4 digit>}';
+const SCAN_PROMPT_NOTA = 'Baca foto faktur/nota penjualan ini. Ekstrak data dari kop nota. Jawab HANYA JSON tanpa penjelasan lain: {"kode": "huruf kode pada Nomor, contoh ELT atau KEF", "nomor": "angka nomor nota, contoh 000001", "tanggal": <tanggal 1-31>, "bulan": "nama bulan Indonesia, contoh September", "tahun": <tahun 4 digit>}';
 
 // ── [MESIN NOTA] START
 function parseNotaOCR(text) {
@@ -8456,6 +8457,14 @@ function buildNamaFileNota(info) {
   const mm = String(info.bulanIdx + 1).padStart(2, '0');
   const yy = String(info.tahun).slice(-2);
   return `${info.kode} ${info.nomor}-${dd}${mm}${yy}.jpg`;
+}
+
+function buildFolderNota(info, folderCfg) {
+  const bulan = BULAN_NOTA[info.bulanIdx];
+  return String(folderCfg.formatBulan)
+    .replace('{BULAN}', bulan.toUpperCase())
+    .replace('{bulan}', bulan)
+    .replace('{tahun}', String(info.tahun));
 }
 // ── [MESIN NOTA] END
 
@@ -8506,12 +8515,12 @@ async function handleSimpanNotaText(chatId, userId, text, session) {
 
 async function simpanFileNota(chatId, userId, imageBuffer, info) {
   if (!imageBuffer) return kirim(chatId, '⚠️ Foto nota tidak tersedia. Kirim ulang fotonya.');
-  const base = CONFIG.notaTokoFolder[info.kode];
-  if (!base) {
+  const cfg = CONFIG.notaTokoFolder[info.kode];
+  if (!cfg) {
     return kirim(chatId, `🚫 Kode *${escapeMd(info.kode)}* belum punya folder tujuan.`);
   }
   const bulan = BULAN_NOTA[info.bulanIdx];
-  const folder = path.join(base, `Nota bulan ${bulan} ${info.tahun}`);
+  const folder = path.join(cfg.base, buildFolderNota(info, cfg));
   const fullPath = path.join(folder, buildNamaFileNota(info));
   try {
     fs.mkdirSync(folder, { recursive: true });

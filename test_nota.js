@@ -11,8 +11,8 @@ if (start < 0 || end < 0) { console.error('FAIL: marker mesin nota tidak ditemuk
 const code = src.slice(src.indexOf('\n', start) + 1, end);
 
 const BULAN_NOTA = ['januari','februari','maret','april','mei','juni','juli','agustus','september','oktober','november','desember'];
-const factory = new Function('BULAN_NOTA', code + '\nreturn { parseNotaOCR, parseNotaManual, buildNamaFileNota };');
-const { parseNotaOCR, parseNotaManual, buildNamaFileNota } = factory(BULAN_NOTA);
+const factory = new Function('BULAN_NOTA', code + '\nreturn { parseNotaOCR, parseNotaManual, buildNamaFileNota, buildFolderNota };');
+const { parseNotaOCR, parseNotaManual, buildNamaFileNota, buildFolderNota } = factory(BULAN_NOTA);
 
 let gagal = 0;
 function cekFile(label, info, harap) {
@@ -21,6 +21,18 @@ function cekFile(label, info, harap) {
   console.log(`${ok ? 'OK  ' : 'FAIL'} ${label} → ${got}${ok ? '' : ' | harap ' + harap}`);
   if (!ok) gagal++;
 }
+
+function cekFolder(label, info, formatBulan, harap) {
+  const got = buildFolderNota(info, { formatBulan });
+  const ok = got === harap;
+  console.log(`${ok ? 'OK  ' : 'FAIL'} ${label} → ${got}${ok ? '' : ' | harap ' + harap}`);
+  if (!ok) gagal++;
+}
+
+// Folder bulan: ELT pakai "Nota bulan {bulan} {tahun}", KEF pakai "{BULAN} {tahun}"
+cekFolder('folder ELT', { bulanIdx: 8, tahun: 2026 }, 'Nota bulan {bulan} {tahun}', 'Nota bulan september 2026');
+cekFolder('folder KEF', { bulanIdx: 8, tahun: 2026 }, '{BULAN} {tahun}', 'SEPTEMBER 2026');
+cekFolder('folder KEF oktober', { bulanIdx: 9, tahun: 2026 }, '{BULAN} {tahun}', 'OKTOBER 2026');
 
 // OCR: JSON murni, dengan code fence, dengan teks tambahan
 cekFile('ocr json', parseNotaOCR('{"kode": "ELT", "nomor": "000001", "tanggal": 1, "bulan": "September", "tahun": 2026}'), 'ELT 000001-010926.jpg');
