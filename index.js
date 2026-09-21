@@ -8440,10 +8440,14 @@ function parseNotaManual(text) {
 
 function validasiNota(kode, nomor, tanggal, bulan, tahun) {
   kode = String(kode || '').toUpperCase().replace(/[^A-Z]/g, '');
-  nomor = String(nomor || '').replace(/[^0-9]/g, '');
+  nomor = String(nomor || '');
   let bulanIdx = BULAN_NOTA.indexOf(String(bulan || ''));
   if (bulanIdx < 0) { const bm = parseInt(bulan); if (bm >= 1 && bm <= 12) bulanIdx = bm - 1; }
-  if (!/^[A-Z]{2,5}$/.test(kode) || !nomor || !(tanggal >= 1 && tanggal <= 31) || bulanIdx < 0 || !(tahun >= 2000 && tahun <= 2100)) return null;
+  if (bulanIdx < 0) return null;
+  nomor = (nomor.match(/[0-9]+/) || [''])[0];
+  const suffixMMYY = String(bulanIdx + 1).padStart(2, '0') + String(tahun).slice(-2);
+  if (nomor.length === 10 && nomor.endsWith(suffixMMYY)) nomor = nomor.slice(0, 6);
+  if (!/^[A-Z]{2,5}$/.test(kode) || !nomor || !(tanggal >= 1 && tanggal <= 31) || !(tahun >= 2000 && tahun <= 2100)) return null;
   return { kode, nomor, tanggal, bulanIdx, tahun };
 }
 

@@ -32,6 +32,9 @@ cekFile('ocr tanggal 40', parseNotaOCR('{"kode":"ELT","nomor":"000001","tanggal"
 cekFile('ocr bulan salah', parseNotaOCR('{"kode":"ELT","nomor":"000001","tanggal":1,"bulan":"Bulanser","tahun":2026}'), 'null');
 cekFile('ocr kode 1 huruf', parseNotaOCR('{"kode":"E","nomor":"000001","tanggal":1,"bulan":"September","tahun":2026}'), 'null');
 cekFile('ocr tahun 20265', parseNotaOCR('{"kode":"ELT","nomor":"000001","tanggal":1,"bulan":"September","tahun":20265}'), 'null');
+cekFile('ocr nomor dengan suffix -0926', parseNotaOCR('{"kode":"ELT","nomor":"000162-0926","tanggal":12,"bulan":"september","tahun":2026}'), 'ELT 000162-120926.jpg');
+cekFile('ocr nomor nempel suffix', parseNotaOCR('{"kode":"ELT","nomor":"0001620926","tanggal":12,"bulan":"september","tahun":2026}'), 'ELT 000162-120926.jpg');
+cekFile('manual nomor dengan suffix', parseNotaManual('ELT 000162-0926 12 september 2026'), 'ELT 000162-120926.jpg');
 
 // Manual: nama bulan / angka bulan / salah format
 cekFile('manual nama bulan', parseNotaManual('ELT 000162 12 september 2026'), 'ELT 000162-120926.jpg');
