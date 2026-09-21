@@ -8470,18 +8470,12 @@ function buildFolderNota(info, folderCfg) {
 
 async function handleSimpanNotaFoto(chatId, userId, imageBuffer, fileId, session) {
   kirim(chatId, '📸 _Membaca kode, nomor & tanggal nota..._').catch(() => {});
-  const ambil = async (buf) => {
-    const info = parseNotaOCR(await analisaGambarBuffer(buf, SCAN_PROMPT_NOTA));
-    if (!info) throw new Error('parse kosong');
-    return info;
-  };
   let info = null;
   try {
-    const pEnh = enhanceImageForOCR(imageBuffer).then(buf => ambil(buf));
-    const pRaw = ambil(imageBuffer);
-    info = await Promise.any([pEnh, pRaw]);
+    const buf = await siapkanGambarNota(imageBuffer);
+    info = await notaOCRRace(buf);
   } catch(e) {
-    log.warn('NOTA', 'OCR gagal semua: ' + (e && e.message ? e.message : ''));
+    log.warn('NOTA', 'OCR gagal: ' + (e && e.message ? e.message : ''));
   }
   if (!info) {
     updateSesi(userId, { notaMenungguManual: true, notaPendingFileId: fileId });
@@ -8490,6 +8484,44 @@ async function handleSimpanNotaFoto(chatId, userId, imageBuffer, fileId, session
       '\n\nKetik manual dengan format:\n`KODE NOMOR TANGGAL BULAN TAHUN`\n\n*Contoh:* `ELT 000162 12 september 2026`');
   }
   await simpanFileNota(chatId, userId, imageBuffer, info);
+}
+
+async function siapkanGambarNota(imageBuffer) {
+  try {
+    const image = await Jimp.read(imageBuffer);
+    const w = image.bitmap.width;
+    if (w > 1800) image.resize(1800, Jimp.AUTO);
+    image.normalize().contrast(0.2);
+    return await image.getBufferAsync(Jimp.MIME_JPEG);
+  } catch(err) { return imageBuffer; }
+}
+
+async function notaOCRRace(imageBuffer) {
+  const keys = [CONFIG.geminiKey, CONFIG.geminiKey2, CONFIG.geminiKey3].filter(Boolean);
+  if (!keys.length || !Buffer.isBuffer(imageBuffer)) throw new Error('Tidak ada AI provider');
+  const imageBase64 = imageBuffer.toString('base64');
+  for (const model of ['gemini-2.5-flash', 'gemini-2.5-flash-lite']) {
+    try {
+      return await Promise.any(keys.map(async (key) => {
+        const response = await axios.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+          {
+            contents: [{ role: 'user', parts: [
+              { text: SCAN_PROMPT_NOTA },
+              { inline_data: { mime_type: 'image/jpeg', data: imageBase64 } },
+            ]}],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+          },
+          { timeout: 60000 }
+        );
+        const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        const info = text ? parseNotaOCR(text) : null;
+        if (!info) throw new Error('hasil tidak valid');
+        return info;
+      }));
+    } catch(e) { log.warn('NOTA', `Wave ${model} gagal semua, coba model berikut`); }
+  }
+  throw new Error('Semua key/model gagal');
 }
 
 async function handleSimpanNotaText(chatId, userId, text, session) {
