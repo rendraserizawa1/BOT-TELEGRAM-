@@ -8500,28 +8500,44 @@ async function notaOCRRace(imageBuffer) {
   const keys = [CONFIG.geminiKey, CONFIG.geminiKey2, CONFIG.geminiKey3].filter(Boolean);
   if (!keys.length || !Buffer.isBuffer(imageBuffer)) throw new Error('Tidak ada AI provider');
   const imageBase64 = imageBuffer.toString('base64');
-  for (const model of ['gemini-2.5-flash', 'gemini-2.5-flash-lite']) {
+  const MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest'];
+  for (const model of MODELS) {
     try {
-      return await Promise.any(keys.map(async (key) => {
-        const response = await axios.post(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-          {
-            contents: [{ role: 'user', parts: [
-              { text: SCAN_PROMPT_NOTA },
-              { inline_data: { mime_type: 'image/jpeg', data: imageBase64 } },
-            ]}],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
-          },
-          { timeout: 60000 }
-        );
-        const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        const info = text ? parseNotaOCR(text) : null;
-        if (!info) throw new Error('hasil tidak valid');
-        return info;
+      return await Promise.any(keys.map(async (key, ki) => {
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const response = await axios.post(
+              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+              {
+                contents: [{ role: 'user', parts: [
+                  { text: SCAN_PROMPT_NOTA },
+                  { inline_data: { mime_type: 'image/jpeg', data: imageBase64 } },
+                ]}],
+                generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+              },
+              { timeout: 60000 }
+            );
+            const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            const info = text ? parseNotaOCR(text) : null;
+            if (!info) throw new Error('hasil tidak valid');
+            return info;
+          } catch(err) {
+            const status = err.response?.status;
+            if (attempt < 2 && (status === 429 || status === 503)) {
+              await new Promise(r => setTimeout(r, 2500));
+              continue;
+            }
+            log.warn('NOTA', `${model} key#${ki+1}: ${status || err.message}`);
+            throw err;
+          }
+        }
       }));
-    } catch(e) { log.warn('NOTA', `Wave ${model} gagal semua, coba model berikut`); }
+    } catch(e) { /* wave model ini gagal semua, lanjut model berikut */ }
   }
-  throw new Error('Semua key/model gagal');
+  const text = await analisaGambarBuffer(imageBuffer, SCAN_PROMPT_NOTA);
+  const info = parseNotaOCR(text);
+  if (!info) throw new Error('Semua key/model gagal');
+  return info;
 }
 
 async function handleSimpanNotaText(chatId, userId, text, session) {
