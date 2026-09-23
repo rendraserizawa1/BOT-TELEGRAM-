@@ -1,32 +1,44 @@
 $ErrorActionPreference = 'SilentlyContinue'
-# Watchdog: pastikan Bot Telegram (port 3001) hidup. Kalau mati -> pm2 resurrect/start.
-$dir = 'C:\Users\kassa\BOT-TELEGRAM-'
-$log = 'C:\Users\kassa\.pm2\watchdog.log'
+# Watchdog Bot Telegram - dipakai Scheduled Task "Watchdog-Bot-Telegram"
+# (At startup + tiap 5 menit, jalan sebagai user tanpa perlu login Windows).
+$dir     = 'C:\Users\kassa\BOT-TELEGRAM-'
+$log     = 'C:\Users\kassa\.pm2\watchdog.log'
+$npmDir  = 'C:\Users\kassa\AppData\Roaming\npm'
+$nodeDir = 'C:\Program Files\nodejs'
 
-try {
-  $r = Invoke-WebRequest -Uri 'http://localhost:3001/health' -UseBasicParsing -TimeoutSec 8
-  if ($r.StatusCode -eq 200) { exit 0 }
-} catch {}
+$env:Path = "$nodeDir;$npmDir;$env:Path"
 
-Add-Content $log "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] bot DOWN - mencoba hidupkan"
+function Log($m) { Add-Content $log "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $m" }
+
+function Healthy {
+  try {
+    $r = Invoke-WebRequest -Uri 'http://localhost:3001/health' -UseBasicParsing -TimeoutSec 8
+    return ($r.StatusCode -eq 200)
+  } catch { return $false }
+}
+
+# Pakai shim pm2 kalau ada, fallback langsung ke bin JS (tahan kasus shim hilang)
+function Pm2 {
+  if (Test-Path "$npmDir\pm2.cmd") { & "$npmDir\pm2.cmd" @args }
+  else { & node "$npmDir\node_modules\pm2\bin\pm2" @args }
+}
+
+if (Healthy) { exit 0 }
+
+Log 'bot DOWN - mencoba hidupkan'
 Set-Location $dir
 
-# cara 1: resurrect list tersimpan
-pm2 resurrect 2>&1 | Out-Null
-Start-Sleep -Seconds 20
-try {
-  $r = Invoke-WebRequest -Uri 'http://localhost:3001/health' -UseBasicParsing -TimeoutSec 8
-  if ($r.StatusCode -eq 200) { Add-Content $log "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] pulih via resurrect"; exit 0 }
-} catch {}
+for ($i = 1; $i -le 3; $i++) {
+  Pm2 resurrect | Out-Null
+  Start-Sleep -Seconds 20
+  if (Healthy) { Log "pulih via resurrect (percobaan $i)"; exit 0 }
 
-# cara 2: start manual
-pm2 start index.js --name telegram-perabot 2>&1 | Out-Null
-pm2 save 2>&1 | Out-Null
-Start-Sleep -Seconds 20
-try {
-  $r = Invoke-WebRequest -Uri 'http://localhost:3001/health' -UseBasicParsing -TimeoutSec 8
-  if ($r.StatusCode -eq 200) { Add-Content $log "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] pulih via start manual"; exit 0 }
-} catch {}
+  Pm2 start index.js --name telegram-perabot | Out-Null
+  Pm2 save | Out-Null
+  Start-Sleep -Seconds 20
+  if (Healthy) { Log "pulih via start manual (percobaan $i)"; exit 0 }
+  Start-Sleep -Seconds 15
+}
 
-Add-Content $log "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] GAGAL pulihkan"
+Log 'GAGAL pulihkan'
 exit 1
