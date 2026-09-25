@@ -15,6 +15,7 @@ const xlsx = require('xlsx');
 const ExcelJS = require('exceljs');
 const express = require('express');
 const session = require('express-session');
+const iposBridge = require('./ipos-bridge');
 
 // ════════════════════════════════════════════════════════════════
 //   1. KONFIGURASI
@@ -969,6 +970,426 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+// ════════════════════════════════════════════════════════════════
+//   7B. LAPORAN PENJUALAN PER KASIR (iPos, toko CP)
+// ════════════════════════════════════════════════════════════════
+
+// Tanggal LOKAL mesin (WITA/UTC+8) — sama dengan timezone DB iPos.
+// Jangan pakai getJakartaDate (UTC+7) utk fitur ini: bisa beda 1 jam.
+function ymdLokal(offsetHari = 0) {
+  const d = new Date(Date.now() + offsetHari * 86400000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function labelTanggalYMD(ymd) {
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  const hari = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const bulan = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const t = new Date(y, m - 1, d);
+  return `${hari[t.getDay()]}, ${d} ${bulan[m - 1]} ${y}`;
+}
+
+const fmtJml = (n) => Math.round(Number(n) || 0).toLocaleString('id-ID');
+
+// validasi tanggal nyata → 'YYYY-MM-DD' | null
+function cekTanggal(thn, bln, tgl) {
+  const d = new Date(thn, bln - 1, tgl);
+  if (d.getFullYear() !== thn || d.getMonth() !== bln - 1 || d.getDate() !== tgl) return null;
+  const ymd = `${thn}-${String(bln).padStart(2, '0')}-${String(tgl).padStart(2, '0')}`;
+  if (ymd < '2020-01-01') return null;
+  return ymd;
+}
+
+// Parse tanggal bebas dari chat → 'YYYY-MM-DD' | null
+function parseTanggalLaporan(low) {
+  if (!low) return null;
+  const now = new Date();
+  if (/hari\s?ini|hariini|sekarang|today/.test(low)) return ymdLokal(0);
+  if (/kemarin|kemaren|yesterday/.test(low)) return ymdLokal(-1);
+  let m = low.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/); // 2026-09-25
+  if (m) return cekTanggal(+m[1], +m[2], +m[3]);
+  m = low.match(/\b(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?\b/); // 25/09, 25-9-26, 25.09.2026
+  if (m) {
+    const thn = m[3] ? (+m[3] < 100 ? 2000 + +m[3] : +m[3]) : now.getFullYear();
+    return cekTanggal(thn, +m[2], +m[1]);
+  }
+  const bulanMap = { januari: 1, februari: 2, maret: 3, april: 4, mei: 5, juni: 6, juli: 7, agustus: 8, agust: 8, agu: 8, ags: 8, agt: 8, september: 9, sept: 9, sep: 9, oktober: 10, okt: 10, november: 11, nov: 11, desember: 12, des: 12 };
+  m = low.match(/\b(\d{1,2})\s+(januari|februari|maret|april|mei|juni|juli|agustus|agust|agu|ags|agt|september|sept|sep|oktober|okt|november|nov|desember|des)\b(?:\s+(\d{2,4}))?/); // 25 september [2026]
+  if (m) {
+    const thn = m[3] ? (+m[3] < 100 ? 2000 + +m[3] : +m[3]) : now.getFullYear();
+    return cekTanggal(thn, bulanMap[m[2]], +m[1]);
+  }
+  m = low.match(/\bt(?:gl|anggal)\s*\.?\s*(\d{1,2})\b/); // tgl 25
+  if (m) return cekTanggal(now.getFullYear(), now.getMonth() + 1, +m[1]);
+  m = low.match(/(?:penjualan|jual|kasir|laporan|omzet)\s+(\d{1,2})\b/); // "laporan penjualan 24"
+  if (m) return cekTanggal(now.getFullYear(), now.getMonth() + 1, +m[1]);
+  return null;
+}
+
+// Parse RENTANG tanggal dari satu pesan → { awal, akhir } | null
+// Bentuk: "1-20 september 2026", "1 s/d 20 sep 26", "01/09/2026 s/d 20/09/2026", "1/9 - 20/9"
+// (masing-masing tanggal diurai ulang via parseTanggalLaporan agar aturan bulan/tahun sama)
+function parseRentangTanggal(text) {
+  const low = String(text || '').toLowerCase().trim();
+  if (!low) return null;
+  const namaBulan = '(januari|februari|maret|april|mei|juni|juli|agustus|agust|agu|ags|agt|september|sept|sep|oktober|okt|november|nov|desember|des)';
+  // bentuk 1: <tgl1> <pemisah> <tgl2> <bulan> [tahun] — "1-20 september 2026"
+  let m = low.match(new RegExp(`\\b(\\d{1,2})\\s*(?:-|–|s\\/d|sd|sampai|hingga)\\s*(\\d{1,2})\\s+${namaBulan}\\b(?:\\s+(\\d{2,4}))?`));
+  if (m) {
+    const awal = parseTanggalLaporan(`${m[1]} ${m[3]} ${m[4] || ''}`.trim());
+    const akhir = parseTanggalLaporan(`${m[2]} ${m[3]} ${m[4] || ''}`.trim());
+    if (awal && akhir) return awal <= akhir ? { awal, akhir } : { awal: akhir, akhir: awal };
+  }
+  // bentuk 2: <tgl1> <pemisah> <tgl2> (dd/mm[/yyyy]) — "01/09/2026 s/d 20/09/2026", "1/9 - 20/9"
+  m = low.match(/\b(\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?)\s*(?:-|–|s\/d|sd|sampai|hingga)\s*(\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?)\b/);
+  if (m) {
+    const awal = parseTanggalLaporan(m[1]);
+    const akhir = parseTanggalLaporan(m[2]);
+    if (awal && akhir) return awal <= akhir ? { awal, akhir } : { awal: akhir, akhir: awal };
+  }
+  return null;
+}
+
+// Deteksi chat bebas minta laporan penjualan KASIR CP → 'YYYY-MM-DD' | null
+// (null = bukan urusan fitur ini, biarkan alur lama/menu berjalan)
+function deteksiLaporanKasir(text) {
+  const low = String(text || '').toLowerCase().trim();
+  // jangan rebut fitur lain
+  if (/marketplace|\bmp\b|berita acara|stock opname|stok opname|homebase/.test(low)) return null;
+  // laporan per merek (HOMMY & KIREI) punya alur sendiri
+  if (/\b(hom{1,2}y|homi|kirei|kirey)\b/.test(low)) return null;
+  // toko selain CP tetap pakai alur lama (Excel/scan nota)
+  if (/\b(nk|tdm|oesapa|kefa|nasional)\b/.test(low)) return null;
+  const adaLap = /(laporan|rekap|\blap\b|omzet)/.test(low);
+  const adaJual = /(penjualan|\bjual\b|setoran)/.test(low);
+  const adaKasir = /\bkasir\b/.test(low);
+  if (!adaLap && !adaJual && !adaKasir) return null;
+  const tgl = parseTanggalLaporan(low);
+  if (adaKasir && (adaLap || adaJual || tgl)) return tgl || ymdLokal(0);
+  if ((adaLap || adaJual) && tgl) return tgl;
+  if (/^kasir$/.test(low)) return ymdLokal(0);
+  return null;
+}
+
+// Deteksi chat bebas minta laporan penjualan HOMMY & KIREI (per merek) → true | false
+// true = buka alur laporan merek (jalankan SEBELUM deteksiLaporanKasir)
+function deteksiLaporanMerek(text) {
+  const low = String(text || '').toLowerCase().trim().replace(/[.!?,]+$/, '');
+  const adaHomy = /\b(hom{1,2}y|homi)\b/.test(low);
+  const adaKirei = /\b(kirei|kirey)\b/.test(low);
+  if (!adaHomy && !adaKirei) return false;
+  // jangan rebut fitur lain
+  if (/marketplace|\bmp\b|berita acara|stock opname|stok opname|homebase/.test(low)) return false;
+  if (/\b(nk|tdm|oesapa|kefa|nasional)\b/.test(low)) return false;
+  const adaLap = /(laporan|\blap\b|rekap|penjualan|omzet|\bjual\b|setoran)/.test(low);
+  if (adaLap) return true;
+  // tanpa kata "laporan": hanya trigger kalau pesan memang cuma menyebut HOMMY & KIREI
+  // (jangan rebut "cari homy", "harga homy murah" dsb.)
+  if (!(adaHomy && adaKirei)) return false;
+  const sisa = low
+    .replace(/\b(hom{1,2}y|homi|kirei|kirey|dan|and)\b/g, ' ')
+    .replace(/[&\s]+/g, '');
+  return sisa.length === 0;
+}
+
+function kbLaporanKasir(ymd) {
+  return {
+    inline_keyboard: [
+      [
+        { text: '📅 Hari Ini', callback_data: `jualkasir:${ymdLokal(0)}` },
+        { text: '📅 Kemarin', callback_data: `jualkasir:${ymdLokal(-1)}` },
+      ],
+      [{ text: '🔙 Menu Utama', callback_data: 'menu:main' }],
+    ],
+  };
+}
+
+// ── Laporan Parkir (isian manual) ─────────────────────────────────────────
+// Format isian: "<parkir di komputer> <parkir stor luar>" — contoh `0 778000`.
+// Boleh berawalan "parkir", boleh pakai label (komputer/luar), titik = ribuan,
+// koma = pemisah. `parkir batal` = generate tanpa bagian parkir.
+// return { komputer, luar } | { skip:true } | null (bukan isian parkir)
+function parseParkirInput(text) {
+  let t = String(text || '').trim().toLowerCase();
+  if (!t) return null;
+  if (/^parkir\s+(batal|skip|lewati)$/.test(t) || /^(batal|skip|lewati)$/.test(t)) return { skip: true };
+  t = t.replace(/^parkir\b\s*/, '');
+  t = t.replace(/\b(komputer|di|stor|luar|dan|rp|rupiah)\b/g, ' ');
+  t = t.replace(/[,;:+]+/g, ' ');
+  if (!/^[\d\s.]+$/.test(t.trim())) return null; // sisa harus angka saja
+  const nums = (t.replace(/\./g, '').match(/\d+/g) || []).map(Number);
+  if (nums.length !== 2 || nums.some((n) => !Number.isFinite(n) || n < 0)) return null;
+  return { komputer: nums[0], luar: nums[1] };
+}
+
+// Apakah teks ini MENCOBA mengisi parkir? (untuk minta format ulang, jangan
+// dibiarkan jatuh ke alur lain) — hanya jika diawali "parkir" atau murni angka
+function cobaIsianParkir(text) {
+  const t = String(text || '').trim();
+  return /^parkir\b/i.test(t) || /^[\d\s.,;:+\-]+$/.test(t);
+}
+
+async function tampilkanLaporanKasir(chatId, userId, ymd, parkir) {
+  if (!bisaAksesLaporan(userId)) {
+    return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ''))) {
+    return kirim(chatId, '⚠️ Format tanggal tidak dikenali. Contoh: `laporan penjualan 24/09/2026`', { parse_mode: 'Markdown' });
+  }
+  const tglLabel = labelTanggalYMD(ymd);
+  if (ymd > ymdLokal(0)) {
+    return kirim(chatId, `⚠️ Tanggal *${escapeMd(tglLabel)}* masih di masa depan.`, { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd) });
+  }
+  try { await bot.sendChatAction(chatId, 'typing'); } catch (e) {}
+
+  let r;
+  try {
+    r = await iposBridge.ambilLaporanKasir(ymd, ymd);
+  } catch (e) {
+    return kirim(chatId, `⚠️ iPos API tidak merespons: ${escapeMd(e.message || String(e))}`, { parse_mode: 'Markdown' });
+  }
+  if (!r || !r.siap) {
+    return kirim(chatId,
+      '⏳ *Data penjualan iPos masih dimuat* di server (± 2-5 menit setelah API baru di-restart).\nCoba lagi sebentar ya kak.',
+      { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd) });
+  }
+
+  const kasir = r.kasir || [];
+  const total = r.total || {};
+  const promo = r.promo || {}; // total konter PROMO — TERPISAH dari total CP
+  const jangkauan = r.jangkauan || {};
+
+  const isPromo = (k) => String(k.toko || '').includes('PROMO');
+  const kasirCp = kasir.filter((k) => !isPromo(k));
+  const kasirPromo = kasir.filter(isPromo);
+
+  // urutan tetap sesuai kassa iPos: Astrid → Salsa → Marselina-Ririn → Tirsa-Tika
+  // (nama lain menyusul di belakang, diurut omzet terbesar)
+  const URUTAN_KASIR = ['ASTRID-WINDI', 'SALSA', 'MARSELINA-RIRIN', 'TIRSA-TIKA'];
+  const rankKasir = (k) => {
+    const i = URUTAN_KASIR.indexOf(String(k.user || k.nama || '').toUpperCase());
+    return i === -1 ? URUTAN_KASIR.length : i;
+  };
+  kasirCp.sort((a, b) => rankKasir(a) - rankKasir(b) || (b.omzet || 0) - (a.omzet || 0));
+
+  if (!kasir.length && r.promoSiap !== false) {
+    let msg = `🧾 *LAPORAN PENJUALAN KASIR*\n🏢 Central Perabot (CP)\n📅 ${escapeMd(tglLabel)}\n${GARIS_TEBAL}\n\n😴 Tidak ada penjualan pada tanggal ini.`;
+    if (jangkauan.dari) msg += `\n\n📦 Data iPos tersedia: ${jangkauan.dari} s/d ${jangkauan.sampai}`;
+    msg += `\n\n💡 Ketik: \`laporan penjualan 24/09\``;
+    return kirim(chatId, msg, { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd) });
+  }
+
+  // ★ Laporan Parkir: minta isian manual dulu — baru laporan digenerate 1x lengkap
+  if (!parkir) {
+    updateSesi(userId, { pendingParkir: { ymd } });
+    return kirim(chatId,
+      `🅿️ *LAPORAN PARKIR — ISI MANUAL*\n📅 ${escapeMd(tglLabel)}\n\n` +
+      `Laporan penjualan sudah siap. Sebelum digenerate, ketik 2 angka parkir:\n\n` +
+      `\`parkir [di komputer] [stor luar]\`\nContoh: \`parkir 0 778000\`\n\n` +
+      `• Tidak ada parkir → \`parkir 0 0\`\n` +
+      `• Tanpa bagian parkir → \`parkir batal\``,
+      { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd) });
+  }
+
+  const lines = [];
+  lines.push('🧾 *LAPORAN PENJUALAN KASIR*');
+  lines.push('🏢 Central Perabot (CP)');
+  lines.push(`📅 ${escapeMd(tglLabel)}`);
+  lines.push(GARIS_TEBAL);
+  lines.push('');
+  const tulisKasir = (k, i) => {
+    const namaTampil = String(k.user || k.nama || '-').toUpperCase();
+    const login = (k.userid && String(k.userid).toUpperCase() !== namaTampil) ? ` \\(${escapeMd(k.userid)}\\)` : '';
+    lines.push(`${emojiNum(i + 1)} 👤 *${escapeMd(namaTampil)}*${login}`);
+    lines.push(`   🏷️ Kelompok: ${escapeMd(k.kelompok || '-')}${k.mesin ? ` | 🖥️ ${escapeMd(k.mesin)}` : ''}`);
+    lines.push(`   🧾 ${k.nota} nota | 📦 ${fmtJml(k.item)} item`);
+    lines.push(`   💰 *${formatRp(k.omzet)}*`);
+    if (k.jam) lines.push(`   ⏰ ${escapeMd(k.jam)}`);
+    lines.push('');
+  };
+  if (kasirCp.length) {
+    kasirCp.forEach(tulisKasir);
+  } else {
+    lines.push('😴 Tidak ada penjualan kasir CP.');
+    lines.push('');
+  }
+  lines.push(GARIS_TEBAL);
+  lines.push(`📊 *TOTAL CP: ${total.nota} nota | ${fmtJml(total.item)} item*`);
+  lines.push(`💰 *${formatRp(total.omzet)}*`);
+  const fmtBayar = (n) => 'Rp. ' + (parseFloat(n) || 0).toLocaleString('id-ID');
+  lines.push(`💵 Tunai: ${fmtBayar(total.tunai)}`);
+  lines.push(`💳 Debit: ${fmtBayar(total.debit)}`);
+  lines.push(`💳 Kredit: ${fmtBayar(total.kredit)}`);
+  // subtotal per MODUL iPos: KSR = KASIR, JL = KASIR-GROSIR (di cetakan iPos = baris "Ecer"/"Grosir")
+  for (const [label, tp] of [['KASIR', 'KSR'], ['KASIR-GROSIR', 'JL']]) {
+    const g = (r.perTipe || {})[tp] || { nota: 0, omzet: 0 };
+    lines.push(`🏷️ ${label}: ${g.nota} nota | ${fmtBayar(g.omzet)}`);
+  }
+  lines.push(`👥 ${kasirCp.length} kasir berjualan`);
+  // Konter PROMO (DB iPos terpisah) — total DIPISAH, tidak digabung ke TOTAL CP
+  if (r.promoSiap === false) {
+    lines.push('');
+    lines.push('⚠️ Data konter PROMO masih dimuat — coba lagi sebentar.');
+  } else if (kasirPromo.length) {
+    lines.push('');
+    lines.push(GARIS_TEBAL);
+    lines.push('🎁 *KONTER PROMO*');
+    lines.push('');
+    kasirPromo.forEach(tulisKasir);
+    lines.push(`📊 *TOTAL PROMO: ${promo.nota} nota | ${fmtJml(promo.item)} item*`);
+    lines.push(`💰 *${formatRp(promo.omzet)}*`);
+    lines.push(`💵 Tunai: ${fmtBayar(promo.tunai)}`);
+    lines.push(`💳 Debit: ${fmtBayar(promo.debit)}`);
+    lines.push(`💳 Kredit: ${fmtBayar(promo.kredit)}`);
+  } else {
+    lines.push('');
+    lines.push('🎁 Konter PROMO: tidak ada penjualan.');
+  }
+  // Laporan Parkir — angka isian manual (parkir di komputer / parkir stor luar)
+  if (parkir && !parkir.skip) {
+    lines.push('');
+    lines.push(GARIS_TEBAL);
+    lines.push('🅿️ *LAPORAN PARKIR*');
+    lines.push(`Periode ${escapeMd(tglLabel)}`);
+    lines.push('');
+    lines.push(`Parkir di Komputer : ${fmtBayar(parkir.komputer)}`);
+    lines.push(`Parkir Stor Luar : ${fmtBayar(parkir.luar)}`);
+    lines.push(`${GARIS_TEBAL}`);
+    lines.push(`Total Parkir  ${fmtBayar(parkir.komputer + parkir.luar)}`);
+  }
+  const umur = r.update ? Math.round((Date.now() - r.update) / 60000) : null;
+  if (umur !== null) lines.push(`\n🕐 Update data: ${umur <= 0 ? 'baru saja' : umur + ' mnt lalu'}`);
+  lines.push('💡 Ketik: `laporan penjualan 24/09` atau /kasir kemarin');
+  return kirim(chatId, lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd) });
+}
+
+// ── Laporan penjualan HOMMY & KIREI (per merek, rentang tanggal) ──────────
+// Sumber: endpoint iPos /api/jual-merek (tbl_ikdt per item, tbl_item.merek).
+// Alur: pilih tanggal AWAL → tanggal AKHIR → laporan (atau 1 pesan rentang).
+function kbLaporanMerek() {
+  return {
+    inline_keyboard: [
+      [
+        { text: '📅 Bulan Ini', callback_data: 'hk:ini' },
+        { text: '📅 Bulan Lalu', callback_data: 'hk:lalu' },
+      ],
+      [
+        { text: '🔁 Ganti Tanggal', callback_data: 'hk:mulai' },
+        { text: '🔙 Menu Utama', callback_data: 'menu:main' },
+      ],
+    ],
+  };
+}
+
+const PROMPT_HK_AWAL = (extra = '') =>
+  `🛋️ *LAPORAN PENJUALAN HOMMY & KIREI*\n🏢 Central Perabot (CP)\n${GARIS_TEBAL}\n\n` +
+  `📅 Ketik *TANGGAL AWAL* laporan.\n` +
+  `Contoh: \`1/9\`, \`01/09/2026\`, \`1 september 2026\`, \`kemarin\`\n\n` +
+  `Bisa juga sekaligus: \`laporan homy 1-20 september 2026\`\n\n` +
+  `• \`batal\` untuk keluar${extra ? `\n\n${extra}` : ''}`;
+
+const PROMPT_HK_AKHIR = (dari, extra = '') =>
+  `✅ Tanggal awal: *${escapeMd(labelTanggalYMD(dari))}*\n\n` +
+  `📅 Sekarang ketik *TANGGAL AKHIR* (contoh: \`20/9/2026\`, \`20 september 2026\`, atau \`20\` untuk tanggal 20 di bulan yang sama).\n\n` +
+  `• \`batal\` untuk keluar${extra ? `\n\n${extra}` : ''}`;
+
+// Mulai alur laporan merek — teks opsional bisa langsung memuat rentang tanggal.
+async function mulaiLaporanMerek(chatId, userId, teks = '') {
+  if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+  const t = String(teks || '').trim();
+  const r = parseRentangTanggal(t);
+  if (r) return tampilkanLaporanMerek(chatId, userId, r.awal, r.akhir);
+  if (t) {
+    const satu = parseTanggalLaporan(t.toLowerCase());
+    if (satu) {
+      if (satu > ymdLokal(0)) {
+        return kirim(chatId, PROMPT_HK_AWAL('⚠️ Tanggal itu masih di masa depan. Ketik tanggal awal lain.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+      }
+      updateSesi(userId, { pendingHK: { step: 'akhir', dari: satu }, pendingParkir: null });
+      return kirim(chatId, PROMPT_HK_AKHIR(satu), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+    }
+  }
+  updateSesi(userId, { pendingHK: { step: 'awal' }, pendingParkir: null });
+  return kirim(chatId, PROMPT_HK_AWAL(), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+}
+
+// Render laporan penjualan HOMMY & KIREI untuk rentang tanggal (iPos).
+async function tampilkanLaporanMerek(chatId, userId, dari, sampai) {
+  if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dari || '')) || !/^\d{4}-\d{2}-\d{2}$/.test(String(sampai || ''))) {
+    return kirim(chatId, '⚠️ Format tanggal tidak dikenali.', { reply_markup: kbLaporanMerek() });
+  }
+  const hariIni = ymdLokal(0);
+  if (dari > hariIni) {
+    return kirim(chatId, `⚠️ Tanggal awal *${escapeMd(labelTanggalYMD(dari))}* masih di masa depan.\nKetik tanggal lain ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+  }
+  if (sampai > hariIni) sampai = hariIni; // data belum ada untuk tanggal setelah hari ini
+  if (sampai < dari) {
+    return kirim(chatId, `⚠️ Tanggal akhir tidak boleh sebelum tanggal awal.\nKetik ulang tanggal akhir ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+  }
+  const namaBulan = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const tglPendek = (ymd) => { const [y, m, d] = String(ymd).split('-').map(Number); return `${d} ${namaBulan[m - 1]} ${y}`; };
+  const periode = dari === sampai ? tglPendek(dari) : `${tglPendek(dari)} s/d ${tglPendek(sampai)}`;
+  const tunggu = await kirim(chatId, `⏳ *Menghitung laporan HOMMY & KIREI...*\n📅 ${escapeMd(periode)}`, { parse_mode: 'Markdown' });
+  let r;
+  try {
+    r = await iposBridge.ambilLaporanMerek(dari, sampai);
+  } catch (e) {
+    const pesan = `⚠️ iPos API tidak merespons: ${escapeMd(String(e.message || e))}\nCoba lagi sebentar ya kak.`;
+    if (tunggu && tunggu.message_id) {
+      try { return await bot.editMessageText(pesan, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMerek() }); } catch (e2) {}
+    }
+    return kirim(chatId, pesan, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+  }
+  if (!r || !r.siap) {
+    const pesan = '⏳ *Data penjualan iPos masih dimuat* di server (± 2-5 menit setelah API di-restart).\nCoba lagi sebentar ya kak.';
+    if (tunggu && tunggu.message_id) {
+      try { return await bot.editMessageText(pesan, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMerek() }); } catch (e) {}
+    }
+    return kirim(chatId, pesan, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+  }
+  const data = Array.isArray(r.data) ? r.data : [];
+  const ambil = (m) => data.find((x) => String(x.merek || '').toUpperCase() === m) || { merek: m, nota: 0, item: 0, omzet: 0 };
+  const total = r.total || { nota: 0, item: 0, omzet: 0 };
+  const rp = (n) => 'Rp. ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
+  const lines = [];
+  lines.push('🛋️ *LAPORAN PENJUALAN HOMMY & KIREI*');
+  lines.push('🏢 Central Perabot (CP)');
+  lines.push(`📅 ${escapeMd(periode)}`);
+  lines.push(GARIS_TEBAL);
+  lines.push('');
+  if (!Number(total.omzet) && !Number(total.item)) {
+    lines.push('😴 Tidak ada penjualan HOMMY/KIREI pada rentang ini.');
+    if (r.jangkauan && r.jangkauan.dari) lines.push(`\n📦 Data iPos tersedia: ${r.jangkauan.dari} s/d ${r.jangkauan.sampai}`);
+  } else {
+    const tulisMerek = (label, emoji, x) => {
+      lines.push(`${emoji} *${label}*`);
+      lines.push(`   🧾 ${fmtJml(x.nota)} nota | 📦 ${fmtJml(x.item)} item`);
+      lines.push(`   💰 *${rp(x.omzet)}*`);
+      lines.push('');
+    };
+    tulisMerek('HOMMY', '🛋️', ambil('HOMMY'));
+    tulisMerek('KIREI', '🪑', ambil('KIREI'));
+    lines.push(GARIS_TEBAL);
+    lines.push('📊 *TOTAL HOMMY + KIREI*');
+    lines.push(`🧾 ${fmtJml(total.nota)} nota | 📦 ${fmtJml(total.item)} item`);
+    lines.push(`💰 *${rp(total.omzet)}*`);
+    if (r.jangkauan && r.jangkauan.dari && (dari < r.jangkauan.dari || sampai > r.jangkauan.sampai)) {
+      lines.push(`\n📦 Data iPos tersedia: ${r.jangkauan.dari} s/d ${r.jangkauan.sampai}`);
+    }
+  }
+  const umur = r.update ? Math.round((Date.now() - r.update) / 60000) : null;
+  if (umur !== null) lines.push(`\n🕐 Update data: ${umur <= 0 ? 'baru saja' : umur + ' mnt lalu'}`);
+  lines.push('💡 Ketik: `laporan homy 1-20 september 2026`');
+  const hasil = lines.join('\n');
+  if (tunggu && tunggu.message_id) {
+    try {
+      return await bot.editMessageText(hasil, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+    } catch (e) {}
+  }
+  return kirim(chatId, hasil, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -3340,6 +3761,11 @@ function loadExcel() {
   console.log(`📦 TOTAL UNIQUE BARANG: ${DATA_BARANG.length}`);
   console.log('═'.repeat(60));
   
+  // [IPOS] setelah Excel dimuat, segera timpa nama/harga/stok dengan data iPos.
+  // Sengaja fire-and-forget: loadExcel() tetap sinkron, bot tidak menunggu API.
+  iposBridge.syncStok(DATA_BARANG, { verbose: false })
+    .catch((e) => console.warn('⚠️ [iPos] sync setelah loadExcel gagal:', e.message));
+
   return DATA_BARANG.length > 0;
 }
 
@@ -3410,6 +3836,11 @@ syncLastUpdatedFromGitHub();
 // [SYNC-XLSX] tarik xlsx terbaru dari GitHub → lokal (biar selalu sama), reload bila berubah
 syncExcelFromGitHub(true);
 setInterval(() => syncExcelFromGitHub(false), SYNC_XLSX_INTERVAL_MENIT * 60 * 1000);
+
+// [IPOS] nama + harga (ecer=L1, ambil=L2) + stok realtime dari iPos 5.0 (i5_CP2026).
+// SSE: perubahan diterapkan ≤ ~3 dtk. Sync penuh tiap IPOS_SYNC_MS = jaring pengaman.
+// Kalau API mati, bot tetap jalan pakai data Excel terakhir.
+iposBridge.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 60000));
 
 // ════════════════════════════════════════════════════════════════
 //   14. SEARCH ENGINE
@@ -4658,6 +5089,10 @@ function kbMainMenu(userId) {
       { text: '🏠 Input Homebase', callback_data: 'menu:7' },
       { text: '📸 Simpan Nota', callback_data: 'menu:10' },
     ]);
+    buttons.push([
+      { text: '🧾 Penjualan Kasir CP', callback_data: 'jualkasir:' + ymdLokal(0) },
+      { text: '🛋️ HOMMY & KIREI', callback_data: 'hk:mulai' },
+    ]);
   } else if (isMember(userId)) {
     buttons.push([
       { text: '🔍 Cari Barang', callback_data: 'menu:4' },
@@ -4924,21 +5359,29 @@ function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
     const t = TOKO_LIST.find(x => x.kode === tokoKode);
     const h = item.harga[tokoKode];
     msg += `${t.icon} *${t.nama}*\n`;
-    if (tipeHarga === 'grosir') {
-      msg += `📦 Ambil (6+): ${formatRp(h.ambil)}\n`;
-    } else if (tipeHarga === 'ecer') {
-      msg += `💵 Ecer (1-5): ${formatRp(h.ecer)}\n`;
+    if (!h) {
+      // barang tidak dijual di toko ini (mis. item baru dari iPos hanya utk toko cp)
+      msg += `⚪ _Tidak ada data harga di toko ini_\n`;
     } else {
-      msg += `💵 Ecer: ${formatRp(h.ecer)}\n📦 Ambil: ${formatRp(h.ambil)}\n`;
+      if (tipeHarga === 'grosir') {
+        msg += `📦 Ambil (6+): ${formatRp(h.ambil)}\n`;
+      } else if (tipeHarga === 'ecer') {
+        msg += `💵 Ecer (1-5): ${formatRp(h.ecer)}\n`;
+      } else {
+        msg += `💵 Ecer: ${formatRp(h.ecer)}\n📦 Ambil: ${formatRp(h.ambil)}\n`;
+      }
+      msg += `📊 Stok: ${h.stok} ${h.stok > 0 ? '✅' : '⚠️'}`;
+      const tglT = (item.lastUpdatedPerToko && item.lastUpdatedPerToko[tokoKode]) || item.lastUpdated || '';
+      if (tglT) msg += ` 📅 ${tglT}`;
+      msg += '\n';
     }
-    msg += `📊 Stok: ${h.stok} ${h.stok > 0 ? '✅' : '⚠️'}`;
-    const tglT = (item.lastUpdatedPerToko && item.lastUpdatedPerToko[tokoKode]) || item.lastUpdated || '';
-    if (tglT) msg += ` 📅 ${tglT}`;
-    msg += '\n';
   } else {
     msg += `💰 *HARGA 5 TOKO:*\n\n`;
+    let adaToko = false;
     TOKO_LIST.forEach(t => {
       const h = item.harga[t.kode];
+      if (!h) return; // barang tidak dijual di toko ini (mis. item baru dari iPos)
+      adaToko = true;
       const stokIcon = h.stok > 0 ? '🟢' : '🔴';
       msg += `${stokIcon} *${t.nama}*\n`;
       if (tipeHarga === 'grosir') {
@@ -4951,6 +5394,7 @@ function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
       const tglP = (item.lastUpdatedPerToko && item.lastUpdatedPerToko[t.kode]) || '';
       msg += `   📊 Stok: ${h.stok} ${item.satuan}${tglP ? ` 📅 ${tglP}` : ''}\n`;
       });
+    if (!adaToko) msg += `⚪ _Belum ada data harga_\n`;
   }
   return msg;
 }
@@ -5069,10 +5513,14 @@ async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
     msg += `*${globalIdx}. ${escapeMd(item.nama)}*\n   🔖 \`${item.kode}\`\n`;
     if (tokoKode) {
       const h = item.harga[tokoKode];
-      const harga = tipeHarga === 'grosir' ? h.ambil : h.ecer;
-      const tglT = (item.lastUpdatedPerToko && item.lastUpdatedPerToko[tokoKode]) || '';
-      const lastUpd = tglT ? ` 📅 ${tglT}` : '';
-      msg += `   💰 ${formatRp(harga)} | 📊 ${h.stok} ${h.stok > 0 ? '✅' : '⚠️'}${lastUpd}\n`;
+      if (h) {
+        const harga = tipeHarga === 'grosir' ? h.ambil : h.ecer;
+        const tglT = (item.lastUpdatedPerToko && item.lastUpdatedPerToko[tokoKode]) || '';
+        const lastUpd = tglT ? ` 📅 ${tglT}` : '';
+        msg += `   💰 ${formatRp(harga)} | 📊 ${h.stok} ${h.stok > 0 ? '✅' : '⚠️'}${lastUpd}\n`;
+      } else {
+        msg += `   ⚪ _Tidak ada di toko ini_\n`;
+      }
     }
     msg += '\n';
     buttons.push([{ 
@@ -5424,7 +5872,7 @@ function kbSOAktif() {
 const KB_KEMBALI_SO = { inline_keyboard: [[{ text: '🔙 Kembali', callback_data: 'so:kembali' }]] };
 
 function tampilkanBarangPilihan(item, tokoKode, userId, rakAktif) {
-  const h = item.harga[tokoKode];
+  const h = item.harga[tokoKode] || { stok: 0 }; // barang baru dari iPos bisa tak ada di toko ini
   
   let m = `📦 *Barang ditemukan!*\n${GARIS_TEBAL}\n`;
   m += `🔖 ${item.kode}\n📦 ${escapeMd(item.nama)}\n📏 ${item.satuan}\n💻 Stok Sistem: ${h.stok}\n`;
@@ -7824,10 +8272,49 @@ bot.onText(/\/hapuskontak (\d+)/, (msg, match) => {
   );
 });
 
-bot.onText(/\/reload/, (msg) => {
+bot.onText(/\/reload/, async (msg) => {
   if (!isAdmin(msg.from.id)) return;
   loadExcel();
-  kirim(msg.chat.id, `✅ Excel reloaded! ${DATA_BARANG.length} barang`);
+  const r = await iposBridge.syncStok(DATA_BARANG, { verbose: true });
+  kirim(msg.chat.id,
+    `✅ Excel reloaded! ${DATA_BARANG.length} barang\n` +
+    (r.ok
+      ? `🔄 iPos: ubah ${r.ubah}, baru ${r.baru}, hapus ${r.hapus} (dari ${r.total} item)`
+      : `⚠️ iPos gagal: ${r.err} (pakai data Excel)`));
+});
+
+// Status koneksi iPos (admin)
+bot.onText(/\/ipos/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  const s = iposBridge.status();
+  kirim(msg.chat.id,
+    `🔌 *iPos Bridge*\n` +
+    `${s.online ? '🟢 online' : '🔴 offline'} | ${s.sse}\n` +
+    `📦 ${s.total} item\n` +
+    `🏪 toko: ${s.toko.join(', ')}\n` +
+    `⏱️ update terakhir: ${s.umurDetik === null ? '-' : s.umurDetik + ' dtk lalu'}\n` +
+    `🌐 ${s.url}` + (s.lastError ? `\n⚠️ ${s.lastError}` : ''),
+    { parse_mode: 'Markdown' });
+});
+
+// Laporan penjualan per kasir CP (staff laporan + admin)
+// Contoh: /kasir | /kasir kemarin | /kasir 24/09/2026
+bot.onText(/^\/kasir(?:\s+(.+))?$/, async (msg, match) => {
+  if (!bisaAksesLaporan(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus staff laporan.');
+  const arg = String(match[1] || '').toLowerCase().trim();
+  if (arg) {
+    const ymd = parseTanggalLaporan(arg);
+    if (!ymd) return kirim(msg.chat.id, '⚠️ Tanggal tidak dikenali. Contoh: `/kasir 24/09/2026` atau `/kasir kemarin`.', { parse_mode: 'Markdown' });
+    return tampilkanLaporanKasir(msg.chat.id, msg.from.id, ymd);
+  }
+  return tampilkanLaporanKasir(msg.chat.id, msg.from.id, ymdLokal(0));
+});
+
+// Laporan penjualan per merek HOMMY & KIREI — rentang tanggal
+// /homy → alur tanggal awal→akhir; /homy 1-20 september 2026 → langsung
+bot.onText(/^\/homy(?:kirei)?(?:\s+(.+))?$/i, async (msg, match) => {
+  if (!bisaAksesLaporan(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus staff laporan.');
+  return mulaiLaporanMerek(msg.chat.id, msg.from.id, String(match[1] || ''));
 });
 
 // Manual backup SO untuk admin
@@ -9055,6 +9542,15 @@ const MENU_KEYWORDS = {
   'penjualan': { action: 'menu:1', label: '📊 Laporan Penjualan', priority: 'medium' },
   'lap jual': { action: 'menu:1', label: '📊 Laporan Penjualan', priority: 'high' },
   
+  // ═══ LAPORAN HOMMY & KIREI (per merek, rentang tanggal) ═══
+  'laporan homy kirei': { action: 'menu:hk', label: '🛋️ HOMMY & KIREI', priority: 'high' },
+  'laporan hommy kirei': { action: 'menu:hk', label: '🛋️ HOMMY & KIREI', priority: 'high' },
+  'lap homy kirei': { action: 'menu:hk', label: '🛋️ HOMMY & KIREI', priority: 'high' },
+  'laporan homy': { action: 'menu:hk', label: '🛋️ HOMMY & KIREI', priority: 'high' },
+  'laporan hommy': { action: 'menu:hk', label: '🛋️ HOMMY & KIREI', priority: 'high' },
+  'laporan kirei': { action: 'menu:hk', label: '🛋️ HOMMY & KIREI', priority: 'high' },
+  'omzet homy kirei': { action: 'menu:hk', label: '🛋️ HOMMY & KIREI', priority: 'high' },
+  
   // ═══ LAPORAN HARGA ═══
   'laporan harga': { action: 'menu:2', label: '🏷️ Laporan Harga', priority: 'high' },
   'lap harga': { action: 'menu:2', label: '🏷️ Laporan Harga', priority: 'high' },
@@ -9196,6 +9692,12 @@ async function executeMenuAction(chatId, userId, action) {
       reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]]}
     });
   }
+  
+  // ★ Laporan penjualan per merek HOMMY & KIREI (rentang tanggal)
+  if (action === 'menu:hk') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    return mulaiLaporanMerek(chatId, userId);
+  }
     // ★ Homebase
   if (action === 'menu:7') {
     if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak.');
@@ -9221,6 +9723,8 @@ async function executeMenuAction(chatId, userId, action) {
       '• `stock opname` - buka SO\n' +
       '• `cari barang` - cari\n' +
       '• `laporan harga` - lap harga\n' +
+      '• `laporan penjualan 24/09` - penjualan kasir CP\n' +
+      '• `laporan homy kirei` - penjualan HOMMY & KIREI (pilih tanggal)\n' +
       '• `marketplace` - lap mp\n' +
       '• `berita acara` - BA\n' +
       '• `info` - info bot\n\n' +
@@ -9479,10 +9983,97 @@ bot.on('message', async (msg) => {
     // Kalau jawaban lain, lanjut proses normal (jangan re-trigger menu)
   }
   
+  // ★ PRIORITY 2.7: Isian parkir menunggu (laporan penjualan minta input manual)
+  if (session.pendingParkir && bisaAksesLaporan(userId)) {
+    const pp = session.pendingParkir;
+    if (KATA_RESET.includes(low)) {
+      updateSesi(userId, { pendingParkir: null });
+      // lanjut ke PRIORITY 3 (reset)
+    } else {
+      const isian = parseParkirInput(text);
+      if (isian) {
+        updateSesi(userId, { pendingParkir: null });
+        if (isian.skip) {
+          return tampilkanLaporanKasir(chatId, userId, pp.ymd, { skip: true });
+        }
+        return tampilkanLaporanKasir(chatId, userId, pp.ymd, isian);
+      }
+      if (cobaIsianParkir(text)) {
+        return kirim(chatId,
+          `⚠️ Format parkir belum benar.\nKetik 2 angka: \`parkir [di komputer] [stor luar]\`\nContoh: \`parkir 0 778000\` — atau \`parkir batal\` untuk tanpa bagian parkir.`,
+          { parse_mode: 'Markdown' });
+      }
+      // teks lain → anggap perintah baru, lanjut proses normal
+      updateSesi(userId, { pendingParkir: null });
+    }
+  }
+
+  // ★ PRIORITY 2.8: Isian tanggal laporan HOMMY & KIREI (tunggu awal → akhir)
+  if (session.pendingHK && bisaAksesLaporan(userId)) {
+    const hk = session.pendingHK;
+    const mintaLain = /(laporan|rekap|\blap\b|penjualan|kasir|marketplace|cari|harga)/.test(low) && !deteksiLaporanMerek(text);
+    if (KATA_RESET.includes(low)) {
+      updateSesi(userId, { pendingHK: null });
+      // lanjut ke PRIORITY 3 (reset)
+    } else if (mintaLain) {
+      // user pindah ke fitur lain → batalkan isian, lanjut proses normal
+      updateSesi(userId, { pendingHK: null });
+    } else {
+      const r = parseRentangTanggal(text);
+      const ymd = r ? null : parseTanggalLaporan(low);
+      if (hk.step === 'awal') {
+        const awal = (r && r.awal) || ymd;
+        if (awal) {
+          if (awal > ymdLokal(0)) {
+            return kirim(chatId, PROMPT_HK_AWAL('⚠️ Tanggal itu masih di masa depan. Ketik tanggal awal lain.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+          }
+          if (r && r.akhir) {
+            updateSesi(userId, { pendingHK: null });
+            return tampilkanLaporanMerek(chatId, userId, awal, r.akhir);
+          }
+          updateSesi(userId, { pendingHK: { step: 'akhir', dari: awal } });
+          return kirim(chatId, PROMPT_HK_AKHIR(awal), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+        }
+        return kirim(chatId, PROMPT_HK_AWAL('⚠️ Tanggal belum dikenali. Contoh: `1/9` atau `1 september 2026`.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+      }
+      // step 'akhir'
+      let akhir = (r && r.akhir) || ymd;
+      if (!akhir) {
+        // angka polos "20" → tanggal 20 di bulan yang sama dengan tanggal awal
+        const mDay = String(text).trim().match(/^(\d{1,2})$/);
+        if (mDay) {
+          const [yy, mm] = hk.dari.split('-').map(Number);
+          akhir = cekTanggal(yy, mm, +mDay[1]);
+        }
+      }
+      if (!akhir) {
+        return kirim(chatId, PROMPT_HK_AKHIR(hk.dari, '⚠️ Tanggal akhir belum dikenali. Contoh: `20/9/2026` atau `20`.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+      }
+      if (akhir < hk.dari) {
+        return kirim(chatId, PROMPT_HK_AKHIR(hk.dari, `⚠️ Tanggal akhir (*${escapeMd(labelTanggalYMD(akhir))}*) sebelum tanggal awal. Ketik ulang.`), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+      }
+      updateSesi(userId, { pendingHK: null });
+      return tampilkanLaporanMerek(chatId, userId, hk.dari, akhir);
+    }
+  }
+  
   // ★ PRIORITY 3: Reset commands
   if (KATA_RESET.includes(low)) {
     resetSesi(userId);
     return kirim(chatId, '📋 *MENU UTAMA*', { reply_markup: kbMainMenu(userId) });
+  }
+  
+  // ★ PRIORITY 3.4: Laporan penjualan HOMMY & KIREI via chat bebas
+  // (mis. "laporan homy kirei", "laporan homy 1-20 september 2026", "homy kirei")
+  if (bisaAksesLaporan(userId) && deteksiLaporanMerek(text)) {
+    return mulaiLaporanMerek(chatId, userId, text);
+  }
+  
+  // ★ PRIORITY 3.5: Laporan penjualan kasir CP via chat bebas
+  // (mis. "laporan penjualan kemarin", "laporan kasir 24/09/2026", "omzet hari ini")
+  if (bisaAksesLaporan(userId)) {
+    const ymdLap = deteksiLaporanKasir(text);
+    if (ymdLap) return tampilkanLaporanKasir(chatId, userId, ymdLap);
   }
   
     // ★ PRIORITY 4: Menu keyword detection (SUPER PRIORITAS!)
@@ -9616,6 +10207,41 @@ bot.on('callback_query', async (query) => {
     try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
     await prosesUpdateExcelToko(chatId, userId, tokoKode, fileId, `${tokoKode}.xlsx`);
     return;
+  }
+
+  // ════════════ LAPORAN PENJUALAN KASIR (iPos) ════════════
+  
+  if (data.startsWith('jualkasir:')) {
+    const ymd = data.slice('jualkasir:'.length);
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    return tampilkanLaporanKasir(chatId, userId, ymd);
+  }
+
+  // ════════════ LAPORAN HOMMY & KIREI (per merek) ════════════
+  
+  if (data === 'hk:mulai' || data === 'menu:hk') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
+    return mulaiLaporanMerek(chatId, userId);
+  }
+  
+  if (data === 'hk:ini' || data === 'hk:lalu') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
+    // pakai waktu LOKAL mesin (WITA) — konsisten dengan ymdLokal
+    const d = new Date();
+    let y = d.getFullYear(), m = d.getMonth(); // m: 0-11
+    if (data === 'hk:lalu') { m -= 1; if (m < 0) { m = 11; y -= 1; } }
+    const pad = (n) => String(n).padStart(2, '0');
+    const dari = `${y}-${pad(m + 1)}-01`;
+    let sampai;
+    if (data === 'hk:lalu') {
+      const akhir = new Date(y, m + 1, 0); // hari terakhir bulan itu
+      sampai = `${akhir.getFullYear()}-${pad(akhir.getMonth() + 1)}-${pad(akhir.getDate())}`;
+    } else {
+      sampai = ymdLokal(0);
+    }
+    return tampilkanLaporanMerek(chatId, userId, dari, sampai);
   }
 
   // ════════════ PAGINATION CARI BARANG ════════════
