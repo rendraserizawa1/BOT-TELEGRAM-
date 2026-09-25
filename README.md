@@ -131,10 +131,17 @@ Lalu / 🔁 Ganti Tanggal / 🔙 Menu Utama (juga ada di Menu Utama: tombol
 Format laporan: per merek (🧾 nota | 📦 item | 💰 omzet), lalu
 **📊 TOTAL HOMMY + KIREI** (total = penjumlahan baris merek — nota yang
 memuat kedua merek dihitung di kedua baris), footer umur data iPos.
+Di bawahnya seksi **🏪 PENJUALAN TOKO PELANGGAN** (grosir): per toko tetap
+(Toko Nasional Kitchen · Toko Perabot Mama Oesapa · Toko Perabot Mama TDM ·
+Toko Perabot Mamaku Kefa) total per merek + **rincian tiap nomor nota**
+(HOMMY & KIREI per nota), ditutup **📊 TOTAL TOKO PELANGGAN** — bagian dari
+TOTAL HOMMY + KIREI (tidak dijumlahkan lagi). Toko tanpa penjualan tetap
+ditampilkan ("tidak ada penjualan").
 Tidak ada penjualan → baris "Tidak ada penjualan HOMMY/KIREI".
 Terverifikasi cocok iPos 01–20 Sep 2026: HOMMY 2.134 nota / 9.086 item /
 Rp 250.665.000 · KIREI 484 / 2.222 / Rp 18.094.000 · total 2.618 / 11.308 /
-Rp 268.759.000.
+Rp 268.759.000; toko pelanggan Rp 35.148.000 (TDM 30.588.000 · Oesapa
+4.560.000).
 
 Catatan: kata kunci `laporan homy/kirei` tidak merebut fitur lain — `cari
 homy`, `harga homy`, `homy` sendirian, `laporan harga homy` tetap ke alur

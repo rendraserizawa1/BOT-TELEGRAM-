@@ -1354,6 +1354,8 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai) {
   const ambil = (m) => data.find((x) => String(x.merek || '').toUpperCase() === m) || { merek: m, nota: 0, item: 0, omzet: 0 };
   const total = r.total || { nota: 0, item: 0, omzet: 0 };
   const rp = (n) => 'Rp. ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
+  const tglNota = (ymd) => { const [y, m, d] = String(ymd || '').split('-'); return d ? `${d}/${m}/${y}` : String(ymd || '-'); };
+  const emoMerek = (m) => (m === 'HOMMY' ? '🛋️' : m === 'KIREI' ? '🪑' : '🏷️');
   const lines = [];
   lines.push('🛋️ *LAPORAN PENJUALAN HOMMY & KIREI*');
   lines.push('🏢 Central Perabot (CP)');
@@ -1376,6 +1378,49 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai) {
     lines.push('📊 *TOTAL HOMMY + KIREI*');
     lines.push(`🧾 ${fmtJml(total.nota)} nota | 📦 ${fmtJml(total.item)} item`);
     lines.push(`💰 *${rp(total.omzet)}*`);
+    // ── Toko pelanggan grosir (Nasional Kitchen / Oesapa / TDM / Mamaku Kefa) ──
+    // Dipisah dari total CP: total per toko + rincian tiap nota per merek,
+    // lalu TOTAL TOKO PELANGGAN (bagian dari TOTAL HOMMY + KIREI di atas).
+    const pel = Array.isArray(r.pelanggan) ? r.pelanggan : [];
+    const tPel = r.totalPelanggan || null;
+    if (pel.length) {
+      lines.push('');
+      lines.push(GARIS_TEBAL);
+      lines.push('🏪 *PENJUALAN TOKO PELANGGAN*');
+      lines.push('_grosir — rincian per nota_');
+      lines.push('');
+      if (!tPel || (!Number(tPel.omzet) && !Number(tPel.item))) {
+        lines.push('😴 Tidak ada penjualan HOMMY/KIREI ke toko pelanggan pada rentang ini.');
+      } else {
+        for (const t of pel) {
+          const nama = escapeMd(String(t.nama || '').toUpperCase());
+          if (!t.nota) {
+            lines.push(`🏬 *${nama}* — tidak ada penjualan`);
+            lines.push('');
+            continue;
+          }
+          lines.push(`🏬 *${nama}*`);
+          lines.push(`   🧾 ${fmtJml(t.nota)} nota | 📦 ${fmtJml(t.item)} item`);
+          for (const x of (t.perMerek || [])) {
+            lines.push(`   ${emoMerek(x.merek)} ${x.merek}: ${rp(x.omzet)}`);
+          }
+          for (const n of (t.notaList || [])) {
+            const bagian = (n.perMerek || []).map((x) => `${emoMerek(x.merek)} ${rp(x.omzet)}`).join(' | ');
+            lines.push(`   📄 ${n.notransaksi} · ${tglNota(n.tanggal)}`);
+            lines.push(`      ${bagian}`);
+          }
+          lines.push('');
+        }
+        lines.push(GARIS_TEBAL);
+        lines.push('📊 *TOTAL TOKO PELANGGAN*');
+        lines.push(`🧾 ${fmtJml(tPel.nota)} nota | 📦 ${fmtJml(tPel.item)} item`);
+        for (const x of (tPel.perMerek || [])) {
+          lines.push(`${emoMerek(x.merek)} ${x.merek}: ${rp(x.omzet)}`);
+        }
+        lines.push(`💰 *${rp(tPel.omzet)}*`);
+        lines.push('_sudah termasuk di TOTAL HOMMY + KIREI di atas_');
+      }
+    }
     if (r.jangkauan && r.jangkauan.dari && (dari < r.jangkauan.dari || sampai > r.jangkauan.sampai)) {
       lines.push(`\n📦 Data iPos tersedia: ${r.jangkauan.dari} s/d ${r.jangkauan.sampai}`);
     }
