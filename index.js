@@ -1094,6 +1094,24 @@ function deteksiLaporanMerek(text) {
   return sisa.length === 0;
 }
 
+// Deteksi chat bebas minta laporan MARKETPLACE → true | false
+// (mis. "laporan marketplace kemarin", "marketplace 25 september 2026",
+//  "omzet mp minggu ini"). Jalankan SETELAH deteksiLaporanMerek.
+function deteksiLaporanMarketplace(text) {
+  const low = String(text || '').toLowerCase().trim().replace(/[.!?,]+$/, '');
+  const adaMp = /(marketplace|\bmp\b)/.test(low);
+  if (!adaMp) return false;
+  // jangan rebut fitur lain
+  if (/berita acara|stock opname|stok opname|homebase/.test(low)) return false;
+  if (/\b(hom{1,2}y|homi|kirei|kirey|nk|tdm|oesapa|kefa|nasional)\b/.test(low)) return false;
+  const adaLap = /(laporan|\blap\b|rekap|penjualan|omzet|\bjual\b|setoran)/.test(low);
+  if (adaLap) return true;
+  // tanpa kata "laporan": hanya trigger kalau pesan cuma "marketplace"/"mp"
+  // + tanggal (mis. "mp kemarin") — bukan kalimat lain.
+  const sisa = low.replace(/marketplace|\bmp\b/g, ' ').replace(/[^a-z]/g, '');
+  return /^(lap|kemarin|ini|sekarang)?$/.test(sisa);
+}
+
 function kbLaporanKasir(ymd) {
   return {
     inline_keyboard: [
@@ -1435,6 +1453,118 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai) {
     } catch (e) {}
   }
   return kirim(chatId, hasil, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+}
+
+// ── Laporan penjualan MARKETPLACE (otomatis dari iPos) ────────────────────
+// Sumber: endpoint iPos /api/jual-marketplace (nota tbl_ikhd dengan
+// kodesales='MARKETPLACE'). Output HARUS polos persis format laporan manual
+// pemilik (tanpa emoji, tanpa Markdown) — jangan diubah tanpa izin.
+// Nomor laporan (mis. 020) = urutan hari-jual marketplace bulan itu,
+// dihitung API; channel WA/Shopee/TikTok/Tokopedia selalu "Rp. -" (permintaan).
+const MP_GARIS = '-'.repeat(34);
+const MP_RP = (n) => (Number(n) ? 'Rp. ' + Math.round(Number(n)).toLocaleString('id-ID') : 'Rp. -');
+
+function kbLaporanMarketplace() {
+  return {
+    inline_keyboard: [
+      [
+        { text: '📅 Hari Ini', callback_data: 'mp:ini' },
+        { text: '📅 Kemarin', callback_data: 'mp:lalu' },
+      ],
+      [
+        { text: '🗓️ Pilih Tanggal', callback_data: 'mp:tanggal' },
+        { text: '🔙 Menu Utama', callback_data: 'menu:main' },
+      ],
+    ],
+  };
+}
+
+const PROMPT_MP_TANGGAL = (extra = '') =>
+  `🛒 *LAPORAN MARKETPLACE*\n🏢 Central Perabot (CP)\n${GARIS_TEBAL}\n\n` +
+  `📅 Ketik *TANGGAL* laporan.\n` +
+  `Contoh: \`25/9\`, \`25 september 2026\`, \`kemarin\`, atau rentang \`1-25 september 2026\`\n\n` +
+  `• \`batal\` untuk keluar${extra ? `\n\n${extra}` : ''}`;
+
+// Mulai alur laporan marketplace — teks opsional bisa langsung memuat tanggal.
+async function mulaiLaporanMarketplace(chatId, userId, teks = '') {
+  if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+  const t = String(teks || '').trim();
+  const r = parseRentangTanggal(t);
+  if (r) return tampilkanLaporanMarketplace(chatId, userId, r.awal, r.akhir);
+  if (t) {
+    const satu = parseTanggalLaporan(t.toLowerCase());
+    if (satu) {
+      if (satu > ymdLokal(0)) {
+        return kirim(chatId, PROMPT_MP_TANGGAL('⚠️ Tanggal itu masih di masa depan. Ketik tanggal lain.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+      }
+      return tampilkanLaporanMarketplace(chatId, userId, satu, satu);
+    }
+  }
+  updateSesi(userId, { pendingHK: null, pendingParkir: null });
+  return kirim(chatId, PROMPT_MP_TANGGAL(), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+}
+
+// Render laporan marketplace untuk tanggal/rentang — iPos, format manual persis.
+async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai) {
+  if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dari || '')) || !/^\d{4}-\d{2}-\d{2}$/.test(String(sampai || ''))) {
+    return kirim(chatId, '⚠️ Format tanggal tidak dikenali.', { reply_markup: kbLaporanMarketplace() });
+  }
+  const hariIni = ymdLokal(0);
+  if (dari > hariIni) {
+    return kirim(chatId, `⚠️ Tanggal *${escapeMd(labelTanggalYMD(dari))}* masih di masa depan.\nKetik tanggal lain ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+  }
+  if (sampai > hariIni) sampai = hariIni; // data belum ada untuk tanggal setelah hari ini
+  if (sampai < dari) {
+    return kirim(chatId, `⚠️ Tanggal akhir tidak boleh sebelum tanggal awal.\nKetik ulang tanggal ya kak.`, { reply_markup: kbLaporanMarketplace() });
+  }
+  const namaBulanMp = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const tglPanjang = (ymd) => { const [y, m, d] = String(ymd).split('-').map(Number); return `${d} ${namaBulanMp[m - 1]} ${y}`; };
+  const periode = dari === sampai ? tglPanjang(dari) : `${tglPanjang(dari)} s/d ${tglPanjang(sampai)}`;
+  let r;
+  try {
+    r = await iposBridge.ambilLaporanMarketplace(dari, sampai);
+  } catch (e) {
+    return kirim(chatId, `⚠️ iPos API tidak merespons: ${escapeMd(String(e.message || e))}\nCoba lagi sebentar ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+  }
+  if (!r || !r.siap) {
+    return kirim(chatId, '⏳ *Data penjualan iPos masih dimuat* di server (± 2-5 menit setelah API di-restart).\nCoba lagi sebentar ya kak.', { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+  }
+  const toko = Array.isArray(r.toko) ? r.toko : [];
+  const omzetTokoMp = (re) => {
+    const t = toko.find((x) => re.test(String(x.nama || '')));
+    return t ? Number(t.omzet) || 0 : 0;
+  };
+  const c = r.central || { nota: 0, omzet: 0, tunai: 0, debit: 0, notas: [] };
+  const nomor = String(Math.max(0, Number(r.nomor) || 0)).padStart(3, '0');
+  const notas = Array.isArray(c.notas) ? c.notas : [];
+  const jl = notas.filter((n) => n.tipe === 'JL');
+  const ksr = notas.filter((n) => n.tipe !== 'JL');
+  const lines = [];
+  lines.push(`Total Penjualan Marketplace Perabot Mama Periode ${periode}`);
+  lines.push('');
+  lines.push(`Toko Perabot Mama Oesapa ${MP_RP(omzetTokoMp(/OESAPA/i))}`);
+  lines.push(`Toko Perabot Mama TDM ${MP_RP(omzetTokoMp(/TDM/i))}`);
+  lines.push(`Toko Central Perabot ${MP_RP(c.omzet)}`);
+  lines.push(MP_GARIS);
+  lines.push('Penjualan via WA : Rp. -');
+  lines.push('Penjualan via Shopee: Rp. -');
+  lines.push('Penjualan via Tiktok Shop: Rp. -');
+  lines.push('Penjualan via Tokopedia : Rp. -');
+  lines.push('');
+  lines.push(`Total Penjualan : ${MP_RP(r.total)}`);
+  lines.push(MP_GARIS);
+  lines.push(`Tunai/CASH ${MP_RP(c.tunai)}`);
+  lines.push(`Debit/TF ${MP_RP(c.debit)}`);
+  if (jl.length || ksr.length) {
+    lines.push('');
+    const baris = (n) => `- Nomor Nota ${nomor} (${n.notransaksi})`;
+    for (const n of jl) lines.push(baris(n));
+    if (jl.length && ksr.length) lines.push(''); // pemisah nota JL (grosir) vs KSR
+    for (const n of ksr) lines.push(baris(n));
+  }
+  // polos tanpa parse_mode & tanpa tombol — persis format laporan manual
+  return kirim(chatId, lines.join('\n'));
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -4840,35 +4970,11 @@ function genLapHargaDariData(dataHarga, namaToko, kemarin) {
 }
 
 // ════════════════════════════════════════════════════════════════
-//   18. GENERATOR LAPORAN MARKETPLACE
+//   18. LAPORAN MARKETPLACE — sekarang otomatis dari iPos
+//       (lihat mulaiLaporanMarketplace / tampilkanLaporanMarketplace
+//        di bagian laporan HOMMY & KIREI; sumber lama input manual/foto
+//        sudah dihapus)
 // ════════════════════════════════════════════════════════════════
-
-function genLapMarket(text, kemarin) {
-  const t = getTanggal(kemarin);
-  const d = { oesapa:0,tdm:0,central:0,wa:0,shopee:0,tiktok:0,tokopedia:0,tunai:0,debit:0,kredit:0,nota:[] };
-  
-  text.trim().toLowerCase().split('\n').forEach(line => {
-    const tr = line.trim();
-    if (!tr) return;
-    if (tr.startsWith('nota ')) { d.nota.push(line.trim().substring(5)); return; }
-    const p = tr.split(/\s+/);
-    if (p.length >= 2 && p[0] in d) {
-      d[p[0]] = parseFloat(p.slice(1).join('').replace(/[^0-9]/g, '')) || 0;
-    }
-  });
-  
-  const tT = d.oesapa + d.tdm + d.central;
-  const tC = d.wa + d.shopee + d.tiktok + d.tokopedia;
-  let nt = '';
-  if (d.nota.length) { nt = '\n'; d.nota.forEach(n => nt += `- Nomor Nota ${n}\n`); }
-  
-  return `${GARIS_TEBAL}\n🛒 *Total Penjualan Marketplace*\n*Perabot Mama*\n📅 Periode ${t}\n${GARIS_TEBAL}\n` +
-    `🏦 *Per Toko*\n• Oesapa: ${fRp(d.oesapa)}\n• TDM: ${fRp(d.tdm)}\n• Central: ${fRp(d.central)}\n` +
-    `${GARIS_TIPIS}\n💰 *Total*: ${fRp(tT)}\n\n📱 *Per Channel*\n• WA: ${fRp(d.wa)}\n• Shopee: ${fRp(d.shopee)}\n` +
-    `• Tiktok: ${fRp(d.tiktok)}\n• Tokopedia: ${fRp(d.tokopedia)}\n${GARIS_TIPIS}\n💰 *Total*: ${fRp(tC)}\n\n` +
-    `💳 *Metode Bayar*\n• Tunai: ${fRp(d.tunai)}\n• Debit: ${fRp(d.debit)}\n• Credit: ${fRp(d.kredit)}\n` +
-    `${GARIS_TEBAL}\n${nt}_Laporan otomatis_`;
-}
 
 
 
@@ -8781,13 +8887,6 @@ bot.on('voice', async (msg) => {
       return await handleScanModeLaporan(chatId, userId, corrected, null, session);
     }
     
-    if (session.menu === 3 && session.kemarin !== undefined) {
-      const laporan = genLapMarket(corrected, session.kemarin);
-      await kirim(chatId, laporan);
-      resetSesi(userId);
-      return kirim(chatId, '✅ *Laporan Marketplace selesai!*', { reply_markup: kbMainMenu(userId) });
-    }
-    
     // ★ PRIORITY 2: Reset commands
     if (KATA_RESET.includes(low)) {
       resetSesi(userId);
@@ -9274,22 +9373,6 @@ bot.on('photo', async (msg) => {
       return;
     }
     
-    // ★ Marketplace scan
-    if (session.menu === 3) {
-      await kirim(chatId, '📸 _Scan laporan marketplace..._');
-      try {
-        const prompt = `Baca gambar laporan marketplace. Ekstrak per toko (oesapa, tdm, central), channel (wa, shopee, tiktok, tokopedia), bayar (tunai, debit, kredit). Format: nama nilai`;
-        const aiText = await analisaGambarBuffer(imageBuffer, prompt);
-        const laporan = genLapMarket(aiText, session.kemarin);
-        await kirim(chatId, laporan);
-        resetSesi(userId);
-        await kirim(chatId, '✅ *Laporan Marketplace selesai!*', { reply_markup: kbMainMenu(userId) });
-      } catch(err) {
-        await kirim(chatId, '❌ Gagal: ' + err.message);
-      }
-      return;
-    }
-    
     // ★ Default: AI Vision umum
     await kirim(chatId, '📸 _Menganalisa foto..._');
     const prompt = msg.caption
@@ -9719,11 +9802,7 @@ async function executeMenuAction(chatId, userId, action) {
   }
   
   if (action === 'menu:3') {
-    resetSesi(userId);
-    updateSesi(userId, { menu: 3 });
-    return kirim(chatId, '🛒 *Laporan Marketplace*\n\nPilih hari:', {
-      reply_markup: kbPilihHari(3, 'mp')
-    });
+    return mulaiLaporanMarketplace(chatId, userId);
   }
   
   if (action === 'menu:4') {
@@ -9987,13 +10066,6 @@ bot.on('message', async (msg) => {
     return handleBeritaAcaraMode(chatId, userId, text, session);
   }
   
-  if (session.menu === 3 && session.kemarin !== undefined) {
-    const laporan = genLapMarket(text, session.kemarin);
-    await kirim(chatId, laporan);
-    resetSesi(userId);
-    return kirim(chatId, '✅ *Laporan Marketplace selesai!*', { reply_markup: kbMainMenu(userId) });
-  }
-  
   // ★ PRIORITY 2: Konfirmasi pending (user merespons konfirmasi sebelumnya)
   if (session.pendingKonfirmasi) {
     const pk = session.pendingKonfirmasi;
@@ -10101,6 +10173,30 @@ bot.on('message', async (msg) => {
       return tampilkanLaporanMerek(chatId, userId, hk.dari, akhir);
     }
   }
+
+  // ★ PRIORITY 2.9: Isian tanggal laporan MARKETPLACE
+  if (session.pendingMP && bisaAksesLaporan(userId)) {
+    const mintaLain = /(laporan|rekap|\blap\b|penjualan|kasir|homy|hommy|kirei|cari|harga)/.test(low) && !deteksiLaporanMarketplace(text);
+    if (KATA_RESET.includes(low)) {
+      updateSesi(userId, { pendingMP: null });
+      // lanjut ke PRIORITY 3 (reset)
+    } else if (mintaLain) {
+      // user pindah ke fitur lain → batalkan isian, lanjut proses normal
+      updateSesi(userId, { pendingMP: null });
+    } else {
+      const r = parseRentangTanggal(text);
+      const ymd = r ? null : parseTanggalLaporan(low);
+      const tgl = (r && r.awal) || ymd;
+      if (!tgl) {
+        return kirim(chatId, PROMPT_MP_TANGGAL('⚠️ Tanggal belum dikenali. Contoh: `25/9` atau `1-25 september 2026`.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+      }
+      if (tgl > ymdLokal(0)) {
+        return kirim(chatId, PROMPT_MP_TANGGAL('⚠️ Tanggal itu masih di masa depan. Ketik tanggal lain.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+      }
+      updateSesi(userId, { pendingMP: null });
+      return tampilkanLaporanMarketplace(chatId, userId, tgl, (r && r.akhir) || tgl);
+    }
+  }
   
   // ★ PRIORITY 3: Reset commands
   if (KATA_RESET.includes(low)) {
@@ -10112,6 +10208,12 @@ bot.on('message', async (msg) => {
   // (mis. "laporan homy kirei", "laporan homy 1-20 september 2026", "homy kirei")
   if (bisaAksesLaporan(userId) && deteksiLaporanMerek(text)) {
     return mulaiLaporanMerek(chatId, userId, text);
+  }
+  
+  // ★ PRIORITY 3.45: Laporan MARKETPLACE via chat bebas
+  // (mis. "laporan marketplace kemarin", "marketplace 25 september 2026")
+  if (bisaAksesLaporan(userId) && deteksiLaporanMarketplace(text)) {
+    return mulaiLaporanMarketplace(chatId, userId, text);
   }
   
   // ★ PRIORITY 3.5: Laporan penjualan kasir CP via chat bebas
@@ -10289,6 +10391,21 @@ bot.on('callback_query', async (query) => {
     return tampilkanLaporanMerek(chatId, userId, dari, sampai);
   }
 
+  // ════════════ LAPORAN MARKETPLACE (otomatis dari iPos) ════════════
+
+  if (data === 'mp:ini' || data === 'mp:lalu') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    const ymd = ymdLokal(data === 'mp:lalu' ? -1 : 0);
+    return tampilkanLaporanMarketplace(chatId, userId, ymd, ymd);
+  }
+
+  if (data === 'mp:tanggal') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    updateSesi(userId, { pendingMP: { step: 'tanggal' }, pendingHK: null, pendingParkir: null, menu: null });
+    try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
+    return kirim(chatId, PROMPT_MP_TANGGAL(), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+  }
+
   // ════════════ PAGINATION CARI BARANG ════════════
   
   if (data.startsWith('caripage:')) {
@@ -10407,10 +10524,9 @@ bot.on('callback_query', async (query) => {
   }
   
   if (data === 'menu:3') {
-    resetSesi(userId);
-    updateSesi(userId, { menu: 3 });
-    kirim(chatId, '🛒 *Laporan Marketplace*\n\nPilih hari:', { reply_markup: kbPilihHari(3, 'mp') });
-    return;
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
+    return mulaiLaporanMarketplace(chatId, userId);
   }
   
   if (data === 'menu:4') {
@@ -10652,11 +10768,9 @@ bot.on('callback_query', async (query) => {
     }
     
     if (menuType === '3') {
-      updateSesi(userId, { menu: 3, kemarin });
-      try {
-        await bot.editMessageText(`🛒 *Laporan Marketplace*\n📅 ${getTanggal(kemarin)}\n\nKirim foto atau ketik format:\n\`\`\`\noesapa 0\ntdm 0\ncentral 21061000\n\`\`\``, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' });
-      } catch(e) {}
-      return;
+      // laporan marketplace otomatis dari iPos (hari ini / kemarin)
+      const ymd = ymdLokal(kemarin ? -1 : 0);
+      return tampilkanLaporanMarketplace(chatId, userId, ymd, ymd);
     }
   }
   

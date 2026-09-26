@@ -255,6 +255,26 @@ async function ambilLaporanMerek(dari, sampai = dari, merek = '') {
   }
 }
 
+/**
+ * Laporan penjualan MARKETPLACE (Perabot Mama) — nota kodesales='MARKETPLACE'.
+ * @param {string} dari  YYYY-MM-DD
+ * @param {string} [sampai=dari]  YYYY-MM-DD
+ * @returns {Promise<object>} { siap, dari, sampai, toko[], central, total, nomor, update }
+ */
+async function ambilLaporanMarketplace(dari, sampai = dari) {
+  if (!IPOS_KEY) throw new Error('IPOS_KEY belum diisi di .env');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  try {
+    const url = `${IPOS_URL}/api/jual-marketplace?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai || dari)}&key=${encodeURIComponent(IPOS_KEY)}`;
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // SSE — perubahan diterapkan begitu iPos berubah (≤ POLL_MS API + ms)
 // ─────────────────────────────────────────────────────────────────────────
@@ -336,4 +356,4 @@ function mulaiAutoSync(getDataBarang, intervalMs = IPOS_SYNC_MS) {
   return () => clearInterval(t);
 }
 
-module.exports = { syncStok, terapkan, status, mulaiAutoSync, ambilLaporanKasir, ambilLaporanMerek, IPOS_URL, IPOS_TOKO };
+module.exports = { syncStok, terapkan, status, mulaiAutoSync, ambilLaporanKasir, ambilLaporanMerek, ambilLaporanMarketplace, IPOS_URL, IPOS_TOKO };
