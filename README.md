@@ -26,6 +26,10 @@ Buka Telegram, cari @Aivirtual_Robot
 ambil, HPP, dan stok semua diambil langsung dari database iPos 5.0
 (`i5_CP2026`) lewat service lokal `ipos-api` — realtime, tanpa upload Excel.
 
+> Sejak 30-09-2026 toko **nk (Nasional Kitchen / INPRES)** juga terhubung
+> dengan cara yang persis sama, lewat instans bridge kedua — lihat
+> *[Toko NK (Nasional Kitchen)](#-toko-nk-nasional-kitchen)* di bawah.
+
 ### Pemetaan harga
 
 | Bot | iPos | Sumber DB |
@@ -151,34 +155,74 @@ PROMO).
 ### Konfigurasi (`.env`)
 
 ```ini
-IPOS_URL=http://127.0.0.1:8080/ipos   # service lokal, mesin yang sama
+IPOS_URL=http://127.0.0.1:8080/ipos   # service lokal, mesin yang sama (CP)
 IPOS_KEY=ipos_...                      # API key (sama dgn ipos-api/.env)
 IPOS_SYNC_MS=60000                     # jaring pengaman (ms), default 60 dtk
 IPOS_TOKO=cp                           # toko bot yg datanya dari iPos
+
+# Toko NK — Nasional Kitchen (opsional; kosong = fitur NK mati)
+IPOS_NK_URL=http://100.110.152.33:8080/ipos  # API ipos-api INPRES di mesin NK (via Tailscale)
+IPOS_NK_KEY=ipos_...                          # API key ipos-api mesin NK
+IPOS_NK_TOKO=nk                               # toko bot yg datanya dari iPos NK
 ```
 
 `IPOS_URL`/`IPOS_KEY` **wajib** di `.env` (gitignored). Kalau API mati / key
-salah, bot tetap jalan normal memakai data Excel terakhir (fail-safe).
+salah, bot tetap jalan normal memakai data Excel terakhir (fail-safe). Idem
+untuk `IPOS_NK_*`: kalau `IPOS_NK_URL` kosong, instans NK tidak dibuat dan
+perilaku bot persis seperti sebelum NK diintegrasikan.
+
+### 🏬 Toko NK (Nasional Kitchen)
+
+Toko **nk** memakai **instans bridge kedua** (`ipos-bridge.js` v3: pabrik
+`buatBridge()` — semua state per-instans, jadi dua API berjalan berdampingan
+tanpa saling ganggu; item yang sama di kedua DB mendapat harga per toko
+masing-masing: `barang.harga.cp` + `barang.harga.nk`). API-nya =
+`ipos-api` lain yang jalan **di mesin NK** (DB `i5_INPRES2025`, kantor INPR,
+nota seri KSR=`NKK` 6 digit + JL=`NPK` 5 digit), diakses bot lewat Tailscale
+(`100.110.152.33:8080`). Perintahnya = padanan persis versi CP, cukup
+sebut **nk** / **nasional**:
+
+| Ketik (NK) | Padanan CP |
+|---|---|
+| `laporan nk penjualan 24/09` | `laporan penjualan 24/09` |
+| `laporan kasir nk kemarin` / `/kasirnk` / `/kasirnk kemarin` | `laporan kasir kemarin` / `/kasir` |
+| `laporan homy nk 1-20 september 2026` / `/homynk 1-20 september 2026` | `laporan homy 1-20 september 2026` / `/homy` |
+| `laporan marketplace nk 25/09` | `laporan marketplace 25/09` |
+| `mp nk kemarin` | `mp kemarin` |
+
+Perbedaan dari laporan CP: header **🏬 Nasional Kitchen (NK)**, urutan kasir
+KASSA1 → KASSA2, **tanpa seksi KONTER PROMO** (NK tidak punya konter promo),
+laporan marketplace hanya baris "Toko Nasional Kitchen" (tanpa toko pasangan),
+dan seksi toko pelanggan berisi pelanggan grosir NK. Isian parkir tetap
+diminta (sama seperti CP; `parkir 0 0` kalau tidak ada). Tanpa kata nk/nasional
+→ tetap laporan CP (perilaku lama tidak berubah); tdm/oesapa/kefa tetap pakai
+alur lama Excel/scan nota.
 
 ### Modul
 
 - `ipos-bridge.js` — semua logika: fetch, langganan SSE (klien SSE manual,
   tanpa dependensi), overlay nama/harga/stok, tambah item baru, bersihkan
-  item terhapus.
-- `index.js` — 4 titik sisip minimal:
+  item terhapus. v3: pabrik `buatBridge()` → 1 instans per toko/API
+  (ekspor lama = instans CP, kompatibel penuh; `iposBridge.nk` = instans NK).
+- `index.js` — titik sisip minimal (CP + NK):
   1. `require('./ipos-bridge')`
   2. akhir `loadExcel()` → sync ulang tiap Excel di-rebuild
-  3. startup → `iposBridge.mulaiAutoSync(() => DATA_BARANG, IPOS_SYNC_MS)`
+  3. startup → `mulaiAutoSync()` per instans (CP + NK)
   4. command admin `/ipos` (status + realtime) & `/reload`
+  5. deteksi laporan NK (`deteksiLaporan*Kk`) + perintah `/kasirnk` `/homynk`
 
 ### Command admin
 
-- `/ipos` — status koneksi, SSE realtime, jumlah item, update terakhir.
-- `/reload` — paksa muat ulang Excel + sync iPos sekarang.
+- `/ipos` — status koneksi, SSE realtime, jumlah item, update terakhir (CP + NK).
+- `/reload` — paksa muat ulang Excel + sync iPos (CP + NK) sekarang.
 - `/kasir [tanggal]` — laporan penjualan per kasir CP (staff laporan + admin).
+- `/kasirnk [tanggal]` — idem untuk toko NK (Nasional Kitchen).
 - `/homy [rentang]` — laporan penjualan HOMMY & KIREI per merek, mis. `/homy 1-20 september 2026` (staff laporan + admin).
+- `/homynk [rentang]` — idem untuk toko NK.
 
 ### Prasyarat
 
 Service `ipos-api` (Windows service `iPosAPI`, autostart) harus jalan di
-`127.0.0.1:8080`. Lihat `../ipos-api/README.md`.
+`127.0.0.1:8080`. Lihat `../ipos-api/README.md`. Untuk NK: service `ipos-api`
+(INPRES) jalan di mesin NK (autostart), `HOST=0.0.0.0` + firewall port 8080,
+dan mesin bot terhubung ke mesin NK via Tailscale.
