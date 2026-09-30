@@ -5,7 +5,9 @@
 //   Fitur: Cari, AI Chat, Voice, Scan Foto, SO Multi-User, BA, Laporan
 // ════════════════════════════════════════════════════════════════
 
-require('dotenv').config();
+// override:true => .env SELALU menang atas env Windows yang mungkin basi
+// (pernah kejadian: GITHUB_TOKEN lama di env User menimpa token baru di .env)
+require('dotenv').config({ override: true });
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const FormData = require('form-data');
@@ -1996,10 +1998,12 @@ function generateLaporanSOGabungan(tokoKode, namaToko) {
   ]);
   
   const kurang = [], lebih = [], sesuai = [];
+  // Peta kode->item sekali saja (hindari DATA_BARANG.find berulang O(n*m) yang memblokir event loop)
+  const petaBarang = new Map(DATA_BARANG.map(d => [String(d.kode).toUpperCase(), d]));
   allKodes.forEach(kode => {
     if (kode.startsWith('NEW_')) return; // Skip barang baru
     
-    const item = DATA_BARANG.find(d => d.kode === kode);
+    const item = petaBarang.get(String(kode).toUpperCase());
     if (!item) return;
     const sistem = item.harga[tokoKode]?.stok || 0;
     const fisik = gabungan.fisik[kode] || 0;
@@ -2060,6 +2064,8 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
   const shared = getSOShared(tokoKode);
   const gabungan = getSOGabunganData(tokoKode);
   const barangBaru = getBarangBaruSO(tokoKode);
+  const petaBarang = new Map(DATA_BARANG.map(d => [String(d.kode).toUpperCase(), d]));
+  const petaBarangBaru = new Map(barangBaru.map(b => [b.kode, b]));
   
   const wb = new ExcelJS.Workbook();
   
@@ -2104,7 +2110,7 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
   const rows = [];
   allKodes.forEach(kode => {
     if (kode.startsWith('NEW_')) return;
-    const item = DATA_BARANG.find(d => d.kode === kode);
+    const item = petaBarang.get(String(kode).toUpperCase());
     if (!item) return;
     const s = item.harga[tokoKode]?.stok || 0;
     const f = gabungan.fisik[kode] || 0;
@@ -2126,10 +2132,10 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
   Object.entries(shared.racks || {}).forEach(([rakName, rackData], idx) => {
     const rakRows = [];
     Object.entries(rackData.items || {}).forEach(([kode, itemData]) => {
-      const item = DATA_BARANG.find(d => d.kode === kode);
+      const item = petaBarang.get(String(kode).toUpperCase());
       let nama = item?.nama || kode;
       if (kode.startsWith('NEW_')) {
-        const baru = barangBaru.find(b => b.kode === kode);
+        const baru = petaBarangBaru.get(kode);
         if (baru) nama = baru.nama;
       }
       itemData.entries.forEach(e => {
@@ -2197,9 +2203,9 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
   const petugasMap = {};
   Object.entries(shared.racks || {}).forEach(([rn, rd]) => {
     Object.entries(rd.items || {}).forEach(([kode, id]) => {
-      const item = DATA_BARANG.find(d => d.kode === kode);
+      const item = petaBarang.get(String(kode).toUpperCase());
       let nama = item?.nama || kode;
-      if (kode.startsWith('NEW_')) { const baru = barangBaru.find(b => b.kode === kode); if (baru) nama = baru.nama; }
+      if (kode.startsWith('NEW_')) { const baru = petaBarangBaru.get(kode); if (baru) nama = baru.nama; }
       id.entries.forEach(e => {
         if (!petugasMap[e.namaPetugas]) petugasMap[e.namaPetugas] = [];
         petugasMap[e.namaPetugas].push([rn, kode, nama, e.jenis.toUpperCase(), e.qty, e.jamInput]);
@@ -3693,6 +3699,7 @@ async function koreksiVoiceText(rawText) {
 // ════════════════════════════════════════════════════════════════
 
 let DATA_BARANG = [];
+
 
 /**
  * Load Excel per toko dengan format:
@@ -6469,9 +6476,11 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     
     if (allKodes.size > 0) {
       const allItems = [];
+      // Peta sekali saja - hindari find berulang yang memblokir event loop
+      const petaReview = new Map(DATA_BARANG.map(d => [String(d.kode).toUpperCase(), d]));
       allKodes.forEach(kode => {
         if (kode.startsWith('NEW_')) return; // Skip barang baru, tampilkan terpisah
-        const item = DATA_BARANG.find(d => d.kode === kode);
+        const item = petaReview.get(String(kode).toUpperCase());
         const nama = item?.nama || kode;
         const satuan = item?.satuan || '';
         const sistem = item?.harga[tokoKode]?.stok || 0;
@@ -12048,8 +12057,35 @@ webApp.get('/api/stats', requireLogin, (req, res) => {
   });
 });
 
+// ── Telemetri lag event loop (dibaca /health oleh watchdog) ──
+let loopLagMs = 0;
+const _lagHist = [];
+{
+  let terakhir = Date.now();
+  const t = setInterval(() => {
+    const now = Date.now();
+    const lag = Math.max(0, now - terakhir - 500);
+    terakhir = now;
+    loopLagMs = lag;
+    _lagHist.push(lag);
+    if (_lagHist.length > 120) _lagHist.shift(); // ~60 detik @500ms
+  }, 500);
+  if (t.unref) t.unref();
+}
+
 webApp.get('/health', (req, res) => {
-  res.json({ status: 'OK', uptime: process.uptime(), barang: DATA_BARANG.length, members: MEMBERS.length });
+  let polling = false;
+  try { polling = bot.isPolling(); } catch(e) {}
+  const lagMaks = _lagHist.length ? Math.max(..._lagHist) : 0;
+  res.json({
+    status: 'OK', uptime: process.uptime(),
+    barang: DATA_BARANG.length, members: MEMBERS.length,
+    pid: process.pid,
+    rssMB: Math.round(process.memoryUsage().rss / 1048576),
+    polling,
+    loopLagMs,
+    loopLagMax60s: lagMaks,
+  });
 });
 
 webApp.get('/logout', (req, res) => {
@@ -12081,16 +12117,25 @@ server.on('error', (err) => {
 let isShuttingDown = false;
 
 // Polling error handler - jangan crash, biarkan auto-retry
+let pollingConflictTimer = null;
 bot.on('polling_error', (err) => {
   const msg = err.message || err.code || String(err);
   
-  // Error 409 = conflict (ada bot lain running)
+  // Error 409 = conflict (ada bot lain running / webhook aktif)
   if (msg.includes('409') || msg.includes('Conflict')) {
-    log.error('POLLING', '⚠️ Bot conflict! Cek apakah ada instance lain running.');
-    // Tunggu 30 detik baru retry
-    if (!isShuttingDown) {
-      setTimeout(() => {
-        log.info('POLLING', 'Retrying after conflict...');
+    log.error('POLLING', '⚠️ Bot conflict! Restart polling dalam 30 detik...');
+    if (!isShuttingDown && !pollingConflictTimer) {
+      pollingConflictTimer = setTimeout(async () => {
+        pollingConflictTimer = null;
+        try {
+          log.info('POLLING', 'Restart polling setelah conflict...');
+          await bot.stopPolling({ cancel: true });
+          await new Promise(r => setTimeout(r, 3000));
+          await bot.startPolling();
+          log.info('POLLING', '✅ Polling berjalan kembali');
+        } catch(e) {
+          log.error('POLLING', 'Gagal restart polling: ' + e.message);
+        }
       }, 30000);
     }
     return;
@@ -12108,24 +12153,26 @@ bot.on('polling_error', (err) => {
 bot.on('error', (err) => log.error('BOT', err.message || String(err)));
 bot.on('webhook_error', (err) => log.error('WEBHOOK', err.message || String(err)));
 
-// Uncaught errors - log tapi jangan crash
-process.on('uncaughtException', async (err) => {
-  log.error('SYSTEM', 'Uncaught: ' + err.message);
-  console.error(err.stack);
-  
-  // Emergency backup sebelum potentially crash
+// ── Keluar dengan aman setelah error fatal: PM2/watchdog akan menghidupkan ulang bersih ──
+let isFatalExiting = false;
+async function fatalExit(konteks, err) {
+  if (isFatalExiting) return;
+  isFatalExiting = true;
+  log.error('SYSTEM', `${konteks}: ` + (err && err.message ? err.message : String(err)));
+  if (err && err.stack) console.error(err.stack);
   try {
-    await emergencyBackup();
+    // Coba emergency backup, tapi jangan pernah menggantung proses
+    await Promise.race([emergencyBackup(), new Promise(r => setTimeout(r, 10000))]);
   } catch(e) {}
-});
+  console.error('🛑 Proses keluar agar PM2 menghidupkan ulang bersih...');
+  process.exit(1);
+}
 
-process.on('unhandledRejection', async (reason) => {
+// Uncaught errors - log, backup singkat, lalu keluar (hindari proses zombie)
+process.on('uncaughtException', (err) => { fatalExit('Uncaught', err); });
+
+process.on('unhandledRejection', (reason) => {
   log.error('SYSTEM', 'Unhandled Rejection: ' + String(reason));
-  
-  // Emergency backup
-  try {
-    await emergencyBackup();
-  } catch(e) {}
 });
 
 // Graceful shutdown function
@@ -12136,29 +12183,36 @@ async function gracefulShutdown(signal) {
   console.log(`\n👋 Received ${signal}, shutting down gracefully...`);
   
   try {
-     // ⬇️ TAMBAH INI: Emergency backup SO ke admin
-    console.log('🚨 Emergency backup SO data...');
-    await emergencyBackup();
     // 1. Stop polling DULU agar tidak conflict saat restart
     console.log('🛑 Stopping bot polling...');
-    await bot.stopPolling({ cancel: true });
+    try { await bot.stopPolling({ cancel: true }); } catch(e) {}
     console.log('✅ Bot polling stopped');
     
-    // 2. Close web server
+    // 2. SIMPAN DATA LOKAL LEBIH DULU (paling penting - cepat & tidak boleh gagal)
+    console.log('💾 Saving data...');
+    if (sesiSaveTimer) clearTimeout(sesiSaveTimer);
+    try { saveJSON(CONFIG.paths.sesi, SESI); } catch(e) {}
+    try { saveJSON(CONFIG.paths.soShared, SO_SHARED); } catch(e) {}
+    console.log('✅ Data saved');
+    
+    // 3. Close web server
     if (server) {
       console.log('🛑 Closing web server...');
-      await new Promise((resolve) => server.close(resolve));
+      await new Promise((resolve) => { server.close(resolve); setTimeout(resolve, 3000); });
       console.log('✅ Web server closed');
     }
     
-    // 3. Flush pending GitHub saves + save data lokal sebelum exit
+    // 4. Flush pending GitHub saves (dengan batas waktu agar tidak menggantung)
     console.log('🔄 Flushing GitHub saves...');
-    await flushGitHubSaves();
-    console.log('💾 Saving data...');
-    if (sesiSaveTimer) clearTimeout(sesiSaveTimer);
-    saveJSON(CONFIG.paths.sesi, SESI);
-    saveJSON(CONFIG.paths.soShared, SO_SHARED);
-    console.log('✅ Data saved');
+    try {
+      await Promise.race([flushGitHubSaves(), new Promise(r => setTimeout(r, 15000))]);
+    } catch(e) {}
+    
+    // 5. Emergency backup SO ke admin (batas waktu; PM2 kill_timeout = 10s utk stop)
+    console.log('🚨 Emergency backup SO data...');
+    try {
+      await Promise.race([emergencyBackup(), new Promise(r => setTimeout(r, 5000))]);
+    } catch(e) {}
     
     console.log('👋 Goodbye!\n');
     process.exit(0);
