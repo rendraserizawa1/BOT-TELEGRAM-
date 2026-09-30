@@ -18,6 +18,8 @@ const ExcelJS = require('exceljs');
 const express = require('express');
 const session = require('express-session');
 const iposBridge = require('./ipos-bridge');
+// Instans NK (Nasional Kitchen / INPRES) — null kalau IPOS_NK_URL kosong di .env
+const iposNk = iposBridge.nk;
 
 // ════════════════════════════════════════════════════════════════
 //   1. KONFIGURASI
@@ -1114,12 +1116,78 @@ function deteksiLaporanMarketplace(text) {
   return /^(lap|kemarin|ini|sekarang)?$/.test(sisa);
 }
 
-function kbLaporanKasir(ymd) {
+// ── Laporan TOKO NK (Nasional Kitchen) via iPos API sendiri ───────────────
+// NK sekarang punya ipos-api INPRES2025 (jalan di mesin NK, dibaca bot lewat
+// Tailscale) — sama persis dengan CP. Semua detektor NK WAJIB menyebut toko
+// ("nk"/"nasional") supaya tidak merebut laporan CP; detektor CP memang sudah
+// mengabaikan pesan yang menyebut nk/tdm/oesapa/kefa/nasional. Cek NK
+// SELALU sebelum CP. (tdm/oesapa/kefa tetap pakai alur lama Excel/scan nota.)
+function deteksiTokoNk(text) {
+  const low = String(text || '').toLowerCase().trim();
+  return /\b(nk|nasional(\s+kitchen)?)\b/.test(low);
+}
+
+// Deteksi chat bebas minta laporan penjualan KASIR NK → 'YYYY-MM-DD' | null
+function deteksiLaporanKasirNk(text) {
+  const low = String(text || '').toLowerCase().trim();
+  if (!deteksiTokoNk(low)) return null;
+  // jangan rebut fitur lain
+  if (/marketplace|\bmp\b|berita acara|stock opname|stok opname|homebase/.test(low)) return null;
+  // laporan per merek (HOMMY & KIREI) punya alur sendiri
+  if (/\b(hom{1,2}y|homi|kirei|kirey)\b/.test(low)) return null;
+  const adaLap = /(laporan|rekap|\blap\b|omzet)/.test(low);
+  const adaJual = /(penjualan|\bjual\b|setoran)/.test(low);
+  const adaKasir = /\bkasir\b/.test(low);
+  if (!adaLap && !adaJual && !adaKasir) return null;
+  const tgl = parseTanggalLaporan(low);
+  if (adaKasir && (adaLap || adaJual || tgl)) return tgl || ymdLokal(0);
+  if ((adaLap || adaJual) && tgl) return tgl;
+  return null;
+}
+
+// Deteksi chat bebas minta laporan HOMMY & KIREI NK → true | false
+function deteksiLaporanMerekNk(text) {
+  const low = String(text || '').toLowerCase().trim().replace(/[.!?,]+$/, '');
+  if (!deteksiTokoNk(low)) return false;
+  const adaHomy = /\b(hom{1,2}y|homi)\b/.test(low);
+  const adaKirei = /\b(kirei|kirey)\b/.test(low);
+  if (!adaHomy && !adaKirei) return false;
+  // jangan rebut fitur lain
+  if (/marketplace|\bmp\b|berita acara|stock opname|stok opname|homebase/.test(low)) return false;
+  const adaLap = /(laporan|\blap\b|rekap|penjualan|omzet|\bjual\b|setoran)/.test(low);
+  if (adaLap) return true;
+  // tanpa kata "laporan": hanya trigger kalau pesan memang cuma menyebut toko + merek
+  if (!(adaHomy && adaKirei)) return false;
+  const sisa = low
+    .replace(/\b(hom{1,2}y|homi|kirei|kirey|dan|and|nk|nasional|kitchen)\b/g, ' ')
+    .replace(/[&\s]+/g, '');
+  return sisa.length === 0;
+}
+
+// Deteksi chat bebas minta laporan MARKETPLACE NK → true | false
+function deteksiLaporanMarketplaceNk(text) {
+  const low = String(text || '').toLowerCase().trim().replace(/[.!?,]+$/, '');
+  if (!deteksiTokoNk(low)) return false;
+  const adaMp = /(marketplace|\bmp\b)/.test(low);
+  if (!adaMp) return false;
+  // jangan rebut fitur lain
+  if (/berita acara|stock opname|stok opname|homebase/.test(low)) return false;
+  if (/\b(hom{1,2}y|homi|kirei|kirey)\b/.test(low)) return false;
+  const adaLap = /(laporan|\blap\b|rekap|penjualan|omzet|\bjual\b|setoran)/.test(low);
+  if (adaLap) return true;
+  // tanpa kata "laporan": hanya trigger kalau pesan cuma toko + "marketplace"/"mp"
+  const sisa = low.replace(/marketplace|\bmp\b/g, ' ')
+    .replace(/\b(nk|nasional|kitchen)\b/g, ' ').replace(/[^a-z]/g, '');
+  return /^(lap|kemarin|ini|sekarang)?$/.test(sisa);
+}
+
+function kbLaporanKasir(ymd, toko = 'cp') {
+  const pref = toko === 'nk' ? 'jualkasirnk:' : 'jualkasir:';
   return {
     inline_keyboard: [
       [
-        { text: '📅 Hari Ini', callback_data: `jualkasir:${ymdLokal(0)}` },
-        { text: '📅 Kemarin', callback_data: `jualkasir:${ymdLokal(-1)}` },
+        { text: '📅 Hari Ini', callback_data: `${pref}${ymdLokal(0)}` },
+        { text: '📅 Kemarin', callback_data: `${pref}${ymdLokal(-1)}` },
       ],
       [{ text: '🔙 Menu Utama', callback_data: 'menu:main' }],
     ],
@@ -1151,7 +1219,7 @@ function cobaIsianParkir(text) {
   return /^parkir\b/i.test(t) || /^[\d\s.,;:+\-]+$/.test(t);
 }
 
-async function tampilkanLaporanKasir(chatId, userId, ymd, parkir) {
+async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
   if (!bisaAksesLaporan(userId)) {
     return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
   }
@@ -1160,20 +1228,25 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir) {
   }
   const tglLabel = labelTanggalYMD(ymd);
   if (ymd > ymdLokal(0)) {
-    return kirim(chatId, `⚠️ Tanggal *${escapeMd(tglLabel)}* masih di masa depan.`, { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd) });
+    return kirim(chatId, `⚠️ Tanggal *${escapeMd(tglLabel)}* masih di masa depan.`, { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd, toko) });
   }
+  const isNk = toko === 'nk';
+  if (isNk && !iposNk) {
+    return kirim(chatId, '⚠️ API iPos Nasional Kitchen belum dikonfigurasi.\nIsi `IPOS_NK_URL` + `IPOS_NK_KEY` di `.env` lalu restart bot.', { parse_mode: 'Markdown' });
+  }
+  const bridge = isNk ? iposNk : iposBridge;
   try { await bot.sendChatAction(chatId, 'typing'); } catch (e) {}
 
   let r;
   try {
-    r = await iposBridge.ambilLaporanKasir(ymd, ymd);
+    r = await bridge.ambilLaporanKasir(ymd, ymd);
   } catch (e) {
     return kirim(chatId, `⚠️ iPos API tidak merespons: ${escapeMd(e.message || String(e))}`, { parse_mode: 'Markdown' });
   }
   if (!r || !r.siap) {
     return kirim(chatId,
       '⏳ *Data penjualan iPos masih dimuat* di server (± 2-5 menit setelah API baru di-restart).\nCoba lagi sebentar ya kak.',
-      { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd) });
+      { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd, toko) });
   }
 
   const kasir = r.kasir || [];
@@ -1185,37 +1258,40 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir) {
   const kasirCp = kasir.filter((k) => !isPromo(k));
   const kasirPromo = kasir.filter(isPromo);
 
-  // urutan tetap sesuai kassa iPos: Astrid → Salsa → Marselina-Ririn → Tirsa-Tika
+  // urutan tetap sesuai kassa iPos: CP = Astrid → Salsa → Marselina-Ririn →
+  // Tirsa-Tika; NK = KASSA1 (grosir/SERVER_NAS) → KASSA2 (ecer/KASIR-2)
   // (nama lain menyusul di belakang, diurut omzet terbesar)
-  const URUTAN_KASIR = ['ASTRID-WINDI', 'SALSA', 'MARSELINA-RIRIN', 'TIRSA-TIKA'];
+  const URUTAN_KASIR = isNk ? ['KASSA1', 'KASSA2'] : ['ASTRID-WINDI', 'SALSA', 'MARSELINA-RIRIN', 'TIRSA-TIKA'];
   const rankKasir = (k) => {
     const i = URUTAN_KASIR.indexOf(String(k.user || k.nama || '').toUpperCase());
     return i === -1 ? URUTAN_KASIR.length : i;
   };
   kasirCp.sort((a, b) => rankKasir(a) - rankKasir(b) || (b.omzet || 0) - (a.omzet || 0));
 
+  const LABEL_TOKO = isNk ? '🏬 Nasional Kitchen (NK)' : '🏢 Central Perabot (CP)';
+  const LABEL_TOTAL = isNk ? 'TOTAL NK' : 'TOTAL CP';
   if (!kasir.length && r.promoSiap !== false) {
-    let msg = `🧾 *LAPORAN PENJUALAN KASIR*\n🏢 Central Perabot (CP)\n📅 ${escapeMd(tglLabel)}\n${GARIS_TEBAL}\n\n😴 Tidak ada penjualan pada tanggal ini.`;
+    let msg = `🧾 *LAPORAN PENJUALAN KASIR*\n${LABEL_TOKO}\n📅 ${escapeMd(tglLabel)}\n${GARIS_TEBAL}\n\n😴 Tidak ada penjualan pada tanggal ini.`;
     if (jangkauan.dari) msg += `\n\n📦 Data iPos tersedia: ${jangkauan.dari} s/d ${jangkauan.sampai}`;
-    msg += `\n\n💡 Ketik: \`laporan penjualan 24/09\``;
-    return kirim(chatId, msg, { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd) });
+    msg += `\n\n💡 Ketik: \`laporan ${isNk ? 'nk ' : ''}penjualan 24/09\``;
+    return kirim(chatId, msg, { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd, toko) });
   }
 
   // ★ Laporan Parkir: minta isian manual dulu — baru laporan digenerate 1x lengkap
   if (!parkir) {
-    updateSesi(userId, { pendingParkir: { ymd } });
+    updateSesi(userId, { pendingParkir: { ymd, toko } });
     return kirim(chatId,
       `🅿️ *LAPORAN PARKIR — ISI MANUAL*\n📅 ${escapeMd(tglLabel)}\n\n` +
       `Laporan penjualan sudah siap. Sebelum digenerate, ketik 2 angka parkir:\n\n` +
       `\`parkir [di komputer] [stor luar]\`\nContoh: \`parkir 0 778000\`\n\n` +
       `• Tidak ada parkir → \`parkir 0 0\`\n` +
       `• Tanpa bagian parkir → \`parkir batal\``,
-      { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd) });
+      { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd, toko) });
   }
 
   const lines = [];
   lines.push('🧾 *LAPORAN PENJUALAN KASIR*');
-  lines.push('🏢 Central Perabot (CP)');
+  lines.push(LABEL_TOKO);
   lines.push(`📅 ${escapeMd(tglLabel)}`);
   lines.push(GARIS_TEBAL);
   lines.push('');
@@ -1232,11 +1308,11 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir) {
   if (kasirCp.length) {
     kasirCp.forEach(tulisKasir);
   } else {
-    lines.push('😴 Tidak ada penjualan kasir CP.');
+    lines.push(`😴 Tidak ada penjualan kasir ${isNk ? 'NK' : 'CP'}.`);
     lines.push('');
   }
   lines.push(GARIS_TEBAL);
-  lines.push(`📊 *TOTAL CP: ${total.nota} nota | ${fmtJml(total.item)} item*`);
+  lines.push(`📊 *${LABEL_TOTAL}: ${total.nota} nota | ${fmtJml(total.item)} item*`);
   lines.push(`💰 *${formatRp(total.omzet)}*`);
   const fmtBayar = (n) => 'Rp. ' + (parseFloat(n) || 0).toLocaleString('id-ID');
   lines.push(`💵 Tunai: ${fmtBayar(total.tunai)}`);
@@ -1248,24 +1324,26 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir) {
     lines.push(`🏷️ ${label}: ${g.nota} nota | ${fmtBayar(g.omzet)}`);
   }
   lines.push(`👥 ${kasirCp.length} kasir berjualan`);
-  // Konter PROMO (DB iPos terpisah) — total DIPISAH, tidak digabung ke TOTAL CP
-  if (r.promoSiap === false) {
-    lines.push('');
-    lines.push('⚠️ Data konter PROMO masih dimuat — coba lagi sebentar.');
-  } else if (kasirPromo.length) {
-    lines.push('');
-    lines.push(GARIS_TEBAL);
-    lines.push('🎁 *KONTER PROMO*');
-    lines.push('');
-    kasirPromo.forEach(tulisKasir);
-    lines.push(`📊 *TOTAL PROMO: ${promo.nota} nota | ${fmtJml(promo.item)} item*`);
-    lines.push(`💰 *${formatRp(promo.omzet)}*`);
-    lines.push(`💵 Tunai: ${fmtBayar(promo.tunai)}`);
-    lines.push(`💳 Debit: ${fmtBayar(promo.debit)}`);
-    lines.push(`💳 Kredit: ${fmtBayar(promo.kredit)}`);
-  } else {
-    lines.push('');
-    lines.push('🎁 Konter PROMO: tidak ada penjualan.');
+  // Konter PROMO (DB iPos terpisah) — hanya CP; NK tidak punya konter promo
+  if (!isNk) {
+    if (r.promoSiap === false) {
+      lines.push('');
+      lines.push('⚠️ Data konter PROMO masih dimuat — coba lagi sebentar.');
+    } else if (kasirPromo.length) {
+      lines.push('');
+      lines.push(GARIS_TEBAL);
+      lines.push('🎁 *KONTER PROMO*');
+      lines.push('');
+      kasirPromo.forEach(tulisKasir);
+      lines.push(`📊 *TOTAL PROMO: ${promo.nota} nota | ${fmtJml(promo.item)} item*`);
+      lines.push(`💰 *${formatRp(promo.omzet)}*`);
+      lines.push(`💵 Tunai: ${fmtBayar(promo.tunai)}`);
+      lines.push(`💳 Debit: ${fmtBayar(promo.debit)}`);
+      lines.push(`💳 Kredit: ${fmtBayar(promo.kredit)}`);
+    } else {
+      lines.push('');
+      lines.push('🎁 Konter PROMO: tidak ada penjualan.');
+    }
   }
   // Laporan Parkir — angka isian manual (parkir di komputer / parkir stor luar)
   if (parkir && !parkir.skip) {
@@ -1281,33 +1359,34 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir) {
   }
   const umur = r.update ? Math.round((Date.now() - r.update) / 60000) : null;
   if (umur !== null) lines.push(`\n🕐 Update data: ${umur <= 0 ? 'baru saja' : umur + ' mnt lalu'}`);
-  lines.push('💡 Ketik: `laporan penjualan 24/09` atau /kasir kemarin');
-  return kirim(chatId, lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd) });
+  lines.push(`💡 Ketik: \`laporan ${isNk ? 'nk ' : ''}penjualan 24/09\` atau /kasir${isNk ? 'nk' : ''} kemarin`);
+  return kirim(chatId, lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd, toko) });
 }
 
 // ── Laporan penjualan HOMMY & KIREI (per merek, rentang tanggal) ──────────
 // Sumber: endpoint iPos /api/jual-merek (tbl_ikdt per item, tbl_item.merek).
 // Alur: pilih tanggal AWAL → tanggal AKHIR → laporan (atau 1 pesan rentang).
-function kbLaporanMerek() {
+function kbLaporanMerek(toko = 'cp') {
+  const pref = toko === 'nk' ? 'hknk:' : 'hk:';
   return {
     inline_keyboard: [
       [
-        { text: '📅 Bulan Ini', callback_data: 'hk:ini' },
-        { text: '📅 Bulan Lalu', callback_data: 'hk:lalu' },
+        { text: '📅 Bulan Ini', callback_data: `${pref}ini` },
+        { text: '📅 Bulan Lalu', callback_data: `${pref}lalu` },
       ],
       [
-        { text: '🔁 Ganti Tanggal', callback_data: 'hk:mulai' },
+        { text: '🔁 Ganti Tanggal', callback_data: `${pref}mulai` },
         { text: '🔙 Menu Utama', callback_data: 'menu:main' },
       ],
     ],
   };
 }
 
-const PROMPT_HK_AWAL = (extra = '') =>
-  `🛋️ *LAPORAN PENJUALAN HOMMY & KIREI*\n🏢 Central Perabot (CP)\n${GARIS_TEBAL}\n\n` +
+const PROMPT_HK_AWAL = (extra = '', toko = 'cp') =>
+  `🛋️ *LAPORAN PENJUALAN HOMMY & KIREI*\n${toko === 'nk' ? '🏬 Nasional Kitchen (NK)' : '🏢 Central Perabot (CP)'}\n${GARIS_TEBAL}\n\n` +
   `📅 Ketik *TANGGAL AWAL* laporan.\n` +
   `Contoh: \`1/9\`, \`01/09/2026\`, \`1 september 2026\`, \`kemarin\`\n\n` +
-  `Bisa juga sekaligus: \`laporan homy 1-20 september 2026\`\n\n` +
+  `Bisa juga sekaligus: \`laporan homy ${toko === 'nk' ? 'nk ' : ''}1-20 september 2026\`\n\n` +
   `• \`batal\` untuk keluar${extra ? `\n\n${extra}` : ''}`;
 
 const PROMPT_HK_AKHIR = (dari, extra = '') =>
@@ -1316,38 +1395,46 @@ const PROMPT_HK_AKHIR = (dari, extra = '') =>
   `• \`batal\` untuk keluar${extra ? `\n\n${extra}` : ''}`;
 
 // Mulai alur laporan merek — teks opsional bisa langsung memuat rentang tanggal.
-async function mulaiLaporanMerek(chatId, userId, teks = '') {
+async function mulaiLaporanMerek(chatId, userId, teks = '', toko = 'cp') {
   if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+  if (toko === 'nk' && !iposNk) {
+    return kirim(chatId, '⚠️ API iPos Nasional Kitchen belum dikonfigurasi.\nIsi `IPOS_NK_URL` + `IPOS_NK_KEY` di `.env` lalu restart bot.', { parse_mode: 'Markdown' });
+  }
   const t = String(teks || '').trim();
   const r = parseRentangTanggal(t);
-  if (r) return tampilkanLaporanMerek(chatId, userId, r.awal, r.akhir);
+  if (r) return tampilkanLaporanMerek(chatId, userId, r.awal, r.akhir, toko);
   if (t) {
     const satu = parseTanggalLaporan(t.toLowerCase());
     if (satu) {
       if (satu > ymdLokal(0)) {
-        return kirim(chatId, PROMPT_HK_AWAL('⚠️ Tanggal itu masih di masa depan. Ketik tanggal awal lain.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+        return kirim(chatId, PROMPT_HK_AWAL('⚠️ Tanggal itu masih di masa depan. Ketik tanggal awal lain.', toko), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) });
       }
-      updateSesi(userId, { pendingHK: { step: 'akhir', dari: satu }, pendingParkir: null });
-      return kirim(chatId, PROMPT_HK_AKHIR(satu), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+      updateSesi(userId, { pendingHK: { step: 'akhir', dari: satu, toko }, pendingParkir: null });
+      return kirim(chatId, PROMPT_HK_AKHIR(satu), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) });
     }
   }
-  updateSesi(userId, { pendingHK: { step: 'awal' }, pendingParkir: null });
-  return kirim(chatId, PROMPT_HK_AWAL(), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+  updateSesi(userId, { pendingHK: { step: 'awal', toko }, pendingParkir: null });
+  return kirim(chatId, PROMPT_HK_AWAL('', toko), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) });
 }
 
 // Render laporan penjualan HOMMY & KIREI untuk rentang tanggal (iPos).
-async function tampilkanLaporanMerek(chatId, userId, dari, sampai) {
+async function tampilkanLaporanMerek(chatId, userId, dari, sampai, toko = 'cp') {
   if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dari || '')) || !/^\d{4}-\d{2}-\d{2}$/.test(String(sampai || ''))) {
-    return kirim(chatId, '⚠️ Format tanggal tidak dikenali.', { reply_markup: kbLaporanMerek() });
+    return kirim(chatId, '⚠️ Format tanggal tidak dikenali.', { reply_markup: kbLaporanMerek(toko) });
   }
+  const isNk = toko === 'nk';
+  if (isNk && !iposNk) {
+    return kirim(chatId, '⚠️ API iPos Nasional Kitchen belum dikonfigurasi.\nIsi `IPOS_NK_URL` + `IPOS_NK_KEY` di `.env` lalu restart bot.', { parse_mode: 'Markdown' });
+  }
+  const bridge = isNk ? iposNk : iposBridge;
   const hariIni = ymdLokal(0);
   if (dari > hariIni) {
-    return kirim(chatId, `⚠️ Tanggal awal *${escapeMd(labelTanggalYMD(dari))}* masih di masa depan.\nKetik tanggal lain ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+    return kirim(chatId, `⚠️ Tanggal awal *${escapeMd(labelTanggalYMD(dari))}* masih di masa depan.\nKetik tanggal lain ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) });
   }
   if (sampai > hariIni) sampai = hariIni; // data belum ada untuk tanggal setelah hari ini
   if (sampai < dari) {
-    return kirim(chatId, `⚠️ Tanggal akhir tidak boleh sebelum tanggal awal.\nKetik ulang tanggal akhir ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+    return kirim(chatId, `⚠️ Tanggal akhir tidak boleh sebelum tanggal awal.\nKetik ulang tanggal akhir ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) });
   }
   const namaBulan = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
   const tglPendek = (ymd) => { const [y, m, d] = String(ymd).split('-').map(Number); return `${d} ${namaBulan[m - 1]} ${y}`; };
@@ -1355,20 +1442,20 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai) {
   const tunggu = await kirim(chatId, `⏳ *Menghitung laporan HOMMY & KIREI...*\n📅 ${escapeMd(periode)}`, { parse_mode: 'Markdown' });
   let r;
   try {
-    r = await iposBridge.ambilLaporanMerek(dari, sampai);
+    r = await bridge.ambilLaporanMerek(dari, sampai);
   } catch (e) {
     const pesan = `⚠️ iPos API tidak merespons: ${escapeMd(String(e.message || e))}\nCoba lagi sebentar ya kak.`;
     if (tunggu && tunggu.message_id) {
-      try { return await bot.editMessageText(pesan, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMerek() }); } catch (e2) {}
+      try { return await bot.editMessageText(pesan, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) }); } catch (e2) {}
     }
-    return kirim(chatId, pesan, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+    return kirim(chatId, pesan, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) });
   }
   if (!r || !r.siap) {
     const pesan = '⏳ *Data penjualan iPos masih dimuat* di server (± 2-5 menit setelah API di-restart).\nCoba lagi sebentar ya kak.';
     if (tunggu && tunggu.message_id) {
-      try { return await bot.editMessageText(pesan, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMerek() }); } catch (e) {}
+      try { return await bot.editMessageText(pesan, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) }); } catch (e) {}
     }
-    return kirim(chatId, pesan, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+    return kirim(chatId, pesan, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) });
   }
   const data = Array.isArray(r.data) ? r.data : [];
   const ambil = (m) => data.find((x) => String(x.merek || '').toUpperCase() === m) || { merek: m, nota: 0, item: 0, omzet: 0 };
@@ -1378,7 +1465,7 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai) {
   const emoMerek = (m) => (m === 'HOMMY' ? '🛋️' : m === 'KIREI' ? '🪑' : '🏷️');
   const lines = [];
   lines.push('🛋️ *LAPORAN PENJUALAN HOMMY & KIREI*');
-  lines.push('🏢 Central Perabot (CP)');
+  lines.push(isNk ? '🏬 Nasional Kitchen (NK)' : '🏢 Central Perabot (CP)');
   lines.push(`📅 ${escapeMd(periode)}`);
   lines.push(GARIS_TEBAL);
   lines.push('');
@@ -1447,14 +1534,14 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai) {
   }
   const umur = r.update ? Math.round((Date.now() - r.update) / 60000) : null;
   if (umur !== null) lines.push(`\n🕐 Update data: ${umur <= 0 ? 'baru saja' : umur + ' mnt lalu'}`);
-  lines.push('💡 Ketik: `laporan homy 1-20 september 2026`');
+  lines.push(`💡 Ketik: \`laporan homy ${isNk ? 'nk ' : ''}1-20 september 2026\``);
   const hasil = lines.join('\n');
   if (tunggu && tunggu.message_id) {
     try {
-      return await bot.editMessageText(hasil, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+      return await bot.editMessageText(hasil, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) });
     } catch (e) {}
   }
-  return kirim(chatId, hasil, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+  return kirim(chatId, hasil, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) });
 }
 
 // ── Laporan penjualan MARKETPLACE (otomatis dari iPos) ────────────────────
@@ -1466,75 +1553,84 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai) {
 const MP_GARIS = '-'.repeat(34);
 const MP_RP = (n) => (Number(n) ? 'Rp. ' + Math.round(Number(n)).toLocaleString('id-ID') : 'Rp. -');
 
-function kbLaporanMarketplace() {
+function kbLaporanMarketplace(toko = 'cp') {
+  const pref = toko === 'nk' ? 'mpnk:' : 'mp:';
   return {
     inline_keyboard: [
       [
-        { text: '📅 Hari Ini', callback_data: 'mp:ini' },
-        { text: '📅 Kemarin', callback_data: 'mp:lalu' },
+        { text: '📅 Hari Ini', callback_data: `${pref}ini` },
+        { text: '📅 Kemarin', callback_data: `${pref}lalu` },
       ],
       [
-        { text: '🗓️ Pilih Tanggal', callback_data: 'mp:tanggal' },
+        { text: '🗓️ Pilih Tanggal', callback_data: `${pref}tanggal` },
         { text: '🔙 Menu Utama', callback_data: 'menu:main' },
       ],
     ],
   };
 }
 
-const PROMPT_MP_TANGGAL = (extra = '') =>
-  `🛒 *LAPORAN MARKETPLACE*\n🏢 Central Perabot (CP)\n${GARIS_TEBAL}\n\n` +
+const PROMPT_MP_TANGGAL = (extra = '', toko = 'cp') =>
+  `🛒 *LAPORAN MARKETPLACE*\n${toko === 'nk' ? '🏬 Nasional Kitchen (NK)' : '🏢 Central Perabot (CP)'}\n${GARIS_TEBAL}\n\n` +
   `📅 Ketik *TANGGAL* laporan.\n` +
   `Contoh: \`25/9\`, \`25 september 2026\`, \`kemarin\`, atau rentang \`1-25 september 2026\`\n\n` +
   `• \`batal\` untuk keluar${extra ? `\n\n${extra}` : ''}`;
 
 // Mulai alur laporan marketplace — teks opsional bisa langsung memuat tanggal.
-async function mulaiLaporanMarketplace(chatId, userId, teks = '') {
+async function mulaiLaporanMarketplace(chatId, userId, teks = '', toko = 'cp') {
   if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+  if (toko === 'nk' && !iposNk) {
+    return kirim(chatId, '⚠️ API iPos Nasional Kitchen belum dikonfigurasi.\nIsi `IPOS_NK_URL` + `IPOS_NK_KEY` di `.env` lalu restart bot.', { parse_mode: 'Markdown' });
+  }
   const t = String(teks || '').trim();
   const r = parseRentangTanggal(t);
-  if (r) return tampilkanLaporanMarketplace(chatId, userId, r.awal, r.akhir);
+  if (r) return tampilkanLaporanMarketplace(chatId, userId, r.awal, r.akhir, toko);
   if (t) {
     const satu = parseTanggalLaporan(t.toLowerCase());
     if (satu) {
       if (satu > ymdLokal(0)) {
-        return kirim(chatId, PROMPT_MP_TANGGAL('⚠️ Tanggal itu masih di masa depan. Ketik tanggal lain.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+        return kirim(chatId, PROMPT_MP_TANGGAL('⚠️ Tanggal itu masih di masa depan. Ketik tanggal lain.', toko), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
       }
-      return tampilkanLaporanMarketplace(chatId, userId, satu, satu);
+      return tampilkanLaporanMarketplace(chatId, userId, satu, satu, toko);
     }
   }
-  updateSesi(userId, { pendingHK: null, pendingParkir: null });
-  return kirim(chatId, PROMPT_MP_TANGGAL(), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+  updateSesi(userId, { pendingMP: { step: 'tanggal', toko }, pendingHK: null, pendingParkir: null });
+  return kirim(chatId, PROMPT_MP_TANGGAL('', toko), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
 }
 
 // Render laporan marketplace untuk tanggal/rentang — iPos, format manual persis.
-async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai) {
+async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai, toko = 'cp') {
   if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dari || '')) || !/^\d{4}-\d{2}-\d{2}$/.test(String(sampai || ''))) {
-    return kirim(chatId, '⚠️ Format tanggal tidak dikenali.', { reply_markup: kbLaporanMarketplace() });
+    return kirim(chatId, '⚠️ Format tanggal tidak dikenali.', { reply_markup: kbLaporanMarketplace(toko) });
   }
+  const isNk = toko === 'nk';
+  if (isNk && !iposNk) {
+    return kirim(chatId, '⚠️ API iPos Nasional Kitchen belum dikonfigurasi.\nIsi `IPOS_NK_URL` + `IPOS_NK_KEY` di `.env` lalu restart bot.', { parse_mode: 'Markdown' });
+  }
+  const bridge = isNk ? iposNk : iposBridge;
   const hariIni = ymdLokal(0);
   if (dari > hariIni) {
-    return kirim(chatId, `⚠️ Tanggal *${escapeMd(labelTanggalYMD(dari))}* masih di masa depan.\nKetik tanggal lain ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+    return kirim(chatId, `⚠️ Tanggal *${escapeMd(labelTanggalYMD(dari))}* masih di masa depan.\nKetik tanggal lain ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
   }
   if (sampai > hariIni) sampai = hariIni; // data belum ada untuk tanggal setelah hari ini
   if (sampai < dari) {
-    return kirim(chatId, `⚠️ Tanggal akhir tidak boleh sebelum tanggal awal.\nKetik ulang tanggal ya kak.`, { reply_markup: kbLaporanMarketplace() });
+    return kirim(chatId, `⚠️ Tanggal akhir tidak boleh sebelum tanggal awal.\nKetik ulang tanggal ya kak.`, { reply_markup: kbLaporanMarketplace(toko) });
   }
   const namaBulanMp = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
   const tglPanjang = (ymd) => { const [y, m, d] = String(ymd).split('-').map(Number); return `${d} ${namaBulanMp[m - 1]} ${y}`; };
   const periode = dari === sampai ? tglPanjang(dari) : `${tglPanjang(dari)} s/d ${tglPanjang(sampai)}`;
   let r;
   try {
-    r = await iposBridge.ambilLaporanMarketplace(dari, sampai);
+    r = await bridge.ambilLaporanMarketplace(dari, sampai);
   } catch (e) {
-    return kirim(chatId, `⚠️ iPos API tidak merespons: ${escapeMd(String(e.message || e))}\nCoba lagi sebentar ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+    return kirim(chatId, `⚠️ iPos API tidak merespons: ${escapeMd(String(e.message || e))}\nCoba lagi sebentar ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
   }
   if (!r || !r.siap) {
-    return kirim(chatId, '⏳ *Data penjualan iPos masih dimuat* di server (± 2-5 menit setelah API di-restart).\nCoba lagi sebentar ya kak.', { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+    return kirim(chatId, '⏳ *Data penjualan iPos masih dimuat* di server (± 2-5 menit setelah API di-restart).\nCoba lagi sebentar ya kak.', { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
   }
-  const toko = Array.isArray(r.toko) ? r.toko : [];
+  const tokoMp = Array.isArray(r.toko) ? r.toko : [];
   const omzetTokoMp = (re) => {
-    const t = toko.find((x) => re.test(String(x.nama || '')));
+    const t = tokoMp.find((x) => re.test(String(x.nama || '')));
     return t ? Number(t.omzet) || 0 : 0;
   };
   const c = r.central || { nota: 0, omzet: 0, tunai: 0, debit: 0, notas: [] };
@@ -1543,11 +1639,18 @@ async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai) {
   const jl = notas.filter((n) => n.tipe === 'JL');
   const ksr = notas.filter((n) => n.tipe !== 'JL');
   const lines = [];
-  lines.push(`Total Penjualan Marketplace Perabot Mama Periode ${periode}`);
-  lines.push('');
-  lines.push(`Toko Perabot Mama Oesapa ${MP_RP(omzetTokoMp(/OESAPA/i))}`);
-  lines.push(`Toko Perabot Mama TDM ${MP_RP(omzetTokoMp(/TDM/i))}`);
-  lines.push(`Toko Central Perabot ${MP_RP(c.omzet)}`);
+  if (isNk) {
+    // NK: tidak ada toko pasangan — cukup baris toko sendiri (format manual sama)
+    lines.push(`Total Penjualan Marketplace Nasional Kitchen Periode ${periode}`);
+    lines.push('');
+    lines.push(`Toko Nasional Kitchen ${MP_RP(c.omzet)}`);
+  } else {
+    lines.push(`Total Penjualan Marketplace Perabot Mama Periode ${periode}`);
+    lines.push('');
+    lines.push(`Toko Perabot Mama Oesapa ${MP_RP(omzetTokoMp(/OESAPA/i))}`);
+    lines.push(`Toko Perabot Mama TDM ${MP_RP(omzetTokoMp(/TDM/i))}`);
+    lines.push(`Toko Central Perabot ${MP_RP(c.omzet)}`);
+  }
   lines.push(MP_GARIS);
   lines.push('Penjualan via WA : Rp. -');
   lines.push('Penjualan via Shopee: Rp. -');
@@ -3947,6 +4050,11 @@ function loadExcel() {
   // Sengaja fire-and-forget: loadExcel() tetap sinkron, bot tidak menunggu API.
   iposBridge.syncStok(DATA_BARANG, { verbose: false })
     .catch((e) => console.warn('⚠️ [iPos] sync setelah loadExcel gagal:', e.message));
+  // [IPOS-NK] idem untuk Nasional Kitchen (kalau dikonfigurasi).
+  if (iposNk) {
+    iposNk.syncStok(DATA_BARANG, { verbose: false })
+      .catch((e) => console.warn('⚠️ [iPos NK] sync setelah loadExcel gagal:', e.message));
+  }
 
   return DATA_BARANG.length > 0;
 }
@@ -4023,6 +4131,12 @@ setInterval(() => syncExcelFromGitHub(false), SYNC_XLSX_INTERVAL_MENIT * 60 * 10
 // SSE: perubahan diterapkan ≤ ~3 dtk. Sync penuh tiap IPOS_SYNC_MS = jaring pengaman.
 // Kalau API mati, bot tetap jalan pakai data Excel terakhir.
 iposBridge.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 60000));
+
+// [IPOS-NK] idem untuk Nasional Kitchen (iPos 5.0 i5_INPRES2025, API di mesin NK).
+// Jalan hanya kalau IPOS_NK_URL diisi di .env — kalau kosong, bot persis seperti sebelumnya.
+if (iposNk) {
+  iposNk.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 60000));
+}
 
 // ════════════════════════════════════════════════════════════════
 //   14. SEARCH ENGINE
@@ -5250,6 +5364,10 @@ function kbMainMenu(userId) {
     buttons.push([
       { text: '🧾 Penjualan Kasir CP', callback_data: 'jualkasir:' + ymdLokal(0) },
       { text: '🛋️ HOMMY & KIREI', callback_data: 'hk:mulai' },
+    ]);
+    buttons.push([
+      { text: '🧾 Penjualan Kasir NK', callback_data: 'jualkasirnk:' + ymdLokal(0) },
+      { text: '🛋️ HOMMY & KIREI NK', callback_data: 'hknk:mulai' },
     ]);
   } else if (isMember(userId)) {
     buttons.push([
@@ -8436,24 +8554,36 @@ bot.onText(/\/reload/, async (msg) => {
   if (!isAdmin(msg.from.id)) return;
   loadExcel();
   const r = await iposBridge.syncStok(DATA_BARANG, { verbose: true });
+  const rn = iposNk ? await iposNk.syncStok(DATA_BARANG, { verbose: true }) : null;
   kirim(msg.chat.id,
     `✅ Excel reloaded! ${DATA_BARANG.length} barang\n` +
     (r.ok
-      ? `🔄 iPos: ubah ${r.ubah}, baru ${r.baru}, hapus ${r.hapus} (dari ${r.total} item)`
-      : `⚠️ iPos gagal: ${r.err} (pakai data Excel)`));
+      ? `🔄 iPos CP: ubah ${r.ubah}, baru ${r.baru}, hapus ${r.hapus} (dari ${r.total} item)`
+      : `⚠️ iPos CP gagal: ${r.err} (pakai data Excel)`) +
+    (iposNk
+      ? (rn.ok
+        ? `\n🔄 iPos NK: ubah ${rn.ubah}, baru ${rn.baru}, hapus ${rn.hapus} (dari ${rn.total} item)`
+        : `\n⚠️ iPos NK gagal: ${rn.err} (pakai data Excel)`)
+      : '\n⚪ iPos NK: belum dikonfigurasi (IPOS_NK_URL kosong)'));
 });
 
 // Status koneksi iPos (admin)
 bot.onText(/\/ipos/, async (msg) => {
   if (!isAdmin(msg.from.id)) return;
   const s = iposBridge.status();
+  const sn = iposNk ? iposNk.status() : null;
   kirim(msg.chat.id,
     `🔌 *iPos Bridge*\n` +
-    `${s.online ? '🟢 online' : '🔴 offline'} | ${s.sse}\n` +
-    `📦 ${s.total} item\n` +
-    `🏪 toko: ${s.toko.join(', ')}\n` +
-    `⏱️ update terakhir: ${s.umurDetik === null ? '-' : s.umurDetik + ' dtk lalu'}\n` +
-    `🌐 ${s.url}` + (s.lastError ? `\n⚠️ ${s.lastError}` : ''),
+    `*CP* — ${s.online ? '🟢 online' : '🔴 offline'} | ${s.sse}\n` +
+    `📦 ${s.total} item | 🏪 ${s.toko.join(', ')}\n` +
+    `⏱️ update: ${s.umurDetik === null ? '-' : s.umurDetik + ' dtk lalu'} | 🌐 ${s.url}` +
+    (s.lastError ? `\n⚠️ ${s.lastError}` : '') +
+    (sn
+      ? `\n\n*NK* — ${sn.online ? '🟢 online' : '🔴 offline'} | ${sn.sse}\n` +
+        `📦 ${sn.total} item | 🏪 ${sn.toko.join(', ')}\n` +
+        `⏱️ update: ${sn.umurDetik === null ? '-' : sn.umurDetik + ' dtk lalu'} | 🌐 ${sn.url}` +
+        (sn.lastError ? `\n⚠️ ${sn.lastError}` : '')
+      : `\n\n*NK* — ⚪ belum dikonfigurasi (IPOS_NK_URL kosong)`),
     { parse_mode: 'Markdown' });
 });
 
@@ -8470,11 +8600,31 @@ bot.onText(/^\/kasir(?:\s+(.+))?$/, async (msg, match) => {
   return tampilkanLaporanKasir(msg.chat.id, msg.from.id, ymdLokal(0));
 });
 
+// Laporan penjualan per kasir TOKO NK — Nasional Kitchen (staff laporan + admin)
+// Contoh: /kasirnk | /kasirnk kemarin | /kasirnk 24/09/2026
+bot.onText(/^\/kasirnk(?:\s+(.+))?$/, async (msg, match) => {
+  if (!bisaAksesLaporan(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus staff laporan.');
+  const arg = String(match[1] || '').toLowerCase().trim();
+  if (arg) {
+    const ymd = parseTanggalLaporan(arg);
+    if (!ymd) return kirim(msg.chat.id, '⚠️ Tanggal tidak dikenali. Contoh: `/kasirnk 24/09/2026` atau `/kasirnk kemarin`.', { parse_mode: 'Markdown' });
+    return tampilkanLaporanKasir(msg.chat.id, msg.from.id, ymd, undefined, 'nk');
+  }
+  return tampilkanLaporanKasir(msg.chat.id, msg.from.id, ymdLokal(0), undefined, 'nk');
+});
+
 // Laporan penjualan per merek HOMMY & KIREI — rentang tanggal
 // /homy → alur tanggal awal→akhir; /homy 1-20 september 2026 → langsung
 bot.onText(/^\/homy(?:kirei)?(?:\s+(.+))?$/i, async (msg, match) => {
   if (!bisaAksesLaporan(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus staff laporan.');
   return mulaiLaporanMerek(msg.chat.id, msg.from.id, String(match[1] || ''));
+});
+
+// Laporan penjualan per merek HOMMY & KIREI TOKO NK — rentang tanggal
+// /homynk → alur tanggal awal→akhir; /homynk 1-20 september 2026 → langsung
+bot.onText(/^\/homynk(?:kirei)?(?:\s+(.+))?$/i, async (msg, match) => {
+  if (!bisaAksesLaporan(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus staff laporan.');
+  return mulaiLaporanMerek(msg.chat.id, msg.from.id, String(match[1] || ''), 'nk');
 });
 
 // Manual backup SO untuk admin
@@ -9857,8 +10007,11 @@ async function executeMenuAction(chatId, userId, action) {
       '• `cari barang` - cari\n' +
       '• `laporan harga` - lap harga\n' +
       '• `laporan penjualan 24/09` - penjualan kasir CP\n' +
+      '• `laporan nk penjualan 24/09` - penjualan kasir NK\n' +
       '• `laporan homy kirei` - penjualan HOMMY & KIREI (pilih tanggal)\n' +
+      '• `laporan homy nk 1-20 september 2026` - HOMMY & KIREI NK\n' +
       '• `marketplace` - lap mp\n' +
+      '• `laporan marketplace nk 25/09` - lap mp NK\n' +
       '• `berita acara` - BA\n' +
       '• `info` - info bot\n\n' +
       '🔍 *Cari barang langsung:*\n' +
@@ -10120,9 +10273,9 @@ bot.on('message', async (msg) => {
       if (isian) {
         updateSesi(userId, { pendingParkir: null });
         if (isian.skip) {
-          return tampilkanLaporanKasir(chatId, userId, pp.ymd, { skip: true });
+          return tampilkanLaporanKasir(chatId, userId, pp.ymd, { skip: true }, pp.toko);
         }
-        return tampilkanLaporanKasir(chatId, userId, pp.ymd, isian);
+        return tampilkanLaporanKasir(chatId, userId, pp.ymd, isian, pp.toko);
       }
       if (cobaIsianParkir(text)) {
         return kirim(chatId,
@@ -10137,7 +10290,8 @@ bot.on('message', async (msg) => {
   // ★ PRIORITY 2.8: Isian tanggal laporan HOMMY & KIREI (tunggu awal → akhir)
   if (session.pendingHK && bisaAksesLaporan(userId)) {
     const hk = session.pendingHK;
-    const mintaLain = /(laporan|rekap|\blap\b|penjualan|kasir|marketplace|cari|harga)/.test(low) && !deteksiLaporanMerek(text);
+    const hkToko = hk.toko || 'cp';
+    const mintaLain = /(laporan|rekap|\blap\b|penjualan|kasir|marketplace|cari|harga)/.test(low) && !deteksiLaporanMerek(text) && !deteksiLaporanMerekNk(text);
     if (KATA_RESET.includes(low)) {
       updateSesi(userId, { pendingHK: null });
       // lanjut ke PRIORITY 3 (reset)
@@ -10151,16 +10305,16 @@ bot.on('message', async (msg) => {
         const awal = (r && r.awal) || ymd;
         if (awal) {
           if (awal > ymdLokal(0)) {
-            return kirim(chatId, PROMPT_HK_AWAL('⚠️ Tanggal itu masih di masa depan. Ketik tanggal awal lain.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+            return kirim(chatId, PROMPT_HK_AWAL('⚠️ Tanggal itu masih di masa depan. Ketik tanggal awal lain.', hkToko), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(hkToko) });
           }
           if (r && r.akhir) {
             updateSesi(userId, { pendingHK: null });
-            return tampilkanLaporanMerek(chatId, userId, awal, r.akhir);
+            return tampilkanLaporanMerek(chatId, userId, awal, r.akhir, hkToko);
           }
-          updateSesi(userId, { pendingHK: { step: 'akhir', dari: awal } });
-          return kirim(chatId, PROMPT_HK_AKHIR(awal), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+          updateSesi(userId, { pendingHK: { step: 'akhir', dari: awal, toko: hkToko } });
+          return kirim(chatId, PROMPT_HK_AKHIR(awal), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(hkToko) });
         }
-        return kirim(chatId, PROMPT_HK_AWAL('⚠️ Tanggal belum dikenali. Contoh: `1/9` atau `1 september 2026`.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+        return kirim(chatId, PROMPT_HK_AWAL('⚠️ Tanggal belum dikenali. Contoh: `1/9` atau `1 september 2026`.', hkToko), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(hkToko) });
       }
       // step 'akhir'
       let akhir = (r && r.akhir) || ymd;
@@ -10173,19 +10327,21 @@ bot.on('message', async (msg) => {
         }
       }
       if (!akhir) {
-        return kirim(chatId, PROMPT_HK_AKHIR(hk.dari, '⚠️ Tanggal akhir belum dikenali. Contoh: `20/9/2026` atau `20`.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+        return kirim(chatId, PROMPT_HK_AKHIR(hk.dari, '⚠️ Tanggal akhir belum dikenali. Contoh: `20/9/2026` atau `20`.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(hkToko) });
       }
       if (akhir < hk.dari) {
-        return kirim(chatId, PROMPT_HK_AKHIR(hk.dari, `⚠️ Tanggal akhir (*${escapeMd(labelTanggalYMD(akhir))}*) sebelum tanggal awal. Ketik ulang.`), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek() });
+        return kirim(chatId, PROMPT_HK_AKHIR(hk.dari, `⚠️ Tanggal akhir (*${escapeMd(labelTanggalYMD(akhir))}*) sebelum tanggal awal. Ketik ulang.`), { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(hkToko) });
       }
       updateSesi(userId, { pendingHK: null });
-      return tampilkanLaporanMerek(chatId, userId, hk.dari, akhir);
+      return tampilkanLaporanMerek(chatId, userId, hk.dari, akhir, hkToko);
     }
   }
 
   // ★ PRIORITY 2.9: Isian tanggal laporan MARKETPLACE
   if (session.pendingMP && bisaAksesLaporan(userId)) {
-    const mintaLain = /(laporan|rekap|\blap\b|penjualan|kasir|homy|hommy|kirei|cari|harga)/.test(low) && !deteksiLaporanMarketplace(text);
+    const mp = session.pendingMP;
+    const mpToko = mp.toko || 'cp';
+    const mintaLain = /(laporan|rekap|\blap\b|penjualan|kasir|homy|hommy|kirei|cari|harga)/.test(low) && !deteksiLaporanMarketplace(text) && !deteksiLaporanMarketplaceNk(text);
     if (KATA_RESET.includes(low)) {
       updateSesi(userId, { pendingMP: null });
       // lanjut ke PRIORITY 3 (reset)
@@ -10197,13 +10353,13 @@ bot.on('message', async (msg) => {
       const ymd = r ? null : parseTanggalLaporan(low);
       const tgl = (r && r.awal) || ymd;
       if (!tgl) {
-        return kirim(chatId, PROMPT_MP_TANGGAL('⚠️ Tanggal belum dikenali. Contoh: `25/9` atau `1-25 september 2026`.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+        return kirim(chatId, PROMPT_MP_TANGGAL('⚠️ Tanggal belum dikenali. Contoh: `25/9` atau `1-25 september 2026`.', mpToko), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(mpToko) });
       }
       if (tgl > ymdLokal(0)) {
-        return kirim(chatId, PROMPT_MP_TANGGAL('⚠️ Tanggal itu masih di masa depan. Ketik tanggal lain.'), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+        return kirim(chatId, PROMPT_MP_TANGGAL('⚠️ Tanggal itu masih di masa depan. Ketik tanggal lain.', mpToko), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(mpToko) });
       }
       updateSesi(userId, { pendingMP: null });
-      return tampilkanLaporanMarketplace(chatId, userId, tgl, (r && r.akhir) || tgl);
+      return tampilkanLaporanMarketplace(chatId, userId, tgl, (r && r.akhir) || tgl, mpToko);
     }
   }
   
@@ -10213,16 +10369,36 @@ bot.on('message', async (msg) => {
     return kirim(chatId, '📋 *MENU UTAMA*', { reply_markup: kbMainMenu(userId) });
   }
   
+  // ★ PRIORITY 3.38: Laporan penjualan HOMMY & KIREI NK via chat bebas
+  // (mis. "laporan homy nk 1-20 september 2026", "laporan homy kirei nk")
+  // WAJIB sebelum detektor CP — detektor CP memang mengabaikan pesan yg menyebut nk.
+  if (bisaAksesLaporan(userId) && deteksiLaporanMerekNk(text)) {
+    return mulaiLaporanMerek(chatId, userId, text, 'nk');
+  }
+  
   // ★ PRIORITY 3.4: Laporan penjualan HOMMY & KIREI via chat bebas
   // (mis. "laporan homy kirei", "laporan homy 1-20 september 2026", "homy kirei")
   if (bisaAksesLaporan(userId) && deteksiLaporanMerek(text)) {
     return mulaiLaporanMerek(chatId, userId, text);
   }
   
+  // ★ PRIORITY 3.46: Laporan MARKETPLACE NK via chat bebas
+  // (mis. "laporan marketplace nk kemarin", "mp nk 25 september 2026")
+  if (bisaAksesLaporan(userId) && deteksiLaporanMarketplaceNk(text)) {
+    return mulaiLaporanMarketplace(chatId, userId, text, 'nk');
+  }
+  
   // ★ PRIORITY 3.45: Laporan MARKETPLACE via chat bebas
   // (mis. "laporan marketplace kemarin", "marketplace 25 september 2026")
   if (bisaAksesLaporan(userId) && deteksiLaporanMarketplace(text)) {
     return mulaiLaporanMarketplace(chatId, userId, text);
+  }
+  
+  // ★ PRIORITY 3.48: Laporan penjualan kasir NK via chat bebas
+  // (mis. "laporan nk penjualan kemarin", "laporan kasir nk 24/09/2026", "omzet nk hari ini")
+  if (bisaAksesLaporan(userId)) {
+    const ymdNk = deteksiLaporanKasirNk(text);
+    if (ymdNk) return tampilkanLaporanKasir(chatId, userId, ymdNk, undefined, 'nk');
   }
   
   // ★ PRIORITY 3.5: Laporan penjualan kasir CP via chat bebas
@@ -10373,12 +10549,24 @@ bot.on('callback_query', async (query) => {
     return tampilkanLaporanKasir(chatId, userId, ymd);
   }
 
+  if (data.startsWith('jualkasirnk:')) {
+    const ymd = data.slice('jualkasirnk:'.length);
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    return tampilkanLaporanKasir(chatId, userId, ymd, undefined, 'nk');
+  }
+
   // ════════════ LAPORAN HOMMY & KIREI (per merek) ════════════
   
   if (data === 'hk:mulai' || data === 'menu:hk') {
     if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
     try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
     return mulaiLaporanMerek(chatId, userId);
+  }
+  
+  if (data === 'hknk:mulai' || data === 'menu:hknk') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
+    return mulaiLaporanMerek(chatId, userId, '', 'nk');
   }
   
   if (data === 'hk:ini' || data === 'hk:lalu') {
@@ -10399,6 +10587,25 @@ bot.on('callback_query', async (query) => {
     }
     return tampilkanLaporanMerek(chatId, userId, dari, sampai);
   }
+  
+  if (data === 'hknk:ini' || data === 'hknk:lalu') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
+    // pakai waktu LOKAL mesin (WITA) — konsisten dengan ymdLokal
+    const d = new Date();
+    let y = d.getFullYear(), m = d.getMonth(); // m: 0-11
+    if (data === 'hknk:lalu') { m -= 1; if (m < 0) { m = 11; y -= 1; } }
+    const pad = (n) => String(n).padStart(2, '0');
+    const dari = `${y}-${pad(m + 1)}-01`;
+    let sampai;
+    if (data === 'hknk:lalu') {
+      const akhir = new Date(y, m + 1, 0); // hari terakhir bulan itu
+      sampai = `${akhir.getFullYear()}-${pad(akhir.getMonth() + 1)}-${pad(akhir.getDate())}`;
+    } else {
+      sampai = ymdLokal(0);
+    }
+    return tampilkanLaporanMerek(chatId, userId, dari, sampai, 'nk');
+  }
 
   // ════════════ LAPORAN MARKETPLACE (otomatis dari iPos) ════════════
 
@@ -10408,11 +10615,24 @@ bot.on('callback_query', async (query) => {
     return tampilkanLaporanMarketplace(chatId, userId, ymd, ymd);
   }
 
+  if (data === 'mpnk:ini' || data === 'mpnk:lalu') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    const ymd = ymdLokal(data === 'mpnk:lalu' ? -1 : 0);
+    return tampilkanLaporanMarketplace(chatId, userId, ymd, ymd, 'nk');
+  }
+
   if (data === 'mp:tanggal') {
     if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
-    updateSesi(userId, { pendingMP: { step: 'tanggal' }, pendingHK: null, pendingParkir: null, menu: null });
+    updateSesi(userId, { pendingMP: { step: 'tanggal', toko: 'cp' }, pendingHK: null, pendingParkir: null, menu: null });
     try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
     return kirim(chatId, PROMPT_MP_TANGGAL(), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace() });
+  }
+
+  if (data === 'mpnk:tanggal') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    updateSesi(userId, { pendingMP: { step: 'tanggal', toko: 'nk' }, pendingHK: null, pendingParkir: null, menu: null });
+    try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
+    return kirim(chatId, PROMPT_MP_TANGGAL('', 'nk'), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace('nk') });
   }
 
   // ════════════ PAGINATION CARI BARANG ════════════
@@ -10596,6 +10816,9 @@ bot.on('callback_query', async (query) => {
         '• `stock opname` - buka SO\n' +
         '• `cari barang` - cari\n' +
         '• `laporan harga` - lap harga\n' +
+        '• `laporan nk penjualan 24/09` - penjualan kasir NK\n' +
+        '• `laporan homy nk 1-20 september 2026` - HOMMY & KIREI NK\n' +
+        '• `laporan marketplace nk 25/09` - lap mp NK\n' +
         '• `marketplace` - lap mp\n' +
         '• `berita acara` - BA\n' +
         '• `homebase` - input nota\n' +
