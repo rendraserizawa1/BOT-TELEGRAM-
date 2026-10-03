@@ -7883,14 +7883,17 @@ function konversiHargaKePcs(item) {
   };
 }
 
-// Konversi kolom A ke per-PCS utk NK. Perbandingan vs HPP butuh nilai
-// akurat: FLOOR saja tanpa pembulatan jual (bulat 500/1000 hanya utk harga jual).
+// Konversi kolom A ke per-PCS utk NK, lalu dibulatkan KE ATAS kelipatan 500
+// (aturan baru: harga genap 500). Nilai bulat yang dipakai utk tampilan & selisih.
 function konversiHargaAKePcs(item) {
   const f = getFaktorKonversi(item.satuan);
+  const pcs = Math.floor((item.hargaA || 0) / f);
+  const bulat = pcs > 0 ? Math.ceil(pcs / 500) * 500 : 0;
   return {
     faktorKonversi: f,
     dikonversi: f > 1,
-    hargaAPcs: Math.floor((item.hargaA || 0) / f),
+    hargaAPcs: pcs,
+    hargaABulat: bulat,
   };
 }
 
@@ -8101,6 +8104,124 @@ function scoreVariantMatch(notaSig, dbSig) {
   return { score: (matched / total) * 100, mismatch };
 }
 
+function hitungSkorDeep(notaSig, dbSig) {
+  const numResult = scoreNumberMatch(notaSig.numbers, dbSig.numbers);
+  const wordResult = scoreWordMatch(notaSig.words, dbSig.words);
+  const codeResult = scoreCodeMatch(notaSig.codes, dbSig.codes);
+  const variantResult = scoreVariantMatch(notaSig, dbSig);
+  
+  // Kata = identitas barang (paling berat). Kode hanya dihitung kalau ada isinya —
+  // kode sama2 kosong BUKAN kecocokan (dulu jadi +30 poin palsu utk semua item).
+  const wNum = 0.25, wCode = (notaSig.codes.size > 0 || dbSig.codes.size > 0) ? 0.15 : 0;
+  const wWord = 0.50, wVar = 0.10;
+  const totalW = wNum + wCode + wWord + wVar;
+  let finalScore = ((numResult.score * wNum) + (codeResult.score * wCode) +
+                    (wordResult.score * wWord) + (variantResult.score * wVar)) / totalW;
+  
+  // GATE: tak ada SATUPUN kata yang sama = beda barang. Jangan biarkan angka/kode
+  // mengangkat barang ngawur (kasus: donat nyasar ke KURSI BAKSO NAPOLLY).
+  if (notaSig.words.size > 0 && dbSig.words.size > 0 && wordResult.matched === 0) {
+    finalScore = Math.min(finalScore, 25);
+  }
+  
+  // PENALTIES
+  if (numResult.hasNumberDiff && numResult.matched < notaSig.numbers.size) {
+    const missingRatio = 1 - (numResult.matched / notaSig.numbers.size);
+    finalScore *= (1 - missingRatio * 0.5);
+  }
+  if (codeResult.hasNumberDiff && codeResult.matched === 0) finalScore *= 0.6;
+  if (variantResult.mismatch) finalScore *= 0.85;
+  
+  // BONUSES
+  if (notaSig.sorted === dbSig.sorted && notaSig.sorted.length > 5) finalScore = Math.max(finalScore, 95);
+  if (notaSig.compact === dbSig.compact && notaSig.compact.length > 5) finalScore = Math.max(finalScore, 95);
+  
+  const sim = 1 - (levenshtein(notaSig.compact, dbSig.compact) / Math.max(notaSig.compact.length, dbSig.compact.length));
+  // Bonus kemiripan string TIDAK berlaku kalau angka beda — "3,3 L" vs "3,9 L"
+  // beda 1 huruf tapi barangnya beda ukuran.
+  if (!numResult.hasNumberDiff) {
+    if (sim > 0.90) finalScore = Math.max(finalScore, 90);
+    else if (sim > 0.80) finalScore = Math.max(finalScore, 80);
+  }
+  
+  if (numResult.matched === notaSig.numbers.size && 
+      wordResult.matched >= notaSig.words.size * 0.8 && 
+      codeResult.matched === notaSig.codes.size) {
+    finalScore = Math.min(100, finalScore + 15);
+  }
+  
+  return {
+    matchScore: Math.round(Math.max(0, Math.min(100, finalScore))),
+    numResult, wordResult, codeResult, variantResult,
+  };
+}
+
+// ═══ KALIBRASI NAMA ═══
+// Susun ulang nama hasil scan sampai dapat yang paling pas: kata dipindah posisi
+// (urutan bebas), digabung/urai tanda baca (strip/koma/titik/spasi), kata dibuang
+// satu per satu sampai 2 kata. Ditambah kata: belum (lihat ponytail di bawah).
+// Token diambil utuh dari nama asli supaya desimal "3,3" tidak pecah jadi "3 3".
+function buatVarianNama(nama) {
+  const tokens = String(nama || '').toUpperCase().trim().split(/\s+/).filter(Boolean);
+  const v = new Set();
+  if (tokens.length < 2) return [...v];
+  v.add(tokens.join(' '));                          // normal
+  v.add([...tokens].sort().join(' '));              // urutan kata bebas
+  v.add(tokens.join(''));                           // tanpa spasi/tanda
+  v.add(tokens.join('-'));                          // strip
+  v.add(tokens.join(', '));                         // koma
+  v.add(tokens.join('. '));                         // titik
+  v.add(tokens.join('/'));                          // garis miring
+  v.add(tokens.slice(0, -1).join(' '));             // potong ekor
+  v.add(tokens.slice(1).join(' '));                 // potong kepala
+  return [...v].filter(s => s.replace(/[\s\-/,\.]+/g, '').length >= 6);
+}
+
+// Buang kata: huruf murni atau tanda kualitas KW2. Angka/ukuran/spesifikasi
+// (3,3 / 3R3 / 24CM) JANGAN pernah dibuang — itu pembeda barang.
+function bolehBuangToken(t) {
+  return /^[A-Z]+$/.test(t) || /^KW\d+$/.test(t);
+}
+
+// Upgrade skor kandidat top pakai varian nama — ambil hasil paling pas.
+// 1) varian statis (urutan kata / tanda baca / gabung), lalu
+// 2) greedy buang kata: berulang buang 1 kata yang paling menaikkan skor
+//    (maks 4 langkah) — bebas jumlah kata nyasar, tak perlu kombinasi.
+function kalibrasiNama(namaNota, kandidat) {
+  if (!kandidat.length) return;
+  const sigCache = new Map();
+  const sigOf = n => {
+    if (!sigCache.has(n)) sigCache.set(n, extractDeepSignature(n));
+    return sigCache.get(n);
+  };
+  const lebihBaik = (r, lama) => !lama || r.matchScore > lama.matchScore ||
+    (r.matchScore === lama.matchScore && r.wordResult.matched > lama.wordResult.matched);
+
+  for (const c of kandidat) {
+    for (const v of buatVarianNama(namaNota)) {
+      const r = hitungSkorDeep(sigOf(v), c.dbSig);
+      if (lebihBaik(r, c)) Object.assign(c, r, { varianNama: v });
+    }
+    let curNama = c.varianNama || namaNota;
+    for (let langkah = 0; langkah < 4; langkah++) {
+      const tokens = String(curNama).toUpperCase().trim().split(/\s+/).filter(Boolean);
+      let bestV = null, bestR = null;
+      for (let i = 0; i < tokens.length; i++) {
+        if (!bolehBuangToken(tokens[i])) continue;
+        const sisa = tokens.filter((_, j) => j !== i);
+        if (sisa.length < 2) continue;
+        const v = sisa.join(' ');
+        const r = hitungSkorDeep(sigOf(v), c.dbSig);
+        if (lebihBaik(r, bestR)) { bestR = r; bestV = v; }
+      }
+      if (bestR && lebihBaik(bestR, c)) {
+        Object.assign(c, bestR, { varianNama: bestV });
+        curNama = bestV;
+      } else break;
+    }
+  }
+}
+
 function matchBarangHomebase(namaNotaOri, dbIndexOverride, opts = {}) {
   if (!namaNotaOri || !DATA_BARANG.length) return null;
   
@@ -8128,51 +8249,10 @@ function matchBarangHomebase(namaNotaOri, dbIndexOverride, opts = {}) {
   
   dbIndex.forEach(dbItem => {
     const dbSig = extractDeepSignature(dbItem.item.nama);
-    const numResult = scoreNumberMatch(notaSig.numbers, dbSig.numbers);
-    const wordResult = scoreWordMatch(notaSig.words, dbSig.words);
-    const codeResult = scoreCodeMatch(notaSig.codes, dbSig.codes);
-    const variantResult = scoreVariantMatch(notaSig, dbSig);
+    const r = hitungSkorDeep(notaSig, dbSig);
     
-    // Kata = identitas barang (paling berat). Kode hanya dihitung kalau ada isinya —
-    // kode sama2 kosong BUKAN kecocokan (dulu jadi +30 poin palsu utk semua item).
-    const wNum = 0.25, wCode = (notaSig.codes.size > 0 || dbSig.codes.size > 0) ? 0.15 : 0;
-    const wWord = 0.50, wVar = 0.10;
-    const totalW = wNum + wCode + wWord + wVar;
-    let finalScore = ((numResult.score * wNum) + (codeResult.score * wCode) +
-                      (wordResult.score * wWord) + (variantResult.score * wVar)) / totalW;
-    
-    // GATE: tak ada SATUPUN kata yang sama = beda barang. Jangan biarkan angka/kode
-    // mengangkat barang ngawur (kasus: donat nyasar ke KURSI BAKSO NAPOLLY).
-    if (notaSig.words.size > 0 && dbSig.words.size > 0 && wordResult.matched === 0) {
-      finalScore = Math.min(finalScore, 25);
-    }
-    
-    // PENALTIES
-    if (numResult.hasNumberDiff && numResult.matched < notaSig.numbers.size) {
-      const missingRatio = 1 - (numResult.matched / notaSig.numbers.size);
-      finalScore *= (1 - missingRatio * 0.5);
-    }
-    if (codeResult.hasNumberDiff && codeResult.matched === 0) finalScore *= 0.6;
-    if (variantResult.mismatch) finalScore *= 0.85;
-    
-    // BONUSES
-    if (notaSig.sorted === dbSig.sorted && notaSig.sorted.length > 5) finalScore = Math.max(finalScore, 95);
-    if (notaSig.compact === dbSig.compact && notaSig.compact.length > 5) finalScore = Math.max(finalScore, 95);
-    
-    const sim = 1 - (levenshtein(notaSig.compact, dbSig.compact) / Math.max(notaSig.compact.length, dbSig.compact.length));
-    if (sim > 0.90) finalScore = Math.max(finalScore, 90);
-    else if (sim > 0.80) finalScore = Math.max(finalScore, 80);
-    
-    if (numResult.matched === notaSig.numbers.size && 
-        wordResult.matched >= notaSig.words.size * 0.8 && 
-        codeResult.matched === notaSig.codes.size) {
-      finalScore = Math.min(100, finalScore + 15);
-    }
-    
-    finalScore = Math.round(Math.max(0, Math.min(100, finalScore)));
-    
-    if (finalScore >= floor) {
-      scored.push({ item: dbItem.item, matchScore: finalScore, numResult, wordResult, codeResult, variantResult });
+    if (r.matchScore >= floor) {
+      scored.push({ item: dbItem.item, dbSig, ...r });
     }
   });
   
@@ -8180,6 +8260,10 @@ function matchBarangHomebase(namaNotaOri, dbIndexOverride, opts = {}) {
   // Peringkat dipimpin kesamaan KATA (identitas barang) — kebetulan angka/kode
   // jangan menang atas barang yang benar2 sekeluarga (donat nyasar ke MUG "3.3").
   scored.sort((a, b) => (b.wordResult.matched - a.wordResult.matched) || (b.matchScore - a.matchScore));
+  
+  // Kalibrasi nama: susun ulang kata/tanda baca & buang kata pada top kandidat
+  kalibrasiNama(namaNotaOri, scored.slice(0, 20));
+  scored.sort((a, b) => (b.matchScore - a.matchScore) || (b.wordResult.matched - a.wordResult.matched));
   
   const best = scored[0];
   const bestSig = extractDeepSignature(best.item.nama);
@@ -8347,7 +8431,7 @@ function formatPerbandinganHomebaseNk(hasilBanding) {
         });
       }
       m += `\n`;
-      m += `   💰 Harga A: ${formatRp(item.hargaA)}${konv.dikonversi ? `/${item.satuan} = ${formatRp(konv.hargaAPcs)}/PCS` : ''}\n\n`;
+      m += `   💰 Harga A: ${formatRp(item.hargaA)}${konv.dikonversi ? `/${item.satuan} = ${formatRp(konv.hargaABulat)}/PCS _(bulat atas 500)_` : ` _(bulat atas 500)_`}\n\n`;
       return;
     }
 
@@ -8357,10 +8441,10 @@ function formatPerbandinganHomebaseNk(hasilBanding) {
     m += `   🔖 \`${db.item.kode}\`\n`;
 
     const hppNk = db.item.harga.nk.hpp || 0;
-    const aPcs = konv.hargaAPcs;
+    const aPcs = konv.hargaABulat;
     m += konv.dikonversi
-      ? `   💰 Harga A: ${formatRp(item.hargaA)}/${item.satuan} → *${formatRp(aPcs)}/PCS*\n`
-      : `   💰 Harga A: *${formatRp(aPcs)}*\n`;
+      ? `   💰 Harga A: ${formatRp(item.hargaA)}/${item.satuan} → *${formatRp(aPcs)}/PCS* _(bulat atas 500)_\n`
+      : `   💰 Harga A: *${formatRp(aPcs)}* _(bulat atas 500)_\n`;
     m += `   🏷️ HPP iPos NK: ${formatRp(hppNk)}\n`;
 
     if (hppNk > 0 && aPcs > 0) {
@@ -8461,7 +8545,7 @@ function generateExcelHomebaseNk(hasilBanding) {
     // Sama dengan format chat: skor < 45 = belum cocok, jangan bandingkan HPP
     const db = (item.matched && item.matched.matchScore >= 45) ? item.matched : null;
     const hppNk = db ? (db.item.harga.nk.hpp || 0) : 0;
-    const aPcs = konv.hargaAPcs;
+    const aPcs = konv.hargaABulat;
     const selisih = (aPcs > 0 && hppNk > 0) ? aPcs - hppNk : 0;
     rows.push({
       'Nama Barang (Nota)': item.namaNota,
@@ -8472,7 +8556,8 @@ function generateExcelHomebaseNk(hasilBanding) {
       'Kode': db ? db.item.kode : '-',
       'Match %': item.matched ? item.matched.matchScore + '%' : '0%',
       'Harga A Nota': item.hargaA,
-      'Harga A/PCS': aPcs,
+      'Harga A/PCS': konv.hargaAPcs,
+      'Harga A/PCS (Bulat 500)': aPcs,
       'HPP iPos NK': hppNk,
       'Selisih (A/PCS - HPP)': selisih,
       'Status': (aPcs === 0 || hppNk === 0) ? '-' : selisih === 0 ? 'SAMA' : selisih > 0 ? 'A > HPP' : 'A < HPP',
@@ -8480,7 +8565,7 @@ function generateExcelHomebaseNk(hasilBanding) {
   });
   const wb = xlsx.utils.book_new();
   const ws = xlsx.utils.json_to_sheet(rows);
-  ws['!cols'] = [{wch:40},{wch:6},{wch:6},{wch:40},{wch:12},{wch:8},{wch:14},{wch:14},{wch:14},{wch:18},{wch:10}];
+  ws['!cols'] = [{wch:40},{wch:6},{wch:6},{wch:40},{wch:12},{wch:8},{wch:14},{wch:14},{wch:18},{wch:14},{wch:18},{wch:10}];
   xlsx.utils.book_append_sheet(wb, ws, 'Homebase NK');
   const filePath = path.join(CONFIG.paths.storage, `temp_homebase_nk_${Date.now()}.xlsx`);
   xlsx.writeFile(wb, filePath);
@@ -8556,7 +8641,7 @@ async function handleHomebaseMode(chatId, userId, message, imageBuffer, session)
     items.forEach((item, i) => {
       if (isNk) {
         const konv = konversiHargaAKePcs(item);
-        m += `${i+1}. *${escapeMd(item.nama)}*\n   ${item.satuan} | Harga A: ${formatRp(item.hargaA)}${konv.dikonversi ? ` (=${formatRp(konv.hargaAPcs)}/pcs)` : ''}\n\n`;
+        m += `${i+1}. *${escapeMd(item.nama)}*\n   ${item.satuan} | Harga A: ${formatRp(item.hargaA)}${konv.dikonversi ? ` (=${formatRp(konv.hargaABulat)}/pcs)` : ''}\n\n`;
       } else {
         m += `${i+1}. *${escapeMd(item.nama)}*\n   ${item.satuan} | HPP: ${formatRp(item.hpp)} | B: ${formatRp(item.hargaB)} | D: ${formatRp(item.hargaD)}\n\n`;
       }
@@ -8604,7 +8689,7 @@ async function handleHomebaseMode(chatId, userId, message, imageBuffer, session)
           const konv = konversiHargaAKePcs(si);
           m += `*${i+1}. ${escapeMd(si.nama)}*\n`;
           m += `   📏 ${si.satuan}`;
-          if (konv.dikonversi) m += ` (÷${konv.faktorKonversi} = ${formatRp(konv.hargaAPcs)}/pcs)`;
+          if (konv.dikonversi) m += ` (÷${konv.faktorKonversi} = ${formatRp(konv.hargaABulat)}/pcs)`;
           m += ` | Harga A: ${formatRp(si.hargaA)}\n\n`;
         });
         if (newItems.length > 8) m += `_... +${newItems.length - 8} lainnya_\n\n`;
