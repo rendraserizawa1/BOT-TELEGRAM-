@@ -7546,6 +7546,66 @@ PER BARIS ambil:
 Output JSON array:
 [{"nama":"NAMA","satuan":"PCS","hpp":100000,"hargaB":120000,"hargaD":150000}]`;
 
+// ═══ PROMPT AI KHUSUS NK (Nasional Kitchen) ═══
+// ATURAN NK: ambil HANYA kolom A, bandingkan vs HPP iPos NK. HPP/B/C/D di nota tidak diambil.
+
+const SCAN_PROMPT_HOMEBASE_NK = `Kamu WAJIB baca tabel nota supplier dengan SANGAT DETAIL dan AKURAT.
+
+⚠️ ATURAN MUTLAK:
+- Hitung dulu TOTAL SEMUA baris barang di nota (termasuk yang blur/sulit) -> jumlahBaris.
+- Setiap BARIS = 1 barang. Baca SATU PER SATU dari kiri ke kanan.
+- JANGAN SKIP baris apapun. BACA SAMPAI BARIS TERAKHIR.
+- JANGAN MENGARANG atau MENEBAK. Kalau tidak terbaca tulis 0.
+- SETIAP ANGKA HARUS PERSIS seperti di gambar.
+
+CARA BACA PER BARIS (kiri ke kanan):
+1. NAMA BARANG -> teks paling kiri, paling panjang. Tulis PERSIS seperti tertulis.
+2. COL/ISI -> angka kecil setelah nama. ABAIKAN.
+3. SAT (SATUAN) -> pcs/dz/set/lsn di kolom sempit (3-4 huruf). "dx"/"lcs" BUKAN satuan (itu nama barang).
+4. SPOS -> simbol # atau -. ABAIKAN.
+5. HPP -> angka PERTAMA setelah simbol #. ABAIKAN.
+6. Kolom A -> angka KEDUA. AMBIL INI sebagai "hargaA". HANYA INI yang diambil!
+7. Kolom B, C, D -> ABAIKAN SEMUA.
+
+⚠️ TIPS ANGKA: format Indonesia 326.470 -> 326470 (hapus titik). Abaikan huruf "N"/"M" sebelum angka.
+
+CONTOH BENAR:
+"Blender Cosmos CB 282 G Glass | 48 | pcs | # | - | 326.470 | 350.000 | 361.000 | 364.000 | 399.000"
+-> {"nama":"BLENDER COSMOS CB 282 G GLASS","satuan":"PCS","hargaA":350000}
+
+"Eskan Pst Rivera M Putih 2246 P LCS | 12 | dz | # | # | 147.000 | 168.000 | 172.000 | 175.000 | 192.000"
+-> {"nama":"ESKAN PST RIVERA M PUTIH 2246 P LCS","satuan":"DZ","hargaA":168000}
+
+SEKARANG BACA GAMBAR. Output HANYA JSON, tanpa penjelasan:
+{"jumlahBaris":N,"items":[{"nama":"...","satuan":"...","hargaA":...}]}`;
+
+const SCAN_PROMPT_HOMEBASE_NK_SIMPLE = `Baca tabel nota supplier. Setiap baris = 1 barang.
+
+PER BARIS ambil:
+1. Nama barang LENGKAP (teks paling kiri)
+2. Satuan: kolom SAT (pcs/dz/set/lsn). BUKAN DX/LCS!
+3. Harga A: angka KEDUA setelah simbol # (HPP, kolom B, C, D ABAIKAN)
+
+⚠️ PENTING:
+- Hitung TOTAL baris barang di nota -> jumlahBaris. BACA SEMUA BARIS.
+- Angka HAPUS TITIK: 326.470 -> 326470
+
+Output JSON:
+{"jumlahBaris":N,"items":[{"nama":"NAMA","satuan":"PCS","hargaA":100000}]}`;
+
+// Prompt tambahan utk melengkapi baris yang belum terbaca (aturan NK: wajib semua)
+function promptLengkapiNk(sudahAda, jumlahBaris) {
+  const daftar = sudahAda.map((n, i) => `${i + 1}. ${n}`).join('\n');
+  return `Nota di gambar ini punya ${jumlahBaris} baris barang. Baris berikut SUDAH terbaca:
+${daftar}
+
+Baca gambar ULANG dari baris pertama sampai terakhir. Tulis HANYA baris yang BELUM ada di daftar di atas.
+Per baris ambil: nama (persis), satuan (kolom SAT), hargaA (angka KEDUA setelah simbol #).
+HPP, kolom B, C, D ABAIKAN. Angka hapus titik.
+Output HANYA JSON:
+{"items":[{"nama":"...","satuan":"...","hargaA":...}]}`;
+}
+
 // ═══ PARSER dengan VALIDASI SATUAN & HARGA ═══
 
 function parseHomebaseScan(aiText) {
@@ -7666,6 +7726,111 @@ async function scanHomebaseMultiPass(imageBuffer) {
   return allItems;
 }
 
+// ═══ SCAN & PARSER KHUSUS NK (kolom A saja + cek kelengkapan baris) ═══
+
+const VALID_SATUAN_HB = ['PCS','PC','DZ','DUZ','SET','LSN','LUSIN','BOX','PACK','PAK','UNIT','EA','BUAH','BIJI','GROSS','GRS','KODI','RIM'];
+const SATUAN_FIX_HB = { 'DY':'DZ','DS':'DZ','D2':'DZ','OZ':'DZ', 'LN':'LSN','SFT':'SET','SEI':'SET', 'PLCS':'PCS','PDCS':'PCS','DZLCS':'DZ' };
+
+function normNamaSatuanHB(namaRaw, satuanRaw) {
+  let nama = String(namaRaw || '').trim().toUpperCase();
+  let satuan = String(satuanRaw || 'PCS').trim().toUpperCase();
+  if (SATUAN_FIX_HB[satuan]) satuan = SATUAN_FIX_HB[satuan];
+  if (!VALID_SATUAN_HB.includes(satuan)) {
+    if (['DX','LCS','NB','RG','WBS','WRG','BC','SSV','TCK'].includes(satuan)) { nama = nama + ' ' + satuan; satuan = 'PCS'; }
+    else satuan = 'PCS';
+  }
+  nama = nama.replace(/^[\s\-\/\\]+/, '').replace(/[\s\-\/\\]+$/, '').trim();
+  return { nama, satuan };
+}
+
+// Hasil: { items: [{nama, satuan, hargaA}], jumlahBaris: number }
+function parseHomebaseScanNk(aiText) {
+  const kosong = { items: [], jumlahBaris: 0 };
+  if (!aiText) return kosong;
+  try {
+    const cleaned = aiText.trim().replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    let rawItems = [], jumlahBaris = 0;
+
+    const objMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (objMatch) {
+      try {
+        const o = JSON.parse(objMatch[0]);
+        if (Array.isArray(o.items)) rawItems = o.items;
+        jumlahBaris = parseInt(String(o.jumlahBaris ?? o.jumlah ?? o.total ?? '0').replace(/[^0-9]/g, '')) || 0;
+      } catch(e) {}
+    }
+    if (!rawItems.length) {
+      const arrMatch = cleaned.match(/\[[\s\S]*\]/);
+      if (arrMatch) {
+        try { rawItems = JSON.parse(arrMatch[0]); }
+        catch(e) {
+          rawItems = (arrMatch[0].match(/\{[^{}]+\}/g) || [])
+            .map(s => { try { return JSON.parse(s); } catch(_) { return null; } })
+            .filter(Boolean);
+        }
+      }
+    }
+    if (!Array.isArray(rawItems)) rawItems = [rawItems];
+
+    // Harga A HANYA dari kolom A (jangan fallback ke hpp/B/D - aturan NK)
+    const items = rawItems.filter(i => i && (i.nama || i.name)).map(i => {
+      const { nama, satuan } = normNamaSatuanHB(i.nama || i.name, i.satuan || i.sat);
+      const hargaA = parseInt(String(i.hargaA ?? i.harga_a ?? i.kolomA ?? i.A ?? '0').replace(/[^0-9]/g, '')) || 0;
+      return { nama, satuan, hargaA };
+    }).filter(i => i.nama.length >= 3);
+
+    if (!jumlahBaris) jumlahBaris = items.length;
+    return { items, jumlahBaris };
+  } catch(err) { log.error('HB-NK-PARSE', err.message); return kosong; }
+}
+
+function gabungItemNk(a, b) {
+  const out = [...a];
+  for (const it of b) {
+    const key = normalizeForMatch(it.nama);
+    if (!out.some(x => normalizeForMatch(x.nama) === key)) out.push(it);
+  }
+  return out;
+}
+
+// Multi-pass NK: full -> simple (merge) -> lengkapi baris kurang.
+// Aturan NK: 1 nota = semua baris wajib terbaca, kalau tidak => laporkan.
+async function scanHomebaseMultiPassNk(imageBuffer) {
+  let items = [], jumlahBaris = 0;
+  const enh = await enhanceImageForOCR(imageBuffer);
+
+  try {
+    log.info('HB-NK', 'A1: Enhanced + Full');
+    const p = parseHomebaseScanNk(await analisaGambarBuffer(enh, SCAN_PROMPT_HOMEBASE_NK));
+    log.info('HB-NK', `A1: ${p.items.length}/${p.jumlahBaris}`);
+    if (p.items.length > items.length) items = p.items;
+    jumlahBaris = Math.max(jumlahBaris, p.jumlahBaris);
+  } catch(e) { log.warn('HB-NK', 'A1: ' + e.message); }
+
+  if (items.length < jumlahBaris || items.length < 5) {
+    try {
+      log.info('HB-NK', 'A2: Original + Simple (merge)');
+      const p = parseHomebaseScanNk(await analisaGambarBuffer(imageBuffer, SCAN_PROMPT_HOMEBASE_NK_SIMPLE));
+      log.info('HB-NK', `A2: +${p.items.length}/${p.jumlahBaris}`);
+      items = gabungItemNk(items, p.items);
+      jumlahBaris = Math.max(jumlahBaris, p.jumlahBaris);
+    } catch(e) { log.warn('HB-NK', 'A2: ' + e.message); }
+  }
+
+  if (jumlahBaris > items.length) {
+    try {
+      log.info('HB-NK', `A3: lengkapi ${jumlahBaris - items.length} baris kurang`);
+      const p = parseHomebaseScanNk(await analisaGambarBuffer(enh, promptLengkapiNk(items.map(i => i.nama), jumlahBaris)));
+      log.info('HB-NK', `A3: +${p.items.length}`);
+      items = gabungItemNk(items, p.items);
+    } catch(e) { log.warn('HB-NK', 'A3: ' + e.message); }
+  }
+
+  const kurang = Math.max(0, jumlahBaris - items.length);
+  log.info('HB-NK', `Final: ${items.length}/${jumlahBaris} (kurang ${kurang})`);
+  return { items, jumlahBaris, kurang };
+}
+
 // ═══ KONVERSI SATUAN + PEMBULATAN CERDAS ═══
 
 function getFaktorKonversi(satuan) {
@@ -7718,10 +7883,24 @@ function konversiHargaKePcs(item) {
   };
 }
 
+// Konversi kolom A ke per-PCS utk NK. Perbandingan vs HPP butuh nilai
+// akurat: FLOOR saja tanpa pembulatan jual (bulat 500/1000 hanya utk harga jual).
+function konversiHargaAKePcs(item) {
+  const f = getFaktorKonversi(item.satuan);
+  return {
+    faktorKonversi: f,
+    dikonversi: f > 1,
+    hargaAPcs: Math.floor((item.hargaA || 0) / f),
+  };
+}
+
 // ═══ ULTRA DEEP MATCHING ═══
 
 let DB_INDEX_CACHE = null;
 let DB_INDEX_TIMESTAMP = 0;
+// Cache terpisah utk index NK (item yang punya harga.nk)
+let DB_INDEX_NK_CACHE = null;
+let DB_INDEX_NK_TS = 0;
 
 function normalizeForMatch(str) {
   return String(str || '').toUpperCase()
@@ -7780,7 +7959,29 @@ function buildDatabaseIndex() {
   return DB_INDEX_CACHE;
 }
 
-function resetDBIndex() { DB_INDEX_CACHE = null; }
+function resetDBIndex() { DB_INDEX_CACHE = null; DB_INDEX_NK_CACHE = null; }
+
+// Index khusus NK: HANYA item yang punya harga.nk (sumber HPP iPos NK)
+function buildDatabaseIndexNk() {
+  const now = Date.now();
+  if (DB_INDEX_NK_CACHE && (now - DB_INDEX_NK_TS) < 300000) return DB_INDEX_NK_CACHE;
+
+  DB_INDEX_NK_CACHE = DATA_BARANG
+    .filter(item => item && item.harga && item.harga.nk)
+    .map(item => {
+      const normalized = normalizeForMatch(item.nama);
+      return {
+        item, normalized,
+        allNumbers: extractAllNumbers(item.nama),
+        allWords: extractAllWords(item.nama),
+        allCodes: extractAllCodes(item.nama),
+        sortedString: normalized.split(/\s+/).sort().join(' '),
+        compactString: normalized.replace(/\s+/g, ''),
+      };
+    });
+  DB_INDEX_NK_TS = now;
+  return DB_INDEX_NK_CACHE;
+}
 
 function extractDeepSignature(str) {
   const normalized = normalizeForMatch(str);
@@ -7891,10 +8092,10 @@ function scoreVariantMatch(notaSig, dbSig) {
   return { score: (matched / total) * 100, mismatch };
 }
 
-function matchBarangHomebase(namaNotaOri) {
+function matchBarangHomebase(namaNotaOri, dbIndexOverride) {
   if (!namaNotaOri || !DATA_BARANG.length) return null;
   
-  const dbIndex = buildDatabaseIndex();
+  const dbIndex = dbIndexOverride || buildDatabaseIndex();
   const notaSig = extractDeepSignature(namaNotaOri);
   const notaNormalized = normalizeForMatch(namaNotaOri);
   
@@ -8096,6 +8297,56 @@ function formatPerbandinganHomebase(hasilBanding, tokoKode) {
   return m;
 }
 
+// Format NK: Harga A (nota, per PCS) vs HPP iPos Nasional Kitchen SAJA.
+function formatPerbandinganHomebaseNk(hasilBanding) {
+  let m = `🏠 *PERBANDINGAN HARGA A vs HPP iPOS NK*\n🏦 ${NAMA_TOKO.nk || 'Nasional Kitchen'}\n📅 ${getTanggalIndonesia()}\n${GARIS_TEBAL}\n\n`;
+  let totalSama = 0, totalBeda = 0, totalTidakMatch = 0, totalDikonversi = 0, totalSelisih = 0;
+
+  hasilBanding.forEach((item, i) => {
+    const konv = konversiHargaAKePcs(item);
+    if (konv.dikonversi) totalDikonversi++;
+
+    m += `*${i+1}. ${escapeMd(item.namaNota)}*\n`;
+    if (konv.dikonversi) m += `   📏 *${item.satuan}* (÷${konv.faktorKonversi} = per PCS)\n`;
+    else m += `   📏 ${item.satuan}\n`;
+
+    if (!item.matched) {
+      totalTidakMatch++;
+      m += `   ❌ _Tidak match di iPos NK_\n`;
+      m += `   💰 Harga A: ${formatRp(item.hargaA)}${konv.dikonversi ? `/${item.satuan} = ${formatRp(konv.hargaAPcs)}/PCS` : ''}\n\n`;
+      return;
+    }
+
+    const db = item.matched;
+    const matchIcon = db.matchScore >= 90 ? '✅' : db.matchScore >= 70 ? '🔗' : '⚠️';
+    const warnText = db.matchScore < 70 ? ' _(perlu review)_' : '';
+    m += `   ${matchIcon} → _${escapeMd(db.item.nama)}_ (${db.matchScore}%)${warnText}\n`;
+    m += `   🔖 \`${db.item.kode}\`\n`;
+
+    const hppNk = db.item.harga.nk.hpp || 0;
+    const aPcs = konv.hargaAPcs;
+    m += konv.dikonversi
+      ? `   💰 Harga A: ${formatRp(item.hargaA)}/${item.satuan} → *${formatRp(aPcs)}/PCS*\n`
+      : `   💰 Harga A: *${formatRp(aPcs)}*\n`;
+    m += `   🏷️ HPP iPos NK: ${formatRp(hppNk)}\n`;
+
+    if (hppNk > 0 && aPcs > 0) {
+      const s = aPcs - hppNk;
+      if (s === 0) { totalSama++; m += `   📊 Selisih: ✅ SAMA\n`; }
+      else {
+        totalBeda++; totalSelisih += Math.abs(s);
+        m += `   📊 Selisih: ${s > 0 ? `📈 +${formatRp(s)} (A > HPP)` : `📉 -${formatRp(Math.abs(s))} (A < HPP)`}\n`;
+      }
+    } else {
+      m += `   📊 Selisih: - (nilai 0)\n`;
+    }
+    m += '\n';
+  });
+
+  m += `${GARIS_TEBAL}\n📊 *RINGKASAN NK:*\n📦 Total: ${hasilBanding.length}\n🔗 Match: ${hasilBanding.length - totalTidakMatch}\n❌ Tidak match: ${totalTidakMatch}\n🔄 Konversi ke PCS: ${totalDikonversi}\n✅ SAMA HPP: ${totalSama} | ⚠️ BEDA: ${totalBeda}${totalBeda ? ` (Σ ${formatRp(totalSelisih)})` : ''}\n`;
+  return m;
+}
+
 // ═══ GENERATE EXCEL ═══
 
 function generateExcelHomebase(hasilBanding, tokoKode) {
@@ -8169,6 +8420,38 @@ function generateExcelHomebase(hasilBanding, tokoKode) {
   return filePath;
 }
 
+// Excel NK: kolom Harga A vs HPP iPos NK saja (tanpa B/D).
+function generateExcelHomebaseNk(hasilBanding) {
+  const rows = [];
+  hasilBanding.forEach(item => {
+    const konv = konversiHargaAKePcs(item);
+    const db = item.matched;
+    const hppNk = db ? (db.item.harga.nk.hpp || 0) : 0;
+    const aPcs = konv.hargaAPcs;
+    const selisih = (aPcs > 0 && hppNk > 0) ? aPcs - hppNk : 0;
+    rows.push({
+      'Nama Barang (Nota)': item.namaNota,
+      'Satuan': item.satuan,
+      'Faktor': konv.faktorKonversi > 1 ? `÷${konv.faktorKonversi}` : '-',
+      'Nama Barang (iPos NK)': db ? db.item.nama : 'TIDAK DITEMUKAN',
+      'Kode': db ? db.item.kode : '-',
+      'Match %': db ? db.matchScore + '%' : '0%',
+      'Harga A Nota': item.hargaA,
+      'Harga A/PCS': aPcs,
+      'HPP iPos NK': hppNk,
+      'Selisih (A/PCS - HPP)': selisih,
+      'Status': (aPcs === 0 || hppNk === 0) ? '-' : selisih === 0 ? 'SAMA' : selisih > 0 ? 'A > HPP' : 'A < HPP',
+    });
+  });
+  const wb = xlsx.utils.book_new();
+  const ws = xlsx.utils.json_to_sheet(rows);
+  ws['!cols'] = [{wch:40},{wch:6},{wch:6},{wch:40},{wch:12},{wch:8},{wch:14},{wch:14},{wch:14},{wch:18},{wch:10}];
+  xlsx.utils.book_append_sheet(wb, ws, 'Homebase NK');
+  const filePath = path.join(CONFIG.paths.storage, `temp_homebase_nk_${Date.now()}.xlsx`);
+  xlsx.writeFile(wb, filePath);
+  return filePath;
+}
+
 // ═══ MAIN HANDLER ═══
 
 async function handleHomebaseMode(chatId, userId, message, imageBuffer, session) {
@@ -8187,11 +8470,19 @@ async function handleHomebaseMode(chatId, userId, message, imageBuffer, session)
     
     await kirim(chatId, '📊 _Membuat laporan perbandingan..._');
     
-    const hasilBanding = items.map(item => ({
-      namaNota: item.nama, satuan: item.satuan,
-      hpp: item.hpp, hargaB: item.hargaB, hargaD: item.hargaD,
-      matched: matchBarangHomebase(item.nama),
-    }));
+    // Aturan NK: bandingkan Harga A (nota) vs HPP iPos NK saja
+    const isNk = tokoKode === 'nk';
+    const dbIndexNk = isNk ? buildDatabaseIndexNk() : null;
+    const hasilBanding = items.map(item => isNk
+      ? {
+          namaNota: item.nama, satuan: item.satuan, hargaA: item.hargaA,
+          matched: matchBarangHomebase(item.nama, dbIndexNk),
+        }
+      : {
+          namaNota: item.nama, satuan: item.satuan,
+          hpp: item.hpp, hargaB: item.hargaB, hargaD: item.hargaD,
+          matched: matchBarangHomebase(item.nama),
+        });
     
     hasilBanding.sort((a, b) => {
       if (a.matched && !b.matched) return -1;
@@ -8199,12 +8490,15 @@ async function handleHomebaseMode(chatId, userId, message, imageBuffer, session)
       return a.namaNota.localeCompare(b.namaNota, 'id');
     });
     
-    await kirim(chatId, formatPerbandinganHomebase(hasilBanding, tokoKode));
+    if (isNk) await kirim(chatId, formatPerbandinganHomebaseNk(hasilBanding));
+    else await kirim(chatId, formatPerbandinganHomebase(hasilBanding, tokoKode));
     
     try {
-      const excelPath = generateExcelHomebase(hasilBanding, tokoKode);
+      const excelPath = isNk ? generateExcelHomebaseNk(hasilBanding) : generateExcelHomebase(hasilBanding, tokoKode);
       await bot.sendDocument(chatId, excelPath, {}, {
-        filename: `Homebase_${tokoKode.toUpperCase()}_${getTanggalSlash(false).replace(/\//g, '-')}.xlsx`,
+        filename: isNk
+          ? `Homebase_NK_${getTanggalSlash(false).replace(/\//g, '-')}.xlsx`
+          : `Homebase_${tokoKode.toUpperCase()}_${getTanggalSlash(false).replace(/\//g, '-')}.xlsx`,
       });
       try { fs.unlinkSync(excelPath); } catch(e) {}
     } catch(err) {
@@ -8221,9 +8515,15 @@ async function handleHomebaseMode(chatId, userId, message, imageBuffer, session)
     const items = session.homebaseItems || [];
     if (!items.length) return kirim(chatId, '⚠️ Belum ada data.');
     
-    let m = `📋 *REVIEW HOMEBASE*\n🏦 ${namaToko}\n${GARIS_TEBAL}\n📦 Total: ${items.length} item\n\n`;
+    const isNk = tokoKode === 'nk';
+    let m = `📋 *REVIEW HOMEBASE${isNk ? ' (NK)' : ''}*\n🏦 ${namaToko}\n${GARIS_TEBAL}\n📦 Total: ${items.length} item\n\n`;
     items.forEach((item, i) => {
-      m += `${i+1}. *${escapeMd(item.nama)}*\n   ${item.satuan} | HPP: ${formatRp(item.hpp)} | B: ${formatRp(item.hargaB)} | D: ${formatRp(item.hargaD)}\n\n`;
+      if (isNk) {
+        const konv = konversiHargaAKePcs(item);
+        m += `${i+1}. *${escapeMd(item.nama)}*\n   ${item.satuan} | Harga A: ${formatRp(item.hargaA)}${konv.dikonversi ? ` (=${formatRp(konv.hargaAPcs)}/pcs)` : ''}\n\n`;
+      } else {
+        m += `${i+1}. *${escapeMd(item.nama)}*\n   ${item.satuan} | HPP: ${formatRp(item.hpp)} | B: ${formatRp(item.hargaB)} | D: ${formatRp(item.hargaD)}\n\n`;
+      }
     });
     
     await kirim(chatId, m, {
@@ -8237,6 +8537,64 @@ async function handleHomebaseMode(chatId, userId, message, imageBuffer, session)
   }
   
   if (imageBuffer) {
+    // ═══ ALUR NK: kolom A saja + wajib semua baris terbaca ═══
+    if (tokoKode === 'nk') {
+      await kirim(chatId, '📸 _Sedang scan nota NK (multi-pass + cek kelengkapan, 60-120 detik)..._');
+      try {
+        const hasil = await scanHomebaseMultiPassNk(imageBuffer);
+        log.info('HB-NK', `Scanned: ${hasil.items.length}/${hasil.jumlahBaris}`);
+        
+        if (!hasil.items.length) {
+          await kirim(chatId,
+            `⚠️ *Tidak ada barang terdeteksi*\n${GARIS_TIPIS}\n\n💡 Tips:\n1. Foto ASLI (jangan forward WA)\n2. Lurus dari atas\n3. Zoom sampai jelas\n4. Bagi 2-3 foto kalau panjang\n\n📸 Coba lagi.`,
+            { reply_markup: { inline_keyboard: [[{ text: '🔙 Batal', callback_data: 'menu:main' }]] }}
+          );
+          return;
+        }
+        
+        const existing = session.homebaseItems || [];
+        const newItems = [];
+        hasil.items.forEach(si => {
+          if (!existing.some(ex => ex.nama === si.nama)) {
+            existing.push(si);
+            newItems.push(si);
+          }
+        });
+        updateSesi(userId, { homebaseItems: existing });
+        
+        let m = `✅ *Scan ${hasil.items.length} item (dari ${hasil.jumlahBaris} baris nota)*\n🆕 Baru: ${newItems.length} | Total: ${existing.length}\n${GARIS_TEBAL}\n\n`;
+        
+        newItems.slice(0, 8).forEach((si, i) => {
+          const konv = konversiHargaAKePcs(si);
+          m += `*${i+1}. ${escapeMd(si.nama)}*\n`;
+          m += `   📏 ${si.satuan}`;
+          if (konv.dikonversi) m += ` (÷${konv.faktorKonversi} = ${formatRp(konv.hargaAPcs)}/pcs)`;
+          m += ` | Harga A: ${formatRp(si.hargaA)}\n\n`;
+        });
+        if (newItems.length > 8) m += `_... +${newItems.length - 8} lainnya_\n\n`;
+        
+        // Laporan kelengkapan (aturan NK: 42 baris nota = 42 hasil scan)
+        if (hasil.kurang > 0) {
+          m += `⚠️ *${hasil.kurang} baris TIDAK terbaca!*\nNota ${hasil.jumlahBaris} baris, baru ${hasil.items.length} terbaca.\n📸 Foto ulang bagian yang kurang (zoom jelas) - item sama otomatis tidak dobel.\n\n`;
+        } else {
+          m += `✅ Semua ${hasil.jumlahBaris} baris nota terbaca.\n\n`;
+        }
+        m += `${GARIS_TIPIS}\n📸 Kirim foto lagi atau pilih:`;
+        
+        await kirim(chatId, m, {
+          reply_markup: { inline_keyboard: [
+            [{ text: '📊 Selesai & Bandingkan', callback_data: 'homebase:selesai' }],
+            [{ text: '📋 Review Semua', callback_data: 'homebase:review' }],
+            [{ text: '🔙 Batal', callback_data: 'menu:main' }],
+          ]}
+        });
+      } catch(err) {
+        log.error('HB-NK-SCAN', err.message);
+        await kirim(chatId, '❌ Gagal: ' + err.message + '\n\n📸 Coba lagi.');
+      }
+      return;
+    }
+    
     await kirim(chatId, '📸 _Sedang scan nota (multi-pass, 60-90 detik)..._');
     
     try {
@@ -10952,13 +11310,16 @@ bot.on('callback_query', async (query) => {
     
     if (menuType === '7') {
       updateSesi(userId, { mode: 'homebase', homebaseToko: toko.kode, homebaseItems: [] });
+      // Aturan khusus NK: ambil kolom A saja, bandingkan vs HPP iPos NK
+      const introNk = toko.kode === 'nk'
+        ? `🏠 *INPUT HARGA A - NASIONAL KITCHEN*\n🏦 ${toko.nama}\n📅 ${getTanggalIndonesia()}\n${GARIS_TEBAL}\n\n📸 *Kirim FOTO nota supplier*\n\n*Aturan NK:*\n1. Bot ambil kolom *A* saja dari nota\n2. HPP / kolom B / C / D di nota TIDAK diambil\n3. Harga A dikonversi ke per PCS (kalau satuan dz/lsn/dst)\n4. Dibandingkan dengan *HPP iPos Nasional Kitchen*\n5. Semua baris wajib terbaca (mis. 42 baris = 42 hasil) - kalau ada yang tidak terbaca, bot laporkan\n\nKetik *selesai* untuk laporan + Excel, *review* untuk cek, *batal* untuk keluar.`
+        : `🏠 *INPUT BARANG HOMEBASE*\n🏦 ${toko.nama}\n📅 ${getTanggalIndonesia()}\n${GARIS_TEBAL}\n\n📸 *Kirim FOTO nota supplier*\n\nBot akan:\n1. Scan nama, HPP, Harga B & D\n2. Cocokkan dengan database\n3. Bandingkan harga\n4. Export Excel\n\nKetik *batal* untuk keluar.`;
       try {
-        await bot.editMessageText(
-          `🏠 *INPUT BARANG HOMEBASE*\n🏦 ${toko.nama}\n📅 ${getTanggalIndonesia()}\n${GARIS_TEBAL}\n\n📸 *Kirim FOTO nota supplier*\n\nBot akan:\n1. Scan nama, HPP, Harga B & D\n2. Cocokkan dengan database\n3. Bandingkan harga\n4. Export Excel\n\nKetik *batal* untuk keluar.`,
+        await bot.editMessageText(introNk,
           { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' }
         );
       } catch(e) {
-        await kirim(chatId, `🏠 *HOMEBASE - ${toko.nama}*\n\n📸 Kirim foto nota.`);
+        await kirim(chatId, toko.kode === 'nk' ? `🏠 *HOMEBASE NK - ${toko.nama}*\n\n📸 Kirim foto nota.` : `🏠 *HOMEBASE - ${toko.nama}*\n\n📸 Kirim foto nota.`);
       }
       return;
     }
