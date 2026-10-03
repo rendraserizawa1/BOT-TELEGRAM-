@@ -79,6 +79,51 @@ console.log('== konversiHargaAKePcs ==');
   cek('lsn = 12', d.faktorKonversi === 12 && d.hargaAPcs === 10000);
 }
 
+// ── Matching: ekstrak [MESIN MATCHING] + blok match homebase ──
+const sA = src.indexOf('// ── [MESIN MATCHING] START');
+const eA = src.indexOf('// ── [MESIN MATCHING] END');
+const sB = src.indexOf('function normalizeForMatch(str) {');
+const eB = src.indexOf('// Reset DB cache');
+if (sA < 0 || eA < 0 || sB < 0 || eB < 0) { console.error('FAIL: marker blok matching'); process.exit(1); }
+const blockA = src.slice(src.indexOf('\n', sA) + 1, eA);
+const blockM = src.slice(sB, eB);
+const DB_POOL = [
+  { kode: 'NN07014', nama: 'KURSI BAKSO NAPOLLY 3R3 WARNA/KURATSEN 3Y3 WARNA', merek: '', jenis: '', harga: { nk: { hpp: 42000 } } },
+  { kode: 'NN07336', nama: 'SEALPACK DONAT ERIKO 3,9 L DM', merek: '', jenis: '', harga: { nk: { hpp: 10000 } } },
+  { kode: 'NN00500', nama: 'POT LILY TURBOPLAST 20 PUTIH', merek: '', jenis: '', harga: { nk: { hpp: 15000 } } },
+];
+const matchFactory = new Function('CONFIG', 'DATA_BARANG', 'log',
+  'let DB_INDEX_CACHE = null; let DB_INDEX_TIMESTAMP = 0; let DB_INDEX_NK_CACHE = null; let DB_INDEX_NK_TS = 0;\n' +
+  blockA + '\n' + blockM +
+  '\nreturn { matchBarangHomebase, extractAllNumbers, extractAllWords };');
+const { matchBarangHomebase, extractAllNumbers, extractAllWords } = matchFactory({ maxHasilCari: 20 }, DB_POOL, log);
+
+console.log('== matchBarangHomebase (anti nyasar) ==');
+{
+  const m = matchBarangHomebase('KURSI BAKSO NAPOLLY 3R3 WARNA/KURATSEN 3Y3 WARNA');
+  cek('nama persis = 100% ke item benar', !!m && m.matchScore === 100 && m.item.kode === 'NN07014');
+}
+{
+  // Kasus nyata: donat TIDAK BOLEH nyasar ke KURSI BAKSO NAPOLLY
+  const m = matchBarangHomebase('SEAL PACK DONAT 3,3 LT ORI TURBOPLAST');
+  cek('donat tidak nyasar ke kursi bakso', !m || m.item.kode !== 'NN07014');
+}
+{
+  const m = matchBarangHomebase('SEALPACK DONAT ERIKO 3,9 L DM');
+  cek('nama persis donat = 100% ke item benar', !!m && m.matchScore === 100 && m.item.kode === 'NN07336');
+}
+{
+  const nums = [...extractAllNumbers('SEAL PACK DONAT 3,3 LT')];
+  cek('desimal "3,3" dipertahankan', nums.length === 1 && nums[0] === '3,3');
+  cek('"3,3" beda dengan "33" dan "3,9"', !extractAllNumbers('33 LT').has('3,3') && !extractAllNumbers('3,9 L').has('3,3'));
+  cek('sinonim LT = L', extractAllWords('12 LT').has('L'));
+}
+{
+  // "paling mirip" (floor 5) harus dari keluarga SEALPACK DONAT, bukan barang ngawur
+  const m = matchBarangHomebase('SEAL PACK DONAT 3,3 LT ORI TURBOPLAST', null, { floor: 5 });
+  cek('paling mirip dari keluarga SEALPACK DONAT', !!m && m.item.nama.includes('SEALPACK DONAT'));
+}
+
 console.log('');
 if (gagal) { console.error(`ADA ${gagal} GAGAL`); process.exit(1); }
 console.log('SEMUA LULUS');
