@@ -8689,17 +8689,14 @@ async function handleHomebaseMode(chatId, userId, message, imageBuffer, session)
           return;
         }
         
+        // NK: baris dengan nama sama persis = baris berbeda (sesuai foto). Merge per
+        // kemunculan ke-n via gabungItemNk — foto ULANG nota sama tetap tidak dobel.
         const existing = session.homebaseItems || [];
-        const newItems = [];
-        hasil.items.forEach(si => {
-          if (!existing.some(ex => ex.nama === si.nama)) {
-            existing.push(si);
-            newItems.push(si);
-          }
-        });
-        updateSesi(userId, { homebaseItems: existing });
+        const merged = gabungItemNk(existing, hasil.items);
+        const newItems = merged.slice(existing.length);
+        updateSesi(userId, { homebaseItems: merged });
         
-        let m = `✅ *Scan ${hasil.items.length} item (dari ${hasil.jumlahBaris} baris nota)*\n🆕 Baru: ${newItems.length} | Total: ${existing.length}\n${GARIS_TEBAL}\n\n`;
+        let m = `✅ *Scan ${hasil.items.length} item (dari ${hasil.jumlahBaris} baris nota)*\n🆕 Baru: ${newItems.length} | Total: ${merged.length}\n${GARIS_TEBAL}\n\n`;
         
         newItems.slice(0, 8).forEach((si, i) => {
           const konv = konversiHargaAKePcs(si);
