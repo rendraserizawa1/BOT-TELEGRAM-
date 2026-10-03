@@ -7555,6 +7555,7 @@ const SCAN_PROMPT_HOMEBASE_NK = `Kamu WAJIB baca tabel nota supplier dengan SANG
 - Hitung dulu TOTAL SEMUA baris barang di nota (termasuk yang blur/sulit) -> jumlahBaris.
 - Setiap BARIS = 1 barang. Baca SATU PER SATU dari kiri ke kanan.
 - JANGAN SKIP baris apapun. BACA SAMPAI BARIS TERAKHIR.
+- 2 baris (atau lebih) dengan NAMA SAMA PERSIS = tetap 2 item TERPISAH. Tulis semua, JANGAN PERNAH digabung/dihapus karena dianggap kembar. Duplikat = wajar di nota supplier.
 - JANGAN MENGARANG atau MENEBAK. Kalau tidak terbaca tulis 0.
 - SETIAP ANGKA HARUS PERSIS seperti di gambar.
 
@@ -7577,7 +7578,8 @@ CONTOH BENAR:
 -> {"nama":"ESKAN PST RIVERA M PUTIH 2246 P LCS","satuan":"DZ","hargaA":168000}
 
 SEKARANG BACA GAMBAR. Output HANYA JSON, tanpa penjelasan:
-{"jumlahBaris":N,"items":[{"nama":"...","satuan":"...","hargaA":...}]}`;
+{"jumlahBaris":N,"items":[{"nama":"...","satuan":"...","hargaA":...}]}
+Array items BOLEH berisi nama yang sama lebih dari satu kali — JANGAN dibuat unik.`;
 
 const SCAN_PROMPT_HOMEBASE_NK_SIMPLE = `Baca tabel nota supplier. Setiap baris = 1 barang.
 
@@ -7588,9 +7590,10 @@ PER BARIS ambil:
 
 ⚠️ PENTING:
 - Hitung TOTAL baris barang di nota -> jumlahBaris. BACA SEMUA BARIS.
+- Nama sama persis di 2 baris = 2 item TERPISAH. Tulis semua, JANGAN digabung/dihapus.
 - Angka HAPUS TITIK: 326.470 -> 326470
 
-Output JSON:
+Output JSON (items BOLEH berisi nama kembar):
 {"jumlahBaris":N,"items":[{"nama":"NAMA","satuan":"PCS","hargaA":100000}]}`;
 
 // Prompt tambahan utk melengkapi baris yang belum terbaca (aturan NK: wajib semua)
@@ -7600,9 +7603,10 @@ function promptLengkapiNk(sudahAda, jumlahBaris) {
 ${daftar}
 
 Baca gambar ULANG dari baris pertama sampai terakhir. Tulis HANYA baris yang BELUM ada di daftar di atas.
+PERHATIAN KEMBAR: kalau di gambar ada nama yang sama persis muncul BERAPA KALI, hitung jumlahnya — yang sudah tercatat di daftar hanya sebagian. Tulis SISANYA sebagai item terpisah. Jangan anggap "sudah ada" hanya karena NAMANYA sama!
 Per baris ambil: nama (persis), satuan (kolom SAT), hargaA (angka KEDUA setelah simbol #).
 HPP, kolom B, C, D ABAIKAN. Angka hapus titik.
-Output HANYA JSON:
+Output HANYA JSON (items BOLEH berisi nama kembar):
 {"items":[{"nama":"...","satuan":"...","hargaA":...}]}`;
 }
 
@@ -7785,10 +7789,18 @@ function parseHomebaseScanNk(aiText) {
 }
 
 function gabungItemNk(a, b) {
+  // 2 baris dengan nama SAMA PERSIS = 2 baris nyata di nota (aturan NK: sesuai adanya).
+  // Jangan dedupe per nama — sejajarkan per kemunculan ke-n: "GULA" ke-2 dari pass baru
+  // hanya dianggap sudah ada kalau "GULA" ke-2 juga sudah ada di kumpulan lama.
   const out = [...a];
+  const keyOf = it => normalizeForMatch(it.nama);
+  const sudah = new Map();
+  for (const it of a) sudah.set(keyOf(it), (sudah.get(keyOf(it)) || 0) + 1);
+  const n = new Map();
   for (const it of b) {
-    const key = normalizeForMatch(it.nama);
-    if (!out.some(x => normalizeForMatch(x.nama) === key)) out.push(it);
+    const k = keyOf(it);
+    n.set(k, (n.get(k) || 0) + 1);
+    if (n.get(k) > (sudah.get(k) || 0)) out.push(it);
   }
   return out;
 }
