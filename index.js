@@ -8605,12 +8605,16 @@ async function handleHomebaseMode(chatId, userId, message, imageBuffer, session)
           matched: matchBarangHomebase(item.nama),
         });
     
-    hasilBanding.sort((a, b) => {
-      if (a.matched && !b.matched) return -1;
-      if (!a.matched && b.matched) return 1;
-      return a.namaNota.localeCompare(b.namaNota, 'id');
-    });
-    
+    // NK: urutan BARU diubah — tetap sesuai hasil scan foto (user: jangan diurutkan alfabetis).
+    // Toko lain: perilaku lama (matched dulu, lalu alfabetis).
+    if (!isNk) {
+      hasilBanding.sort((a, b) => {
+        if (a.matched && !b.matched) return -1;
+        if (!a.matched && b.matched) return 1;
+        return a.namaNota.localeCompare(b.namaNota, 'id');
+      });
+    }
+
     if (isNk) await kirim(chatId, formatPerbandinganHomebaseNk(hasilBanding));
     else await kirim(chatId, formatPerbandinganHomebase(hasilBanding, tokoKode));
     
