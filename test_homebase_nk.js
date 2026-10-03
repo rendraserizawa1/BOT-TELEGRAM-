@@ -16,10 +16,15 @@ const e2 = src.indexOf('let DB_INDEX_CACHE = null;');
 if (s2 < 0 || e2 < 0) { console.error('FAIL: blok konversi tidak ditemukan'); process.exit(1); }
 const block2 = src.slice(s2, e2);
 
+const s3 = src.indexOf('function normalizeForMatch');
+const e3 = src.indexOf('function extractAllNumbers');
+if (s3 < 0 || e3 < 0) { console.error('FAIL: normalizeForMatch tidak ditemukan'); process.exit(1); }
+const block3 = src.slice(s3, e3);
+
 const log = { warn() {}, error() {}, info() {} };
-const factory = new Function('log', block1 + '\n' + block2 +
-  '\nreturn { parseHomebaseScanNk, normNamaSatuanHB, konversiHargaAKePcs, getFaktorKonversi };');
-const { parseHomebaseScanNk, normNamaSatuanHB, konversiHargaAKePcs, getFaktorKonversi } = factory(log);
+const factory = new Function('log', block1 + '\n' + block2 + '\n' + block3 +
+  '\nreturn { parseHomebaseScanNk, normNamaSatuanHB, konversiHargaAKePcs, getFaktorKonversi, gabungItemNk };');
+const { parseHomebaseScanNk, normNamaSatuanHB, konversiHargaAKePcs, getFaktorKonversi, gabungItemNk } = factory(log);
 
 let gagal = 0;
 function cek(nama, kondisi) {
@@ -54,6 +59,39 @@ console.log('== parseHomebaseScanNk ==');
 {
   const r = parseHomebaseScanNk('{"jumlahBaris":42,"items":[{"nama":"X1 PANCI BESAR","satuan":"pcs","hargaA":1}]}');
   cek('jumlahBaris bisa > item (laporkan kurang)', r.jumlahBaris === 42 && r.items.length === 1);
+}
+
+console.log('== nama kembar (2 baris sama persis) ==');
+{
+  // 2 baris dengan nama sama persis di nota = 2 item terpisah (jangan digabung)
+  const r = parseHomebaseScanNk('{"jumlahBaris":3,"items":[' +
+    '{"nama":"GELAS KACA BOLDE","satuan":"pcs","hargaA":5000},' +
+    '{"nama":"PANCI 24 CM","satuan":"pcs","hargaA":45000},' +
+    '{"nama":"GELAS KACA BOLDE","satuan":"pcs","hargaA":5000}]}');
+  cek('parse: 3 item (dua kembar dipertahankan)', r.items.length === 3);
+  cek('parse: urutan sesuai nota', r.items[0].nama === r.items[2].nama && r.items[1].nama.includes('PANCI'));
+}
+{
+  // gabungItemNk: kembar ke-2 dari pass berikutnya jangan dibuang cuma karena nama sama
+  const a = [{ nama: 'GELAS KACA BOLDE', satuan: 'PCS', hargaA: 5000 },
+             { nama: 'PANCI 24 CM', satuan: 'PCS', hargaA: 45000 }];
+  const b = [{ nama: 'GELAS KACA BOLDE', satuan: 'PCS', hargaA: 5000 },
+             { nama: 'GELAS KACA BOLDE', satuan: 'PCS', hargaA: 5000 },
+             { nama: 'PANCI 24 CM', satuan: 'PCS', hargaA: 45000 }];
+  const out = gabungItemNk(a, b);
+  cek('gabung: kembar ke-2 tetap masuk', out.length === 3);
+  cek('gabung: urutan scan dipertahankan', out[0].nama === 'GELAS KACA BOLDE' && out[1].nama.includes('PANCI') && out[2].nama === 'GELAS KACA BOLDE');
+}
+{
+  // pass B hanya mengulang baris yang SUDAH terbaca -> jangan dobel
+  const a = [{ nama: 'PANCI 24 CM', satuan: 'PCS', hargaA: 45000 }];
+  const b = [{ nama: 'PANCI 24 CM', satuan: 'PCS', hargaA: 45000 }];
+  cek('gabung: pengulangan pass tidak dobel', gabungItemNk(a, b).length === 1);
+}
+{
+  // 3 kembar di pass B dengan a kosong = 3 item
+  const b = [1, 2, 3].map(() => ({ nama: 'SENDOK STAINLESS', satuan: 'PCS', hargaA: 3000 }));
+  cek('gabung: 3 kembar semua masuk', gabungItemNk([], b).length === 3);
 }
 
 console.log('== normNamaSatuanHB ==');
