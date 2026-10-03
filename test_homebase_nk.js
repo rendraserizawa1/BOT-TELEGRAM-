@@ -66,17 +66,21 @@ console.log('== normNamaSatuanHB ==');
   cek('trim & uppercase', c.nama === 'TEKO 1.8L' && c.satuan === 'PCS');
 }
 
-console.log('== konversiHargaAKePcs ==');
+console.log('== konversiHargaAKePcs + bulat atas 500 ==');
 {
   const a = konversiHargaAKePcs({ satuan: 'DZ', hargaA: 168000 });
   cek('dz: faktor 12', a.faktorKonversi === 12 && a.dikonversi === true);
-  cek('dz: 168000/12 = 14000', a.hargaAPcs === 14000);
+  cek('dz: 168000/12 = 14000 (genap 500)', a.hargaAPcs === 14000 && a.hargaABulat === 14000);
   const b = konversiHargaAKePcs({ satuan: 'PCS', hargaA: 5000 });
-  cek('pcs: tanpa konversi', b.dikonversi === false && b.hargaAPcs === 5000);
+  cek('pcs: tanpa konversi', b.dikonversi === false && b.hargaABulat === 5000);
   const c = konversiHargaAKePcs({ satuan: 'DZ', hargaA: 100 });
-  cek('floor dibulatkan ke bawah (100/12=8)', c.hargaAPcs === 8);
+  cek('floor 100/12=8, bulat atas jadi 500', c.hargaAPcs === 8 && c.hargaABulat === 500);
   const d = konversiHargaAKePcs({ satuan: 'LSN', hargaA: 120000 });
-  cek('lsn = 12', d.faktorKonversi === 12 && d.hargaAPcs === 10000);
+  cek('lsn = 12', d.faktorKonversi === 12 && d.hargaABulat === 10000);
+  const e = konversiHargaAKePcs({ satuan: 'PCS', hargaA: 14100 });
+  cek('14100 dibulatkan ke atas = 14500', e.hargaABulat === 14500);
+  const f = konversiHargaAKePcs({ satuan: 'PCS', hargaA: 0 });
+  cek('0 tetap 0 (bukan 500)', f.hargaABulat === 0);
 }
 
 // ── Matching: ekstrak [MESIN MATCHING] + blok match homebase ──
@@ -122,6 +126,24 @@ console.log('== matchBarangHomebase (anti nyasar) ==');
   // "paling mirip" (floor 5) harus dari keluarga SEALPACK DONAT, bukan barang ngawur
   const m = matchBarangHomebase('SEAL PACK DONAT 3,3 LT ORI TURBOPLAST', null, { floor: 5 });
   cek('paling mirip dari keluarga SEALPACK DONAT', !!m && m.item.nama.includes('SEALPACK DONAT'));
+  cek('3,3 TURBOPLAST tetap < 45% (tak dipaksakan match)', !!m && m.matchScore < 45);
+}
+
+console.log('== kalibrasi nama ==');
+{
+  // 2 kata nyasar (ORI BARU) dibuang otomatis -> tetap 100% ke item benar
+  const m = matchBarangHomebase('SEALPACK DONAT ERIKO 3,9 L DM KW2 ORI BARU');
+  cek('buang kata nyasar -> 100% ke NN07336', !!m && m.matchScore === 100 && m.item.kode === 'NN07336');
+}
+{
+  // kata dipindah posisi + tanda baca (koma, strip)
+  const m = matchBarangHomebase('DONAT, SEALPACK-ERIKO 3,9 L DM');
+  cek('urutan kata & tanda baca -> 100% ke NN07336', !!m && m.matchScore === 100 && m.item.kode === 'NN07336');
+}
+{
+  // kata ukuran (3,3) TIDAK boleh dibuang kalibrasi -> tetap tak match ukuran lain
+  const m = matchBarangHomebase('SEALPACK DONAT ERIKO 3,3 L DM', null, { floor: 5 });
+  cek('ukuran 3,3 tidak tertukar dengan 3,9', !m || m.item.kode !== 'NN07336' || m.matchScore < 45);
 }
 
 console.log('');
