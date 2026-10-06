@@ -1360,7 +1360,35 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
   const umur = r.update ? Math.round((Date.now() - r.update) / 60000) : null;
   if (umur !== null) lines.push(`\n🕐 Update data: ${umur <= 0 ? 'baru saja' : umur + ' mnt lalu'}`);
   lines.push(`💡 Ketik: \`laporan ${isNk ? 'nk ' : ''}penjualan 24/09\` atau /kasir${isNk ? 'nk' : ''} kemarin`);
-  return kirim(chatId, lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd, toko) });
+  await kirim(chatId, lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd, toko) });
+
+  // ═══ VERSI 2 (khusus NK): format ringkas sesuai contoh user (plain text) ═══
+  if (isNk) {
+    const rp = (n) => 'Rp. ' + (parseFloat(n) || 0).toLocaleString('id-ID');
+    const v2 = [];
+    v2.push('Laporan Penjualan');
+    v2.push('Toko Nasional Kitchen');
+    v2.push(`Periode ${tglLabel}`);
+    v2.push('');
+    kasirCp.forEach((k, i) => {
+      const label = String(k.user || k.nama || '').toUpperCase().replace(/^KASSA\s*/, 'Kassa ');
+      v2.push(`${label.startsWith('Kassa ') ? label : 'Kassa ' + (i + 1)} ${rp(k.omzet)}`);
+    });
+    v2.push('');
+    v2.push('Total Penjualan Keseluruhan');
+    v2.push(rp(total.omzet));
+    v2.push('─'.repeat(45));
+    v2.push('');
+    v2.push(`Tunai  ${rp(total.tunai)}`);
+    v2.push(`Debit  ${rp(total.debit)}`);
+    v2.push(`Credit ${rp(total.kredit)}`);
+    v2.push('─'.repeat(45));
+    const per = r.perTipe || {};
+    v2.push(`Ecer : ${rp((per.KSR || {}).omzet)}`);
+    v2.push(`Grosir : ${rp((per.JL || {}).omzet)}`);
+    await kirim(chatId, v2.join('\n'));
+  }
+  return;
 }
 
 // ── Laporan penjualan HOMMY & KIREI (per merek, rentang tanggal) ──────────
