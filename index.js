@@ -1268,6 +1268,10 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
   };
   kasirCp.sort((a, b) => rankKasir(a) - rankKasir(b) || (b.omzet || 0) - (a.omzet || 0));
 
+  // NK: kassa CUMA 2 (Kassa 1 grosir / Kassa 2 ecer). Sesi kasir lain (mis. user
+  // "DIMAS" buka kasir) jangan ditampilkan (aturan user). Total tetap dari iPos.
+  const kasirTampil = isNk ? kasirCp.slice(0, 2) : kasirCp;
+
   const LABEL_TOKO = isNk ? '🏬 Nasional Kitchen (NK)' : '🏢 Central Perabot (CP)';
   const LABEL_TOTAL = isNk ? 'TOTAL NK' : 'TOTAL CP';
   if (!kasir.length && r.promoSiap !== false) {
@@ -1305,8 +1309,8 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
     if (k.jam) lines.push(`   ⏰ ${escapeMd(k.jam)}`);
     lines.push('');
   };
-  if (kasirCp.length) {
-    kasirCp.forEach(tulisKasir);
+  if (kasirTampil.length) {
+    kasirTampil.forEach(tulisKasir);
   } else {
     lines.push(`😴 Tidak ada penjualan kasir ${isNk ? 'NK' : 'CP'}.`);
     lines.push('');
@@ -1323,7 +1327,7 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
     const g = (r.perTipe || {})[tp] || { nota: 0, omzet: 0 };
     lines.push(`🏷️ ${label}: ${g.nota} nota | ${fmtBayar(g.omzet)}`);
   }
-  lines.push(`👥 ${kasirCp.length} kasir berjualan`);
+  lines.push(`👥 ${kasirTampil.length} kasir berjualan`);
   // Konter PROMO (DB iPos terpisah) — hanya CP; NK tidak punya konter promo
   if (!isNk) {
     if (r.promoSiap === false) {
@@ -1370,7 +1374,7 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
     v2.push('Toko Nasional Kitchen');
     v2.push(`Periode ${tglLabel}`);
     v2.push('');
-    kasirCp.forEach((k, i) => {
+    kasirTampil.forEach((k, i) => {
       const label = String(k.user || k.nama || '').toUpperCase().replace(/^KASSA\s*/, 'Kassa ');
       v2.push(`${label.startsWith('Kassa ') ? label : 'Kassa ' + (i + 1)} ${rp(k.omzet)}`);
     });
