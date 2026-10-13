@@ -208,16 +208,18 @@ function buatBridge({ url, key, toko, label }) {
    * Ambil laporan penjualan per kasir dari iPos API.
    * @param {string} dari  YYYY-MM-DD
    * @param {string} [sampai=dari]  YYYY-MM-DD
+   * @param {{hanyaKasir?:boolean}} [opts] hanyaKasir: hitung HANYA sesi kasir
+   *   (kelompok tabel user diawali "KASIR"), buang sesi non-kasir spt admin.
    * @returns {Promise<object>} { siap, kasir[], total, nonaktif[], jangkauan, update }
    */
-  async function ambilLaporanKasir(dari, sampai = dari) {
+  async function ambilLaporanKasir(dari, sampai = dari, opts = {}) {
     if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30000);
     try {
-      const res = await fetch(
-        `${IPOS_URL}/api/jual?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai || dari)}&key=${encodeURIComponent(IPOS_KEY)}`,
-        { signal: controller.signal });
+      let url = `${IPOS_URL}/api/jual?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai || dari)}&key=${encodeURIComponent(IPOS_KEY)}`;
+      if (opts && opts.hanyaKasir) url += '&kasir_only=1';
+      const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } finally {

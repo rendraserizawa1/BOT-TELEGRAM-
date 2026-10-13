@@ -1237,9 +1237,13 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
   const bridge = isNk ? iposNk : iposBridge;
   try { await bot.sendChatAction(chatId, 'typing'); } catch (e) {}
 
+  // NK: laporan kasir = KASSA1+KASSA2 saja. Sesi non-kasir (mis. ADMIN_psediaan
+  // di mesin barcode) bukan penjualan kasir — minta API filter per kelompok
+  // (kasir_only=1) supaya total, tunai/debit/kredit & ecer/grosir pun murni
+  // kasir, konsisten dengan laporan iPos.
   let r;
   try {
-    r = await bridge.ambilLaporanKasir(ymd, ymd);
+    r = await bridge.ambilLaporanKasir(ymd, ymd, isNk ? { hanyaKasir: true } : undefined);
   } catch (e) {
     return kirim(chatId, `⚠️ iPos API tidak merespons: ${escapeMd(e.message || String(e))}`, { parse_mode: 'Markdown' });
   }
