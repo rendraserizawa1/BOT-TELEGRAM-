@@ -111,3 +111,7 @@ harga_toko/
 
 coverage/
 .nyc_output/
+
+out_*.txt
+hasil_cek.txt
+push.log
