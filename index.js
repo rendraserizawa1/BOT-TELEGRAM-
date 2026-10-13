@@ -1118,7 +1118,7 @@ function deteksiLaporanMarketplace(text) {
 
 // ── Laporan TOKO NK (Nasional Kitchen) via iPos API sendiri ───────────────
 // NK sekarang punya ipos-api INPRES2025 (jalan di mesin NK, dibaca bot lewat
-// Tailscale) — sama persis dengan CP. Semua detektor NK WAJIB menyebut toko
+// jaringan privat) — sama persis dengan CP. Semua detektor NK WAJIB menyebut toko
 // ("nk"/"nasional") supaya tidak merebut laporan CP; detektor CP memang sudah
 // mengabaikan pesan yang menyebut nk/tdm/oesapa/kefa/nasional. Cek NK
 // SELALU sebelum CP. (tdm/oesapa/kefa tetap pakai alur lama Excel/scan nota.)

@@ -161,7 +161,7 @@ IPOS_SYNC_MS=60000                     # jaring pengaman (ms), default 60 dtk
 IPOS_TOKO=cp                           # toko bot yg datanya dari iPos
 
 # Toko NK — Nasional Kitchen (opsional; kosong = fitur NK mati)
-IPOS_NK_URL=http://[host-privat]:8080/ipos  # API ipos-api INPRES di mesin NK (via Tailscale)
+IPOS_NK_URL=http://<host-privat-mesin-nk>:8080/ipos  # alamat asli HANYA di .env, jangan pernah di-commit
 IPOS_NK_KEY=ipos_...                          # API key ipos-api mesin NK
 IPOS_NK_TOKO=nk                               # toko bot yg datanya dari iPos NK
 ```
@@ -178,8 +178,8 @@ Toko **nk** memakai **instans bridge kedua** (`ipos-bridge.js` v3: pabrik
 tanpa saling ganggu; item yang sama di kedua DB mendapat harga per toko
 masing-masing: `barang.harga.cp` + `barang.harga.nk`). API-nya =
 `ipos-api` lain yang jalan **di mesin NK** (DB `i5_INPRES2025`, kantor INPR,
-nota seri KSR=`NKK` 6 digit + JL=`NPK` 5 digit), diakses bot lewat Tailscale
-(`[host-privat]:8080`). Perintahnya = padanan persis versi CP, cukup
+nota seri KSR=`NKK` 6 digit + JL=`NPK` 5 digit), diakses bot lewat jaringan
+privat (alamat hanya di `.env`). Perintahnya = padanan persis versi CP, cukup
 sebut **nk** / **nasional**:
 
 | Ketik (NK) | Padanan CP |
@@ -225,4 +225,4 @@ alur lama Excel/scan nota.
 Service `ipos-api` (Windows service `iPosAPI`, autostart) harus jalan di
 `127.0.0.1:8080`. Lihat `../ipos-api/README.md`. Untuk NK: service `ipos-api`
 (INPRES) jalan di mesin NK (autostart), `HOST=0.0.0.0` + firewall port 8080,
-dan mesin bot terhubung ke mesin NK via Tailscale.
+dan mesin bot terhubung ke mesin NK lewat jaringan privat (alamat hanya di `.env`).

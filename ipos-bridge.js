@@ -382,7 +382,7 @@ const cp = buatBridge({
 });
 
 // NK — Toko Nasional Kitchen / INPRES (API ipos-api i5_INPRES2025 di mesin NK).
-// Dibuat hanya kalau IPOS_NK_URL diisi (mis. http://[host-privat]:8080/ipos).
+// Dibuat hanya kalau IPOS_NK_URL diisi (mis. http://<host-privat>:8080/ipos).
 const nk = process.env.IPOS_NK_URL
   ? buatBridge({
       url: process.env.IPOS_NK_URL,
