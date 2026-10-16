@@ -39,7 +39,7 @@
 function buatBridge({ url, key, toko, label }) {
   const IPOS_URL = String(url || '').replace(/\/+$/, '');
   const IPOS_KEY = String(key || '');
-  const IPOS_TIMEOUT = Number(process.env.IPOS_TIMEOUT_MS || 8000);
+  const IPOS_TIMEOUT = Number(process.env.IPOS_TIMEOUT_MS || 3000); // item-live ±3ms DB + jaringan Tailscale
   const LABEL = label || (toko && toko[0] ? toko[0].toUpperCase() : 'iPos');
 
   let lastSync = 0;
@@ -80,20 +80,28 @@ function buatBridge({ url, key, toko, label }) {
   // KEFA /api/item mengembalikan item langsung; CP membungkus {data}.
   // ─────────────────────────────────────────────────────────────────────────
 
-  async function ambilItem(kode) {
+    // SO/realtime 1 item: langsung dari DB iPos via /api/item-live (CP/NK/KEFA).
+    // Fallback ke /api/item (cache poll) bila API lama belum punya endpoint.
+    async function ambilItem(kode) {
+    const live = await ambilItemDari(`${IPOS_URL}/api/item-live?kode=${encodeURIComponent(String(kode || ''))}&key=${encodeURIComponent(IPOS_KEY)}`);
+    if (live && live.found) return live.item;
+    if (live && live.found === false && live.liveOk) return null; // item-live jawab 404 = memang tidak ada
+    return ambilItemDari(`${IPOS_URL}/api/item?kode=${encodeURIComponent(String(kode || ''))}&key=${encodeURIComponent(IPOS_KEY)}`).then((r) => (r && r.found ? r.item : null));
+  }
+
+  async function ambilItemDari(url) {
     if (!IPOS_KEY) return null;
-    const url = `${IPOS_URL}/api/item?kode=${encodeURIComponent(String(kode || ''))}&key=${encodeURIComponent(IPOS_KEY)}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), IPOS_TIMEOUT);
     try {
       const res = await fetch(url, { signal: controller.signal });
-      if (res.status === 404) return null;
+      if (res.status === 404) return { found: false, liveOk: url.includes('item-live') };
       if (!res.ok) return null;
       const j = await res.json();
       const it = (j && j.data) || j;
-      const k = String((it && it.kode) || (it && it.kodeitem) || kode || '').toUpperCase();
+      const k = String((it && it.kode) || (it && it.kodeitem) || '').toUpperCase();
       if (!it || !k || !it.nama) return null;
-      return {
+      return { found: true, item: {
         kode: k,
         nama: it.nama,
         satuan: it.satuan || 'PCS',
@@ -103,7 +111,7 @@ function buatBridge({ url, key, toko, label }) {
         hpp: Number(it.hpp) || 0,
         statusjual: it.statusjual || '',
         kategori: it.kategori || '',
-      };
+      } };
     } catch (e) {
       if (String(e.message || '').startsWith('HTTP')) throw e;
       lastError = String(e.message || e);
@@ -112,6 +120,8 @@ function buatBridge({ url, key, toko, label }) {
       clearTimeout(timer);
     }
   }
+
+  // bersihkan helper lama (diganti ambilItemDari di atas)
 
   // ─────────────────────────────────────────────────────────────────────────
   // TERAPKAN SATU PERUBAHAN iPos (dipakai sync penuh & SSE)
@@ -232,21 +242,21 @@ function buatBridge({ url, key, toko, label }) {
     lastError = null;
     online = true;
 
-    if (verbose || ubah || baru || hapus) {
-      console.log(`✅ [iPos ${LABEL}] ${lastCount} item — ubah ${ubah}, baru ${baru}, hapus ${hapus}${verbose ? '' : ' (realtime)'}`);
+    if (ubah || baru || hapus) {
+      console.log(`✅ [iPos ${LABEL}] ${lastCount} item — ubah ${ubah}, baru ${baru}, hapus ${hapus}`);
     }
     return { ok: true, total: lastCount, ubah, baru, hapus };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
   // LAPORAN PENJUALAN (cache di iPos API; endpoint /api/jual*)
-  // Bot cache 8 dtk per (endpoint+dari+sampai+opsi) — API selalu realtime
-  // dari memori (<100 ms), bot tidak membanjiri API saat banyak staff
-  // buka laporan bersamaan. ponytail: naikkan ke Redis kalau multi-proses.
+  // Bot cache 1 dtk per (endpoint+dari+sampai+opsi) — API selalu realtime
+  // dari memori (<100 ms). SSE `jual` tetap clear cache seketika.
+  // ponytail: naikkan ke Redis kalau multi-proses.
   // ─────────────────────────────────────────────────────────────────────────
 
   const lapCache = new Map(); // kunci → { t, data }
-  const LAP_TTL = 8000;
+  const LAP_TTL = 1000;
   let lastJualEvent = 0; // timestamp SSE jual terakhir (kasir simpan/edit/void)
   async function ambilLaporan(url) {
     const kini = Date.now();
@@ -373,7 +383,7 @@ function buatBridge({ url, key, toko, label }) {
           sseOk = false;
           lastError = String(e.message || e);
         }
-        await new Promise((r) => setTimeout(r, 3000)); // sambung ulang (SSE retry 3s)
+        await new Promise((r) => setTimeout(r, 1000)); // sambung ulang cepat (SSE retry 3s)
       }
     })();
   }
@@ -396,7 +406,7 @@ function buatBridge({ url, key, toko, label }) {
    * pengaman). Panggil SEKALI saat startup per instans.
    * @param {() => Array} getDataBarang  fungsi yg mengembalikan DATA_BARANG terkini
    */
-  function mulaiAutoSync(getDataBarang, intervalMs = Number(process.env.IPOS_SYNC_MS || 60000)) {
+  function mulaiAutoSync(getDataBarang, intervalMs = Number(process.env.IPOS_SYNC_MS || 5000)) {
     const jalan = async (verbose) => {
       try { await syncStok(getDataBarang(), { verbose }); }
       catch (e) { console.warn(`⚠️ [iPos ${LABEL}] auto-sync:`, e.message); }

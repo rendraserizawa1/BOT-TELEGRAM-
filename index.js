@@ -4347,21 +4347,21 @@ syncExcelFromGitHub(true);
 setInterval(() => syncExcelFromGitHub(false), SYNC_XLSX_INTERVAL_MENIT * 60 * 1000);
 
 // [IPOS] nama + harga (ecer=L1, ambil=L2) + stok realtime dari iPos 5.0 (i5_CP2026).
-// SSE: perubahan diterapkan ≤ ~3 dtk. Sync penuh tiap IPOS_SYNC_MS = jaring pengaman.
+// SSE: perubahan diterapkan ≤ ~1 dtk. Sync penuh tiap IPOS_SYNC_MS = jaring pengaman.
 // Kalau API mati, bot tetap jalan pakai data Excel terakhir.
-// ponytail: IPOS_SYNC_MS default 30 dtk (target stok ≤30 dtk); KEFA tanpa SSE bergantung polling ini.
-iposBridge.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 30000));
+// IPOS_SYNC_MS default 5 dtk: jaring pengaman bukan jalur utama (SSE + item-live).
+iposBridge.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 5000));
 
 // [IPOS-NK] idem untuk Nasional Kitchen (iPos 5.0 i5_INPRES2025, API di mesin NK).
 // Jalan hanya kalau IPOS_NK_URL diisi di .env — kalau kosong, bot persis seperti sebelumnya.
 if (iposNk) {
-  iposNk.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 30000));
+  iposNk.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 5000));
 }
 
 // [IPOS-KEFA] idem untuk Perabot Mamaku Kefamenanu (API di mesin KEFA).
 // Jalan hanya kalau IPOS_KEFA_URL diisi di .env — kalau kosong, fitur KEFA mati.
 if (iposKefa) {
-  iposKefa.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 30000));
+  iposKefa.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 5000));
 }
 
 // ════════════════════════════════════════════════════════════════
