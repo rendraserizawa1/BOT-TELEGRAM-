@@ -76,6 +76,44 @@ function buatBridge({ url, key, toko, label }) {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // SATU ITEM REALTIME (SO) — GET /api/item, tanpa cache
+  // KEFA /api/item mengembalikan item langsung; CP membungkus {data}.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async function ambilItem(kode) {
+    if (!IPOS_KEY) return null;
+    const url = `${IPOS_URL}/api/item?kode=${encodeURIComponent(String(kode || ''))}&key=${encodeURIComponent(IPOS_KEY)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), IPOS_TIMEOUT);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (res.status === 404) return null;
+      if (!res.ok) return null;
+      const j = await res.json();
+      const it = (j && j.data) || j;
+      const k = String((it && it.kode) || (it && it.kodeitem) || kode || '').toUpperCase();
+      if (!it || !k || !it.nama) return null;
+      return {
+        kode: k,
+        nama: it.nama,
+        satuan: it.satuan || 'PCS',
+        harga: Number(it.harga) || 0,
+        harga2: Number(it.harga2) || 0,
+        stok: Number(it.stok) || 0,
+        hpp: Number(it.hpp) || 0,
+        statusjual: it.statusjual || '',
+        kategori: it.kategori || '',
+      };
+    } catch (e) {
+      if (String(e.message || '').startsWith('HTTP')) throw e;
+      lastError = String(e.message || e);
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // TERAPKAN SATU PERUBAHAN iPos (dipakai sync penuh & SSE)
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -202,7 +240,32 @@ function buatBridge({ url, key, toko, label }) {
 
   // ─────────────────────────────────────────────────────────────────────────
   // LAPORAN PENJUALAN (cache di iPos API; endpoint /api/jual*)
+  // Bot cache 8 dtk per (endpoint+dari+sampai+opsi) — API selalu realtime
+  // dari memori (<100 ms), bot tidak membanjiri API saat banyak staff
+  // buka laporan bersamaan. ponytail: naikkan ke Redis kalau multi-proses.
   // ─────────────────────────────────────────────────────────────────────────
+
+  const lapCache = new Map(); // kunci → { t, data }
+  const LAP_TTL = 8000;
+  let lastJualEvent = 0; // timestamp SSE jual terakhir (kasir simpan/edit/void)
+  async function ambilLaporan(url) {
+    const kini = Date.now();
+    const c = lapCache.get(url);
+    if (c && kini - c.t < LAP_TTL) return c.data;
+    if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      lapCache.set(url, { t: kini, data, jualE: lastJualEvent });
+      if (lapCache.size > 200) lapCache.delete(lapCache.keys().next().value);
+      return data;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   /**
    * Ambil laporan penjualan per kasir dari iPos API.
@@ -214,17 +277,9 @@ function buatBridge({ url, key, toko, label }) {
    */
   async function ambilLaporanKasir(dari, sampai = dari, opts = {}) {
     if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30000);
-    try {
       let url = `${IPOS_URL}/api/jual?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai || dari)}&key=${encodeURIComponent(IPOS_KEY)}`;
       if (opts && opts.hanyaKasir) url += '&kasir_only=1';
-      const res = await fetch(url, { signal: controller.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } finally {
-      clearTimeout(timer);
-    }
+      return ambilLaporan(url);
   }
 
   /**
@@ -236,19 +291,24 @@ function buatBridge({ url, key, toko, label }) {
    * @returns {Promise<object>} { siap, dari, sampai, merek[], data[], total, update }
    */
   async function ambilLaporanMerek(dari, sampai = dari, merek = '') {
-    if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
-    const controller = new AbortController();
-    // 120 dtk: query tbl_ikdt bisa lambat saat cache PG dingin (jarang dipakai)
-    const timer = setTimeout(() => controller.abort(), 120000);
-    try {
       let url = `${IPOS_URL}/api/jual-merek?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai || dari)}&key=${encodeURIComponent(IPOS_KEY)}`;
       if (merek) url += `&merek=${encodeURIComponent(merek)}`;
-      const res = await fetch(url, { signal: controller.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } finally {
-      clearTimeout(timer);
-    }
+      const controller = new AbortController();
+      // 120 dtk: query tbl_ikdt bisa lambat saat cache PG dingin (jarang dipakai)
+      const timer = setTimeout(() => controller.abort(), 120000);
+      try {
+        const res = await fetch(url, { signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        lapCache.set(url, { t: Date.now(), data });
+        return data;
+      } catch (e) {
+        const c = lapCache.get(url);
+        if (c) return c.data; // DB dingin timeout → sajikan cache terakhir, bukan error
+        throw e;
+      } finally {
+        clearTimeout(timer);
+      }
   }
 
   /**
@@ -258,17 +318,8 @@ function buatBridge({ url, key, toko, label }) {
    * @returns {Promise<object>} { siap, dari, sampai, toko[], central, total, nomor, update }
    */
   async function ambilLaporanMarketplace(dari, sampai = dari) {
-    if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60000);
-    try {
       const url = `${IPOS_URL}/api/jual-marketplace?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai || dari)}&key=${encodeURIComponent(IPOS_KEY)}`;
-      const res = await fetch(url, { signal: controller.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } finally {
-      clearTimeout(timer);
-    }
+      return ambilLaporan(url);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -299,8 +350,13 @@ function buatBridge({ url, key, toko, label }) {
                 if (line.startsWith('event:')) ev = line.slice(6).trim();
                 else if (line.startsWith('data:')) data += line.slice(5).trim();
               }
-              if (ev !== 'items' || !data) continue;
+              if (ev !== 'items' && ev !== 'jual' || !data) continue;
               try {
+                if (ev === 'jual') {
+                  lastJualEvent = Date.now();
+                  lapCache.clear(); // nota baru/edit/void → laporan berikutnya fetch segar
+                  continue;
+                }
                 let ubah = 0, baru = 0, hapus = 0;
                 for (const ip of JSON.parse(data)) {
                   const r = terapkan(getDataBarang(), ip);
@@ -352,7 +408,7 @@ function buatBridge({ url, key, toko, label }) {
     return () => clearInterval(t);
   }
 
-  return { url: IPOS_URL, toko, label: LABEL, syncStok, terapkan, status, mulaiAutoSync, ambilLaporanKasir, ambilLaporanMerek, ambilLaporanMarketplace };
+  return { url: IPOS_URL, toko, label: LABEL, syncStok, terapkan, ambilItem, status, mulaiAutoSync, ambilLaporanKasir, ambilLaporanMerek, ambilLaporanMarketplace };
 }
 
 // ── INDEX DATA_BARANG (bangun ulang otomatis kalau array diganti loadExcel) ──
@@ -393,10 +449,23 @@ const nk = process.env.IPOS_NK_URL
     })
   : null;
 
+// KEFA — Toko Perabot Mamaku Kefamenanu (API ipos-api KEFA2025 di mesin KEFA).
+// Dibuat hanya kalau IPOS_KEFA_URL diisi. Pola persis NK.
+const kefa = process.env.IPOS_KEFA_URL
+  ? buatBridge({
+      url: process.env.IPOS_KEFA_URL,
+      key: process.env.IPOS_KEFA_KEY || '',
+      toko: (process.env.IPOS_KEFA_TOKO || 'kefa')
+        .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+      label: 'KEFA',
+    })
+  : null;
+
 // Ekspor: pemakaian lama (iposBridge.syncStok dst.) = instans CP, persis v2.
 module.exports = {
   syncStok: (...a) => cp.syncStok(...a),
   terapkan: (...a) => cp.terapkan(...a),
+  ambilItem: (...a) => cp.ambilItem(...a),
   status: () => cp.status(),
   mulaiAutoSync: (...a) => cp.mulaiAutoSync(...a),
   ambilLaporanKasir: (...a) => cp.ambilLaporanKasir(...a),
@@ -404,5 +473,5 @@ module.exports = {
   ambilLaporanMarketplace: (...a) => cp.ambilLaporanMarketplace(...a),
   get IPOS_URL() { return cp.url; },
   get IPOS_TOKO() { return cp.toko; },
-  buatBridge, cp, nk,
+  buatBridge, cp, nk, kefa,
 };

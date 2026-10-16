@@ -20,6 +20,8 @@ const session = require('express-session');
 const iposBridge = require('./ipos-bridge');
 // Instans NK (Nasional Kitchen / INPRES) — null kalau IPOS_NK_URL kosong di .env
 const iposNk = iposBridge.nk;
+// Instans KEFA (Perabot Mamaku Kefamenanu) — null kalau IPOS_KEFA_URL kosong di .env
+const iposKefa = iposBridge.kefa;
 
 // ════════════════════════════════════════════════════════════════
 //   1. KONFIGURASI
@@ -1064,8 +1066,8 @@ function deteksiLaporanKasir(text) {
   if (/marketplace|\bmp\b|berita acara|stock opname|stok opname|homebase/.test(low)) return null;
   // laporan per merek (HOMMY & KIREI) punya alur sendiri
   if (/\b(hom{1,2}y|homi|kirei|kirey)\b/.test(low)) return null;
-  // toko selain CP tetap pakai alur lama (Excel/scan nota)
-  if (/\b(nk|tdm|oesapa|kefa|nasional)\b/.test(low)) return null;
+  // toko selain CP tetap pakai alur lama (Excel/scan nota); nk & kefa kini via iPos API sendiri
+  if (/\b(nk|tdm|oesapa|kefa|nasional|mamaku|kefamenanu)\b/.test(low)) return null;
   const adaLap = /(laporan|rekap|\blap\b|omzet)/.test(low);
   const adaJual = /(penjualan|\bjual\b|setoran)/.test(low);
   const adaKasir = /\bkasir\b/.test(low);
@@ -1121,17 +1123,25 @@ function deteksiLaporanMarketplace(text) {
 // jaringan privat) — sama persis dengan CP. Semua detektor NK WAJIB menyebut toko
 // ("nk"/"nasional") supaya tidak merebut laporan CP; detektor CP memang sudah
 // mengabaikan pesan yang menyebut nk/tdm/oesapa/kefa/nasional. Cek NK
-// SELALU sebelum CP. (tdm/oesapa/kefa tetap pakai alur lama Excel/scan nota.)
+// SELALU sebelum CP. (tdm/oesapa tetap pakai alur lama Excel/scan nota;
+// kefa kini via iPos API sendiri seperti NK.)
 function deteksiTokoNk(text) {
   const low = String(text || '').toLowerCase().trim();
   return /\b(nk|nasional(\s+kitchen)?)\b/.test(low);
 }
 
+// ── Laporan TOKO KEFA (Perabot Mamaku Kefamenanu) via iPos API sendiri ──────
+// Pola persis NK. Detektor KEFA WAJIB menyebut toko ("kefa"/"mamaku"/
+// "kefamenanu") supaya tidak merebut laporan CP; cek KEFA SELALU sebelum CP.
+function deteksiTokoKefa(text) {
+  const low = String(text || '').toLowerCase().trim();
+  return /\b(kefa|mamaku(\s+kefamenanu)?|kefamenanu)\b/.test(low);
+}
+
 // Deteksi chat bebas minta laporan penjualan KASIR NK → 'YYYY-MM-DD' | null
 function deteksiLaporanKasirNk(text) {
   const low = String(text || '').toLowerCase().trim();
-  if (!deteksiTokoNk(low)) return null;
-  // jangan rebut fitur lain
+  if (!deteksiTokoNk(low)) return null;  // jangan rebut fitur lain
   if (/marketplace|\bmp\b|berita acara|stock opname|stok opname|homebase/.test(low)) return null;
   // laporan per merek (HOMMY & KIREI) punya alur sendiri
   if (/\b(hom{1,2}y|homi|kirei|kirey)\b/.test(low)) return null;
@@ -1145,7 +1155,22 @@ function deteksiLaporanKasirNk(text) {
   return null;
 }
 
-// Deteksi chat bebas minta laporan HOMMY & KIREI NK → true | false
+// Deteksi chat bebas minta laporan penjualan KASIR KEFA → 'YYYY-MM-DD' | null
+function deteksiLaporanKasirKefa(text) {
+  const low = String(text || '').toLowerCase().trim();
+  if (!deteksiTokoKefa(low)) return null;
+  if (/marketplace|\bmp\b|berita acara|stock opname|stok opname|homebase/.test(low)) return null;
+  const adaLap = /(laporan|rekap|\blap\b|omzet)/.test(low);
+  const adaJual = /(penjualan|\bjual\b|setoran)/.test(low);
+  const adaKasir = /\bkasir\b/.test(low);
+  if (!adaLap && !adaJual && !adaKasir) return null;
+  const tgl = parseTanggalLaporan(low);
+  if (adaKasir && (adaLap || adaJual || tgl)) return tgl || ymdLokal(0);
+  if ((adaLap || adaJual) && tgl) return tgl;
+  return null;
+}
+
+  // Deteksi chat bebas minta laporan HOMMY & KIREI NK → true | false
 function deteksiLaporanMerekNk(text) {
   const low = String(text || '').toLowerCase().trim().replace(/[.!?,]+$/, '');
   if (!deteksiTokoNk(low)) return false;
@@ -1181,8 +1206,53 @@ function deteksiLaporanMarketplaceNk(text) {
   return /^(lap|kemarin|ini|sekarang)?$/.test(sisa);
 }
 
+// Deteksi chat bebas minta laporan HOMMY & KIREI KEFA → true | false
+function deteksiLaporanMerekKefa(text) {
+  const low = String(text || '').toLowerCase().trim().replace(/[.!?,]+$/, '');
+  if (!deteksiTokoKefa(low)) return false;
+  const adaHomy = /\b(hom{1,2}y|homi)\b/.test(low);
+  const adaKirei = /\b(kirei|kirey)\b/.test(low);
+  if (!adaHomy && !adaKirei) return false;
+  if (/marketplace|\bmp\b|berita acara|stock opname|stok opname|homebase/.test(low)) return false;
+  const adaLap = /(laporan|\blap\b|rekap|penjualan|omzet|\bjual\b|setoran)/.test(low);
+  if (adaLap) return true;
+  if (!(adaHomy && adaKirei)) return false;
+  const sisa = low
+    .replace(/\b(hom{1,2}y|homi|kirei|kirey|dan|and|kefa|mamaku|kefamenanu)\b/g, ' ')
+    .replace(/[&\s]+/g, '');
+  return sisa.length === 0;
+}
+
+// Deteksi chat bebas minta laporan MARKETPLACE KEFA → true | false
+function deteksiLaporanMarketplaceKefa(text) {
+  const low = String(text || '').toLowerCase().trim().replace(/[.!?,]+$/, '');
+  if (!deteksiTokoKefa(low)) return false;
+  const adaMp = /(marketplace|\bmp\b)/.test(low);
+  if (!adaMp) return false;
+  if (/berita acara|stock opname|stok opname|homebase/.test(low)) return false;
+  if (/\b(hom{1,2}y|homi|kirei|kirey)\b/.test(low)) return false;
+  const adaLap = /(laporan|\blap\b|rekap|penjualan|omzet|\bjual\b|setoran)/.test(low);
+  if (adaLap) return true;
+  const sisa = low.replace(/marketplace|\bmp\b/g, ' ')
+    .replace(/\b(kefa|mamaku|kefamenanu)\b/g, ' ').replace(/[^a-z]/g, '');
+  return /^(lap|kemarin|ini|sekarang)?$/.test(sisa);
+}
+
+// Label toko untuk laporan cabang iPos (dipakai merek + marketplace)
+const LABEL_CABANG = { nk: '🏬 Nasional Kitchen (NK)', kefa: '🏪 Perabot Mamaku Kefamenanu (KEFA)' };
+const LABEL_HK_TOKO = (t) => LABEL_CABANG[t] || '🏢 Central Perabot (CP)';
+const jembatanToko = (t) => (t === 'nk' ? iposNk : t === 'kefa' ? iposKefa : iposBridge);
+// Pesan saat API cabang belum punya endpoint laporan (KEFA 404): ubah HTTP 404
+const pesanLaporanGagal = (e, toko) => {
+  const msg = String((e && e.message) || e);
+  if (/HTTP 404/.test(msg) && (toko === 'nk' || toko === 'kefa')) {
+    return `⚠️ Fitur ini belum tersedia di API iPos ${toko === 'nk' ? 'Nasional Kitchen' : 'KEFA'} (endpoint belum ada di server ${toko === 'nk' ? 'NK' : 'KEFA'}).`;
+  }
+  return `⚠️ iPos API tidak merespons: ${escapeMd(msg)}`;
+};
+
 function kbLaporanKasir(ymd, toko = 'cp') {
-  const pref = toko === 'nk' ? 'jualkasirnk:' : 'jualkasir:';
+  const pref = toko === 'nk' ? 'jualkasirnk:' : toko === 'kefa' ? 'jualkasirkefa:' : 'jualkasir:';
   return {
     inline_keyboard: [
       [
@@ -1231,19 +1301,23 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
     return kirim(chatId, `⚠️ Tanggal *${escapeMd(tglLabel)}* masih di masa depan.`, { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd, toko) });
   }
   const isNk = toko === 'nk';
+  const isKefa = toko === 'kefa';
+  const isIposCabang = isNk || isKefa; // toko cabang iPos sendiri (NK/KEFA)
   if (isNk && !iposNk) {
     return kirim(chatId, '⚠️ API iPos Nasional Kitchen belum dikonfigurasi.\nIsi `IPOS_NK_URL` + `IPOS_NK_KEY` di `.env` lalu restart bot.', { parse_mode: 'Markdown' });
   }
-  const bridge = isNk ? iposNk : iposBridge;
+  if (isKefa && !iposKefa) {
+    return kirim(chatId, '⚠️ API iPos KEFA belum dikonfigurasi.\nIsi `IPOS_KEFA_URL` + `IPOS_KEFA_KEY` di `.env` lalu restart bot.', { parse_mode: 'Markdown' });
+  }
+  const bridge = isNk ? iposNk : isKefa ? iposKefa : iposBridge;
   try { await bot.sendChatAction(chatId, 'typing'); } catch (e) {}
 
-  // NK: laporan kasir = KASSA1+KASSA2 saja. Sesi non-kasir (mis. ADMIN_psediaan
-  // di mesin barcode) bukan penjualan kasir — minta API filter per kelompok
-  // (kasir_only=1) supaya total, tunai/debit/kredit & ecer/grosir pun murni
-  // kasir, konsisten dengan laporan iPos.
+  // NK/KEFA: laporan kasir = KASSA1+KASSA2 saja. Sesi non-kasir bukan penjualan
+  // kasir — minta API filter per kelompok (kasir_only=1) supaya total,
+  // tunai/debit/kredit & ecer/grosir pun murni kasir, konsisten dgn iPos.
   let r;
   try {
-    r = await bridge.ambilLaporanKasir(ymd, ymd, isNk ? { hanyaKasir: true } : undefined);
+    r = await bridge.ambilLaporanKasir(ymd, ymd, isIposCabang ? { hanyaKasir: true } : undefined);
   } catch (e) {
     return kirim(chatId, `⚠️ iPos API tidak merespons: ${escapeMd(e.message || String(e))}`, { parse_mode: 'Markdown' });
   }
@@ -1263,25 +1337,24 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
   const kasirPromo = kasir.filter(isPromo);
 
   // urutan tetap sesuai kassa iPos: CP = Astrid → Salsa → Marselina-Ririn →
-  // Tirsa-Tika; NK = KASSA1 (grosir/SERVER_NAS) → KASSA2 (ecer/KASIR-2)
+  // Tirsa-Tika; NK/KEFA = KASSA1 → KASSA2
   // (nama lain menyusul di belakang, diurut omzet terbesar)
-  const URUTAN_KASIR = isNk ? ['KASSA1', 'KASSA2'] : ['ASTRID-WINDI', 'SALSA', 'MARSELINA-RIRIN', 'TIRSA-TIKA'];
+  const URUTAN_KASIR = isIposCabang ? ['KASSA1', 'KASSA2'] : ['ASTRID-WINDI', 'SALSA', 'MARSELINA-RIRIN', 'TIRSA-TIKA'];
   const rankKasir = (k) => {
     const i = URUTAN_KASIR.indexOf(String(k.user || k.nama || '').toUpperCase());
     return i === -1 ? URUTAN_KASIR.length : i;
   };
   kasirCp.sort((a, b) => rankKasir(a) - rankKasir(b) || (b.omzet || 0) - (a.omzet || 0));
 
-  // NK: kassa CUMA 2 (Kassa 1 grosir / Kassa 2 ecer). Sesi kasir lain (mis. user
-  // "DIMAS" buka kasir) jangan ditampilkan (aturan user). Total tetap dari iPos.
-  const kasirTampil = isNk ? kasirCp.slice(0, 2) : kasirCp;
+  // NK/KEFA: kassa CUMA 2 (Kassa 1 / Kassa 2). Sesi kasir lain jangan ditampilkan
+  const kasirTampil = isIposCabang ? kasirCp.slice(0, 2) : kasirCp;
 
-  const LABEL_TOKO = isNk ? '🏬 Nasional Kitchen (NK)' : '🏢 Central Perabot (CP)';
-  const LABEL_TOTAL = isNk ? 'TOTAL NK' : 'TOTAL CP';
+  const LABEL_TOKO = isKefa ? '🏪 Perabot Mamaku Kefamenanu (KEFA)' : isNk ? '🏬 Nasional Kitchen (NK)' : '🏢 Central Perabot (CP)';
+  const LABEL_TOTAL = isKefa ? 'TOTAL KEFA' : isNk ? 'TOTAL NK' : 'TOTAL CP';
   if (!kasir.length && r.promoSiap !== false) {
     let msg = `🧾 *LAPORAN PENJUALAN KASIR*\n${LABEL_TOKO}\n📅 ${escapeMd(tglLabel)}\n${GARIS_TEBAL}\n\n😴 Tidak ada penjualan pada tanggal ini.`;
     if (jangkauan.dari) msg += `\n\n📦 Data iPos tersedia: ${jangkauan.dari} s/d ${jangkauan.sampai}`;
-    msg += `\n\n💡 Ketik: \`laporan ${isNk ? 'nk ' : ''}penjualan 24/09\``;
+    msg += `\n\n💡 Ketik: \`laporan ${isKefa ? 'kefa ' : isNk ? 'nk ' : ''}penjualan 24/09\``;
     return kirim(chatId, msg, { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd, toko) });
   }
 
@@ -1316,7 +1389,7 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
   if (kasirTampil.length) {
     kasirTampil.forEach(tulisKasir);
   } else {
-    lines.push(`😴 Tidak ada penjualan kasir ${isNk ? 'NK' : 'CP'}.`);
+    lines.push(`😴 Tidak ada penjualan kasir ${isKefa ? 'KEFA' : isNk ? 'NK' : 'CP'}.`);
     lines.push('');
   }
   lines.push(GARIS_TEBAL);
@@ -1332,8 +1405,8 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
     lines.push(`🏷️ ${label}: ${g.nota} nota | ${fmtBayar(g.omzet)}`);
   }
   lines.push(`👥 ${kasirTampil.length} kasir berjualan`);
-  // Konter PROMO (DB iPos terpisah) — hanya CP; NK tidak punya konter promo
-  if (!isNk) {
+  // Konter PROMO (DB iPos terpisah) — hanya CP; NK/KEFA tidak punya konter promo
+  if (!isIposCabang) {
     if (r.promoSiap === false) {
       lines.push('');
       lines.push('⚠️ Data konter PROMO masih dimuat — coba lagi sebentar.');
@@ -1367,15 +1440,15 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
   }
   const umur = r.update ? Math.round((Date.now() - r.update) / 60000) : null;
   if (umur !== null) lines.push(`\n🕐 Update data: ${umur <= 0 ? 'baru saja' : umur + ' mnt lalu'}`);
-  lines.push(`💡 Ketik: \`laporan ${isNk ? 'nk ' : ''}penjualan 24/09\` atau /kasir${isNk ? 'nk' : ''} kemarin`);
+  lines.push(`💡 Ketik: \`laporan ${isKefa ? 'kefa ' : isNk ? 'nk ' : ''}penjualan 24/09\` atau /${isKefa ? 'jualkefa' : isNk ? 'kasirnk' : 'kasir'} kemarin`);
   await kirim(chatId, lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd, toko) });
 
-  // ═══ VERSI 2 (khusus NK): format ringkas sesuai contoh user (plain text) ═══
-  if (isNk) {
+  // ═══ VERSI 2 (khusus NK/KEFA): format ringkas sesuai contoh user (plain text) ═══
+  if (isIposCabang) {
     const rp = (n) => 'Rp. ' + (parseFloat(n) || 0).toLocaleString('id-ID');
     const v2 = [];
     v2.push('Laporan Penjualan');
-    v2.push('Toko Nasional Kitchen');
+    v2.push(isKefa ? 'Toko Perabot Mamaku Kefamenanu' : 'Toko Nasional Kitchen');
     v2.push(`Periode ${tglLabel}`);
     v2.push('');
     kasirTampil.forEach((k, i) => {
@@ -1403,7 +1476,7 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
 // Sumber: endpoint iPos /api/jual-merek (tbl_ikdt per item, tbl_item.merek).
 // Alur: pilih tanggal AWAL → tanggal AKHIR → laporan (atau 1 pesan rentang).
 function kbLaporanMerek(toko = 'cp') {
-  const pref = toko === 'nk' ? 'hknk:' : 'hk:';
+  const pref = toko === 'nk' ? 'hknk:' : toko === 'kefa' ? 'hkkefa:' : 'hk:';
   return {
     inline_keyboard: [
       [
@@ -1419,10 +1492,10 @@ function kbLaporanMerek(toko = 'cp') {
 }
 
 const PROMPT_HK_AWAL = (extra = '', toko = 'cp') =>
-  `🛋️ *LAPORAN PENJUALAN HOMMY & KIREI*\n${toko === 'nk' ? '🏬 Nasional Kitchen (NK)' : '🏢 Central Perabot (CP)'}\n${GARIS_TEBAL}\n\n` +
+  `🛋️ *LAPORAN PENJUALAN HOMMY & KIREI*\n${LABEL_CABANG[toko] || '🏢 Central Perabot (CP)'}\n${GARIS_TEBAL}\n\n` +
   `📅 Ketik *TANGGAL AWAL* laporan.\n` +
   `Contoh: \`1/9\`, \`01/09/2026\`, \`1 september 2026\`, \`kemarin\`\n\n` +
-  `Bisa juga sekaligus: \`laporan homy ${toko === 'nk' ? 'nk ' : ''}1-20 september 2026\`\n\n` +
+  `Bisa juga sekaligus: \`laporan homy ${toko === 'cp' ? '' : toko + ' '}1-20 september 2026\`\n\n` +
   `• \`batal\` untuk keluar${extra ? `\n\n${extra}` : ''}`;
 
 const PROMPT_HK_AKHIR = (dari, extra = '') =>
@@ -1433,8 +1506,8 @@ const PROMPT_HK_AKHIR = (dari, extra = '') =>
 // Mulai alur laporan merek — teks opsional bisa langsung memuat rentang tanggal.
 async function mulaiLaporanMerek(chatId, userId, teks = '', toko = 'cp') {
   if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
-  if (toko === 'nk' && !iposNk) {
-    return kirim(chatId, '⚠️ API iPos Nasional Kitchen belum dikonfigurasi.\nIsi `IPOS_NK_URL` + `IPOS_NK_KEY` di `.env` lalu restart bot.', { parse_mode: 'Markdown' });
+  if ((toko === 'nk' || toko === 'kefa') && !jembatanToko(toko)) {
+    return kirim(chatId, `⚠️ API iPos ${toko === 'nk' ? 'Nasional Kitchen' : 'KEFA'} belum dikonfigurasi.\nIsi \`IPOS_${toko === 'nk' ? 'NK' : 'KEFA'}_URL\` + \`IPOS_${toko === 'nk' ? 'NK' : 'KEFA'}_KEY\` di \`.env\` lalu restart bot.`, { parse_mode: 'Markdown' });
   }
   const t = String(teks || '').trim();
   const r = parseRentangTanggal(t);
@@ -1459,11 +1532,13 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai, toko = 'cp') 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dari || '')) || !/^\d{4}-\d{2}-\d{2}$/.test(String(sampai || ''))) {
     return kirim(chatId, '⚠️ Format tanggal tidak dikenali.', { reply_markup: kbLaporanMerek(toko) });
   }
+  const isIposCabang = toko === 'nk' || toko === 'kefa';
   const isNk = toko === 'nk';
-  if (isNk && !iposNk) {
-    return kirim(chatId, '⚠️ API iPos Nasional Kitchen belum dikonfigurasi.\nIsi `IPOS_NK_URL` + `IPOS_NK_KEY` di `.env` lalu restart bot.', { parse_mode: 'Markdown' });
+  if (isIposCabang && !jembatanToko(toko)) {
+    return kirim(chatId, `⚠️ API iPos ${toko === 'nk' ? 'Nasional Kitchen' : 'KEFA'} belum dikonfigurasi.\nIsi \`IPOS_${toko === 'nk' ? 'NK' : 'KEFA'}_URL\` + \`IPOS_${toko === 'nk' ? 'NK' : 'KEFA'}_KEY\` di \`.env\` lalu restart bot.`, { parse_mode: 'Markdown' });
   }
-  const bridge = isNk ? iposNk : iposBridge;
+  const bridge = jembatanToko(toko);
+  const LABEL_TOKO_HK = LABEL_HK_TOKO(toko);
   const hariIni = ymdLokal(0);
   if (dari > hariIni) {
     return kirim(chatId, `⚠️ Tanggal awal *${escapeMd(labelTanggalYMD(dari))}* masih di masa depan.\nKetik tanggal lain ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) });
@@ -1480,7 +1555,7 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai, toko = 'cp') 
   try {
     r = await bridge.ambilLaporanMerek(dari, sampai);
   } catch (e) {
-    const pesan = `⚠️ iPos API tidak merespons: ${escapeMd(String(e.message || e))}\nCoba lagi sebentar ya kak.`;
+    const pesan = `${pesanLaporanGagal(e, toko)}\nCoba lagi sebentar ya kak.`;
     if (tunggu && tunggu.message_id) {
       try { return await bot.editMessageText(pesan, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) }); } catch (e2) {}
     }
@@ -1501,7 +1576,7 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai, toko = 'cp') 
   const emoMerek = (m) => (m === 'HOMMY' ? '🛋️' : m === 'KIREI' ? '🪑' : '🏷️');
   const lines = [];
   lines.push('🛋️ *LAPORAN PENJUALAN HOMMY & KIREI*');
-  lines.push(isNk ? '🏬 Nasional Kitchen (NK)' : '🏢 Central Perabot (CP)');
+  lines.push(LABEL_TOKO_HK);
   lines.push(`📅 ${escapeMd(periode)}`);
   lines.push(GARIS_TEBAL);
   lines.push('');
@@ -1570,7 +1645,7 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai, toko = 'cp') 
   }
   const umur = r.update ? Math.round((Date.now() - r.update) / 60000) : null;
   if (umur !== null) lines.push(`\n🕐 Update data: ${umur <= 0 ? 'baru saja' : umur + ' mnt lalu'}`);
-  lines.push(`💡 Ketik: \`laporan homy ${isNk ? 'nk ' : ''}1-20 september 2026\``);
+  lines.push(`💡 Ketik: \`laporan homy ${toko === 'cp' ? '' : toko + ' '}1-20 september 2026\``);
   const hasil = lines.join('\n');
   if (tunggu && tunggu.message_id) {
     try {
@@ -1590,7 +1665,7 @@ const MP_GARIS = '-'.repeat(34);
 const MP_RP = (n) => (Number(n) ? 'Rp. ' + Math.round(Number(n)).toLocaleString('id-ID') : 'Rp. -');
 
 function kbLaporanMarketplace(toko = 'cp') {
-  const pref = toko === 'nk' ? 'mpnk:' : 'mp:';
+  const pref = toko === 'nk' ? 'mpnk:' : toko === 'kefa' ? 'mpkefa:' : 'mp:';
   return {
     inline_keyboard: [
       [
@@ -1606,7 +1681,7 @@ function kbLaporanMarketplace(toko = 'cp') {
 }
 
 const PROMPT_MP_TANGGAL = (extra = '', toko = 'cp') =>
-  `🛒 *LAPORAN MARKETPLACE*\n${toko === 'nk' ? '🏬 Nasional Kitchen (NK)' : '🏢 Central Perabot (CP)'}\n${GARIS_TEBAL}\n\n` +
+  `🛒 *LAPORAN MARKETPLACE*\n${LABEL_CABANG[toko] || '🏢 Central Perabot (CP)'}\n${GARIS_TEBAL}\n\n` +
   `📅 Ketik *TANGGAL* laporan.\n` +
   `Contoh: \`25/9\`, \`25 september 2026\`, \`kemarin\`, atau rentang \`1-25 september 2026\`\n\n` +
   `• \`batal\` untuk keluar${extra ? `\n\n${extra}` : ''}`;
@@ -1614,8 +1689,8 @@ const PROMPT_MP_TANGGAL = (extra = '', toko = 'cp') =>
 // Mulai alur laporan marketplace — teks opsional bisa langsung memuat tanggal.
 async function mulaiLaporanMarketplace(chatId, userId, teks = '', toko = 'cp') {
   if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
-  if (toko === 'nk' && !iposNk) {
-    return kirim(chatId, '⚠️ API iPos Nasional Kitchen belum dikonfigurasi.\nIsi `IPOS_NK_URL` + `IPOS_NK_KEY` di `.env` lalu restart bot.', { parse_mode: 'Markdown' });
+  if ((toko === 'nk' || toko === 'kefa') && !jembatanToko(toko)) {
+    return kirim(chatId, `⚠️ API iPos ${toko === 'nk' ? 'Nasional Kitchen' : 'KEFA'} belum dikonfigurasi.\nIsi \`IPOS_${toko === 'nk' ? 'NK' : 'KEFA'}_URL\` + \`IPOS_${toko === 'nk' ? 'NK' : 'KEFA'}_KEY\` di \`.env\` lalu restart bot.`, { parse_mode: 'Markdown' });
   }
   const t = String(teks || '').trim();
   const r = parseRentangTanggal(t);
@@ -1640,10 +1715,11 @@ async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai, toko = 
     return kirim(chatId, '⚠️ Format tanggal tidak dikenali.', { reply_markup: kbLaporanMarketplace(toko) });
   }
   const isNk = toko === 'nk';
-  if (isNk && !iposNk) {
-    return kirim(chatId, '⚠️ API iPos Nasional Kitchen belum dikonfigurasi.\nIsi `IPOS_NK_URL` + `IPOS_NK_KEY` di `.env` lalu restart bot.', { parse_mode: 'Markdown' });
+  const isKefa = toko === 'kefa';
+  if ((isNk || isKefa) && !jembatanToko(toko)) {
+    return kirim(chatId, `⚠️ API iPos ${isNk ? 'Nasional Kitchen' : 'KEFA'} belum dikonfigurasi.\nIsi \`IPOS_${isNk ? 'NK' : 'KEFA'}_URL\` + \`IPOS_${isNk ? 'NK' : 'KEFA'}_KEY\` di \`.env\` lalu restart bot.`, { parse_mode: 'Markdown' });
   }
-  const bridge = isNk ? iposNk : iposBridge;
+  const bridge = jembatanToko(toko);
   const hariIni = ymdLokal(0);
   if (dari > hariIni) {
     return kirim(chatId, `⚠️ Tanggal *${escapeMd(labelTanggalYMD(dari))}* masih di masa depan.\nKetik tanggal lain ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
@@ -1659,7 +1735,7 @@ async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai, toko = 
   try {
     r = await bridge.ambilLaporanMarketplace(dari, sampai);
   } catch (e) {
-    return kirim(chatId, `⚠️ iPos API tidak merespons: ${escapeMd(String(e.message || e))}\nCoba lagi sebentar ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
+    return kirim(chatId, `${pesanLaporanGagal(e, toko)}\nCoba lagi sebentar ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
   }
   if (!r || !r.siap) {
     return kirim(chatId, '⏳ *Data penjualan iPos masih dimuat* di server (± 2-5 menit setelah API di-restart).\nCoba lagi sebentar ya kak.', { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
@@ -1675,11 +1751,11 @@ async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai, toko = 
   const jl = notas.filter((n) => n.tipe === 'JL');
   const ksr = notas.filter((n) => n.tipe !== 'JL');
   const lines = [];
-  if (isNk) {
-    // NK: tidak ada toko pasangan — cukup baris toko sendiri (format manual sama)
-    lines.push(`Total Penjualan Marketplace Nasional Kitchen Periode ${periode}`);
+  if (isNk || isKefa) {
+    // NK/KEFA: tidak ada toko pasangan — cukup baris toko sendiri (format manual sama)
+    lines.push(`Total Penjualan Marketplace ${isNk ? 'Nasional Kitchen' : 'Perabot Mamaku Kefamenanu'} Periode ${periode}`);
     lines.push('');
-    lines.push(`Toko Nasional Kitchen ${MP_RP(c.omzet)}`);
+    lines.push(`Toko ${isNk ? 'Nasional Kitchen' : 'Perabot Mamaku Kefamenanu'} ${MP_RP(c.omzet)}`);
   } else {
     lines.push(`Total Penjualan Marketplace Perabot Mama Periode ${periode}`);
     lines.push('');
@@ -2103,9 +2179,16 @@ function updateFotoBarangBaruSO(tokoKode, kode, fotoFileId) {
 
 // ═══ GENERATE LAPORAN SO GABUNGAN (Text) ═══
 
-function generateLaporanSOGabungan(tokoKode, namaToko) {
-  const shared = getSOShared(tokoKode);
+async function generateLaporanSOGabungan(tokoKode, namaToko) {
   const gabungan = getSOGabunganData(tokoKode);
+  // SO realtime: segarkan stok sistem semua kode dari API iPos toko (batched 10).
+  // Gagal/API mati → pakai cache sync ≤30 dtk. ponytail: fetch berurutan-batch, bukan satu-satu.
+  const kodesSegar = [...new Set([...Object.keys(gabungan.fisik), ...Object.keys(gabungan.gudang)])]
+    .filter((k) => !String(k).startsWith('NEW_'));
+  for (let i = 0; i < kodesSegar.length; i += 10) {
+    await Promise.all(kodesSegar.slice(i, i + 10).map((k) => segarkanItemRealtime(tokoKode, k)));
+  }
+  const shared = getSOShared(tokoKode);
   const barangBaru = getBarangBaruSO(tokoKode);
   
   let m = `📋 *LAPORAN STOCK OPNAME GABUNGAN*\n🏦 ${namaToko}\n📅 ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n`;
@@ -3239,40 +3322,127 @@ Sebutkan sumber kalau perlu (Wikipedia, dll).
 ═══════════════════════════════════════════\n`;
   }
   
-  return `Kamu adalah Aiva, teman ngobrol AI di bot Telegram Toko Perabot.
+  return `Kamu adalah Aiva, beta pung tamang ngobrol AI di bot Telegram Toko Perabot.
 
 ═══════════════════════════════════════════
 🚨 ATURAN MUTLAK (WAJIB DIPATUHI):
 ═══════════════════════════════════════════
 
-1. ❌ JANGAN PERNAH karang data PRODUK TOKO (harga/stok/spek barang)
-   - JANGAN bilang "ada 3 pcs di TDM"
-   - JANGAN bilang "harganya 250 ribu"
-   - Kalau ditanya produk toko, jawab: "Bentar aku cek di database..."
+1. ❌ JANG KARANG data PRODUK TOKO (harga/stok/spek barang)
+   - JANG bilang "ada 3 pcs di TDM"
+   - JANG bilang "harganya 250 ribu"
+   - Kalau ditanya produk toko, jawab: "Bentar, beta cek di database dolo..."
 
 2. ✅ KALAU USER MINTA BUKA MENU/FITUR TERTENTU:
    Contoh: "buka stock opname", "mau ke menu utama", "menu admin dong"
-   
-   Jawab dengan: "Oke aku bukain menu [nama menu] ya kak!"
-   JANGAN dijawab dengan ngobrol biasa. Sistem otomatis akan handle.
 
-3. ✅ BOLEH JAWAB pertanyaan umum dengan info yang KAMU TAHU:
+   Jawab dengan: "Oke, beta bukakan menu [nama menu] ya, bo'i!"
+   JANG dijawab deng ngobrol biasa. Sistem otomatis yang handle.
+
+3. ✅ BOLEH JAWAB pertanyaan umum deng info yang LU TAHU:
    - Sejarah, geografi, sains
    - Pengetahuan umum
    - Tips & saran
-   - Bercanda & ngobrol bebas
+   - Bacarita & ngobrol bebas
 
-4. ✅ KALAU ADA INFO DARI INTERNET (di atas), GUNAKAN itu untuk jawab.
+4. ✅ KALAU ADA INFO DARI INTERNET (di atas), PAKE itu untuk jawab.
 
-5. ❌ JANGAN jawab "saya tidak tahu" untuk info umum.
-   Coba jawab dengan pengetahuan yang ada, atau bilang "kayaknya sih..."
+5. ❌ JANG jawab "beta sonde tahu" untuk info umum.
+   Co jawab deng pengetahuan yang ada, atau bilang "kayaknya sih..."
+
+═══════════════════════════════════════════
+BAHASA: FULL BAHASA KUPANG (WAJIB MUTLAK!)
+═══════════════════════════════════════════
+Lu WAJIB omong full Bahasa Kupang tiap hari, sonde boleh campur bahasa
+Indonesia baku. Bagian "KATA ... = ..." di bawah ni kamus definisi (bukan
+contoh omongan), jadi abaikan kata Indonesia di situ. Ingat kamus ni bae-bae
+(ponytail: gaya bahasa saja, bukan data baru):
+
+KATA GANTI & SAPAAN:
+- Aku/saya = beta / be | Kamu = lu | Kita/kami = ketong / katong
+- Kalian = basong / besong | Mereka = dong | Nama = biasanya nama user, atau bo'i (sayang)/nona/nyong/kakak/ade
+
+KATA KERJA POPULER:
+- Sudah = su | Belum = balom/belom | Mau = mo | Pergi = pi | Pulang/balik = bale
+- Punya = pung | Pakai = pake | Ambil = ame | Coba = co | Ikut = iko
+- Angkat = angka | Ingat = inga | Buat = bikin | Jalan-jalan = tapale'uk
+- Membersihkan = kas barisi | Memberitahukan = kas tahu | Bercerita = bacarita
+- Bersaudara = basodara | Berbunyi = babunyi | Mengikuti = ba'iko
+
+KATA SIFAT & KETERANGAN:
+- Tidak/nggak = sonde | Bukan = bukan | Jangan = jang | Baik/benar = bae / betul / gaga
+- Terlalu = talalu | Lebih = lebe | Dengan = deng | Siapa = sapa | Bagaimana = karmana
+- Kecil = kici (ana kici / kici ana = anak kecil) | Uang = doi | Lagi = lai / le
+- Bersih = barisi | Kotor = dadolek / kamomos | Hitam = itam | Dulu = dow
+- Subuh = amper siang | Sombong/sok = makan puji | Keren abis = kembo / bastel
+- Tidak peduli = tasibu | Orang malas = pamokol / pamalas | Pura-pura rajin = kaba'uk
+- Orang pelit = kake'ek | Orang bodoh = ngali | Orang lebai = lebe'
+- Gemuk = buncit | Langsing = karempeng | Bau = babo | Rambut kriwil = kariting
+- Centil = cakadidik | Hiper aktif = makfafitik | Nampang = batasoso
+- Ternganga = tanganga | Terlempar = talempar | Pecah = pica | Rebus = rubus
+
+KATA KERJA TAMBAHAN (awalan ba- = ber-):
+- Menyapu = basapu | Mencuci = bacuci | Menyiram = basiram | Menanam = batanam
+- Saling menyukai = basuka | Berteriak = tape'e | Pukul = papoko / puku / hantam
+
+PANGGILAN KELUARGA & ORANG:
+- Kakak perempuan = susi | Adik perempuan = te'o | Kakak laki-laki = bu
+- Adik laki-laki = to'o | Kakek = ba'i | Ipar laki-laki = kunyadu | Nyonya = nyora
+- Rote: laki dewasa = to'o, perempuan dewasa = ti'i
+- Sabu: laki dewasa = ama, perempuan dewasa = ina
+- Sumba: laki dewasa = umbu, perempuan dewasa = rambu
+
+BENDA & LAIN:
+- Kaleng = balek | Bersiul = faluit | Sapu tangan = lencu | Tenggorokan = gargantang
+- Jambu biji = kujawas | Kentut = konto | Kulit luka-luka = kaskaduk / bakaskaduk
+- Permen = gula-gula | Buang air kecil = kencing | Buang air besar = berak
+- Kerbau = kerbo | Bangkai = bangke | Keos = kios
+
+PANGGILAN:
+- Mama = mamtua / mama syg / mama bo'i | Papa = baptua / bapa syg / bapa bo'i
+- Cewe = nona | Cowo = nyong | Pacar pria = baitua | Pacar perempuan = maitua
+- Panggilan sayang orang dekat = bo'i suek
+
+PARTIKEL AKHIR KALIMAT (khas Kupang, selalu pake):
+- 'e' (lembut, vokal halus), 'na', 'ni', 'kow', 'ee'
+- Contoh: "Na pi makan su kow syg e.." (sayang, pi makan gih..)
+
+ATURAN EJAAN KUPANG:
+- Sering singkatkan: -kah → -kow, -lah → -le
+- Huruf "e" tengah kata jadi "a": cerita→carita, cepat→capat, kepala→kapala,
+  periksa→pariksa, gelisah→galisa, pencuri→pancuri
+
+CONTOH KALIMAT (tiru gaya ni):
+- "Marsu ketong pi sana.." (= ayo kita ke sana..)
+- "Lu pung nama sapa..?" (= nama kamu siapa..?)
+- "Lu su makan kow..?" (= kamu sudah makan..?)
+- "Lu pung gaga le ini hari e.." (= kamu cantik banget hari ini..)
+- "Lu mau pi mana..?" (= mau ke mana..?)
+- "Sentar sore baru beta pi sana ee.." (= nanti sore baru aku ke sana ya..)
+- "Dong ada basapu, bacuci, basiram deng batanam." (= mereka sedang menyapu, mencuci, menyiram dan menanam.)
+- "Kici ana satu ma talalu cakadidik." (= anak kecil itu terlalu centil.)
+- "Beta kapingin makan kujawas." (= beta ingin makan jambu biji.)
+- "Lu jang kasih dia gula-gula!" (= lu jang kasih dia permen!)
+- "Kitong minggu depan su UTS." (= ketong minggu depan su ujian.)
+- "Lu pung buncit le." (= lu tambah gemuk e.)
+
+GAYA KESIMPULAN ALA KUPANG (kalau disuruh simpulkan, pake gaya carita bebas
+kayak ni): "Orang Kupang suka bikin bahasa sendiri, sesuka hati dong sa.
+Biarpun bahasa Kupang terdengar sonde sopan karna dibilang Bahasa Pasar,
+orang Kupang tetap bangga deng dong pung bahasa e."
+
+Slogan Kupang: "Bae Sonde Bae Kota Kupang Lebe Bae" (= jelek apa pun kata orang
+tentang tanah kelahiran, kota sendiri tu yang paling bae).
 
 ═══════════════════════════════════════════
 KARAKTER:
 ═══════════════════════════════════════════
 - Nama: Aiva (AI Virtual Assistant)
-- Ramah, hangat, empati seperti teman dekat
-- Bahasa santai Indonesia (aku/kamu/kak)
+- Ramah, hangat, empati kayak tamang dekat dari Kupang
+- WAJIB full Bahasa Kupang: beta (aku), lu (kamu), sonde (tidak), su (sudah),
+  pi (pergi), pung (punya), deng (dengan), bae (baik), co (coba), jang (jangan),
+  mo (mau), lai/le (lagi), karmana (bagaimana), katong (kita/kami), bo'i (sayang)
+- Tutup kalimat deng partikel Kupang: e / na / ni / kow / ee
 - Respon SINGKAT (2-4 kalimat)
 - Pakai emoji secukupnya (max 2-3)
 
@@ -3305,28 +3475,36 @@ CONTOH BENAR vs SALAH:
 
 User: "Siapa presiden Indonesia sekarang?"
 [Dengan info web]
-✅ "Presiden Indonesia saat ini adalah Prabowo Subianto kak, dilantik Oktober 2024 😊"
+✅ "Presiden Indonesia sekarang ni Prabowo Subianto e, dong lantik Oktober 2024 😊"
 
 User: "1 dolar berapa rupiah?"
 [Dengan info kurs]
-✅ "Sekarang 1 USD = Rp 16.250 kak (kurs real-time) 💱"
+✅ "Sekarang 1 USD = Rp 16.250 (kurs real-time) e 💱"
 
 User: "saya capek"
-✅ "Aduh kak ${nama}, capek ya 🥺 Cerita dong, kenapa?"
+✅ "Aduh bo'i ${nama}, lu talalu capai kow 🥺 Bacarita dolo, karmana bisa..?"
 
 User: "harga panci eagle 20"
-✅ "Bentar aku cek di database ya kak 🔍"
+✅ "Bentar, beta cek di database dolo e 🔍"
 
 User: "apa itu blockchain?"
-✅ "Blockchain itu kayak buku besar digital yang nyimpen transaksi, kak. 
-   Datanya gak bisa diubah karena tersebar di banyak komputer 🔗"
+✅ "Blockchain tu kayak buku besar digital yang simpan transaksi, e. Data sonde bisa rubah karna tasebar di banyak komputer 🔗"
 
 User: "buka stock opname dong"
-✅ "Oke aku bukain menu Stock Opname ya kak! 📦"
+✅ "Oke, beta bukakan menu Stock Opname ya bo'i! 📦"
 
 User: "kapan piala dunia 2026?"
 [Dengan info web]
-✅ "Piala Dunia 2026 bakal digelar di USA, Kanada, Meksiko bulan Juni-Juli 2026 ⚽"
+✅ "Piala Dunia 2026 nanti di USA, Kanada, Meksiko bulan Juni-Juli 2026 e ⚽"
+
+User: "kamu cantik banget hari ini"
+✅ "Wih, makasih e bo'i! Lu pung gaga le hari ni 😊"
+
+User: "mau kemana?"
+✅ "Lu mau pi mana ni..?"
+
+User: "nanti sore aku kesana ya"
+✅ "Oke bae, sentar sore baru beta pi sana ee.."
 
 Sekarang respon dengan natural sesuai konteks!`;
 }
@@ -4091,6 +4269,11 @@ function loadExcel() {
     iposNk.syncStok(DATA_BARANG, { verbose: false })
       .catch((e) => console.warn('⚠️ [iPos NK] sync setelah loadExcel gagal:', e.message));
   }
+  // [IPOS-KEFA] idem untuk Perabot Mamaku Kefamenanu (kalau dikonfigurasi).
+  if (iposKefa) {
+    iposKefa.syncStok(DATA_BARANG, { verbose: false })
+      .catch((e) => console.warn('⚠️ [iPos KEFA] sync setelah loadExcel gagal:', e.message));
+  }
 
   return DATA_BARANG.length > 0;
 }
@@ -4166,12 +4349,19 @@ setInterval(() => syncExcelFromGitHub(false), SYNC_XLSX_INTERVAL_MENIT * 60 * 10
 // [IPOS] nama + harga (ecer=L1, ambil=L2) + stok realtime dari iPos 5.0 (i5_CP2026).
 // SSE: perubahan diterapkan ≤ ~3 dtk. Sync penuh tiap IPOS_SYNC_MS = jaring pengaman.
 // Kalau API mati, bot tetap jalan pakai data Excel terakhir.
-iposBridge.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 60000));
+// ponytail: IPOS_SYNC_MS default 30 dtk (target stok ≤30 dtk); KEFA tanpa SSE bergantung polling ini.
+iposBridge.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 30000));
 
 // [IPOS-NK] idem untuk Nasional Kitchen (iPos 5.0 i5_INPRES2025, API di mesin NK).
 // Jalan hanya kalau IPOS_NK_URL diisi di .env — kalau kosong, bot persis seperti sebelumnya.
 if (iposNk) {
-  iposNk.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 60000));
+  iposNk.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 30000));
+}
+
+// [IPOS-KEFA] idem untuk Perabot Mamaku Kefamenanu (API di mesin KEFA).
+// Jalan hanya kalau IPOS_KEFA_URL diisi di .env — kalau kosong, fitur KEFA mati.
+if (iposKefa) {
+  iposKefa.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 30000));
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -5405,6 +5595,13 @@ function kbMainMenu(userId) {
       { text: '🧾 Penjualan Kasir NK', callback_data: 'jualkasirnk:' + ymdLokal(0) },
       { text: '🛋️ HOMMY & KIREI NK', callback_data: 'hknk:mulai' },
     ]);
+    buttons.push([
+      { text: '🧾 Penjualan Kasir KEFA', callback_data: 'jualkasirkefa:' + ymdLokal(0) },
+      { text: '🛋️ HOMMY & KIREI KEFA', callback_data: 'hkkefa:mulai' },
+    ]);
+    buttons.push([
+      { text: '🛒 Marketplace KEFA', callback_data: 'mpkefa:tanggal' },
+    ]);
   } else if (isMember(userId)) {
     buttons.push([
       { text: '🔍 Cari Barang', callback_data: 'menu:4' },
@@ -5622,13 +5819,13 @@ function buildWelcome(userId, userName) {
   
   return `┌─────────────────────────┐
 │  🏪 *BOT TOKO PERABOT*
-│  Selamat ${waktu}!
+│  ${waktu}, bo'i!
 └─────────────────────────┘
 
-👋 Halo *${escapeMd(userName)}*!
+👋 Halo *${escapeMd(userName)}* e!
 ${role}
 
-✨ *Fitur Lengkap:*
+✨ *Beta bisa bantu apa:*
 🔍 Cari barang & harga (5 toko)
 🤖 AI Chat pintar
 🎙️ Voice note recognition
@@ -5636,26 +5833,26 @@ ${role}
 📊 Stock Opname & Laporan
 📋 Berita Acara
 
-⚡ *Cara Cepat:*
-Langsung ketik nama barang!
+⚡ *Cara capat:*
+Langsung ketik nama barang sa!
 
 📝 *Contoh:*
 \`dandang eagle 20\`
 \`harga panci di cp\`
 \`grosir kompor\`
 
-👇 Pilih menu di bawah:`;
+👇 Pi pilih menu di bawah ni e:`;
 }
 
 function buildGuestWelcome(userName, userId) {
   return `🔐 *AKSES TERBATAS*\n${GARIS_TEBAL}\n\n` +
-    `👋 Halo *${escapeMd(userName)}*!\n\n` +
-    `Anda belum terverifikasi sebagai member.\n\n` +
-    `📝 *Cara request akses:*\n` +
+    `👋 Halo *${escapeMd(userName)}* e!\n\n` +
+    `Lu balom terverifikasi jadi member e.\n\n` +
+    `📝 *Cara minta akses:*\n` +
     `Ketik: \`/request Nama Lengkap\`\n\n` +
     `*Contoh:* \`/request Pak Budi\`\n\n` +
-    `🆔 Telegram ID Anda: \`${userId}\`\n\n` +
-    `Admin akan review permintaan Anda.`;
+    `🆔 Lu pung Telegram ID: \`${userId}\`\n\n` +
+    `Nanti admin yang review lu pung permintaan e.`;
 }
 
 function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
@@ -6210,6 +6407,24 @@ function tampilkanBarangPilihan(item, tokoKode, userId, rakAktif) {
   return m;
 }
 
+// SO realtime: fetch 1 item dari API iPos toko tsb (cp/nk/kefa) → terapkan ke DATA_BARANG.
+// null = API mati/tidak ada → caller pakai stok cache terakhir. CP dibungkus {data}, lain telanjang (ditangani bridge).
+async function segarkanItemRealtime(tokoKode, kode) {
+  const bridge = (tokoKode === 'nk' || tokoKode === 'kefa') ? jembatanToko(tokoKode) : iposBridge;
+  if (!bridge?.ambilItem) return null;
+  try {
+    const live = await bridge.ambilItem(kode);
+    if (!live) return null;
+    bridge.terapkan(DATA_BARANG, live);
+    return DATA_BARANG.find((d) => String(d.kode).toUpperCase() === String(kode).toUpperCase()) || null;
+  } catch (e) { return null; }
+}
+
+async function tampilkanBarangPilihanLive(item, tokoKode, userId, rakAktif) {
+  const fresh = await segarkanItemRealtime(tokoKode, item.kode);
+  return tampilkanBarangPilihan(fresh || item, tokoKode, userId, rakAktif);
+}
+
 async function handleStockOpnameMode(chatId, userId, message, session) {
   const low = (message || '').toLowerCase().trim();
   const tokoKode = session.tokoKode;
@@ -6646,10 +6861,23 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
       });
       
       allItems.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
-      
+
+      // SO realtime: segarkan stok sistem 20 item tampil dari API iPos toko tsb (paralel).
+      // Gagal/API mati → pakai stok cache terakhir (sync ≤30 dtk). ponytail: batched penuh kalau perlu.
+      const tampil = allItems.slice(0, 20);
+      try {
+        const segar = await Promise.all(tampil.map((d) => segarkanItemRealtime(tokoKode, d.kode)));
+        segar.forEach((it, i) => {
+          if (!it) return;
+          const s = Number(it.harga?.[tokoKode]?.stok) || 0;
+          tampil[i].sistem = s;
+          tampil[i].selisih = tampil[i].total - s;
+        });
+      } catch (e) {}
+
       if (allItems.length > 0) {
         m += `📋 *DAFTAR BARANG (A-Z):*\n${GARIS_TIPIS}\n\n`;
-        allItems.slice(0, 20).forEach((d, i) => {
+        tampil.forEach((d, i) => {
           const statusIcon = d.selisih === 0 ? '✅' : d.selisih > 0 ? '➕' : '➖';
           m += `*${i+1}. ${escapeMd(d.nama)}*\n   🔖 \`${d.kode}\`\n`;
           m += `   💻 Sistem: ${d.sistem}`;
@@ -6711,8 +6939,9 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
   
   if (session.pendingBarangKode) {
     const kode = session.pendingBarangKode;
-    const item = DATA_BARANG.find(d => d.kode === kode);
-    if (!item) { updateSesi(userId, { pendingBarangKode: null }); return; }
+    const itemCache = DATA_BARANG.find(d => d.kode === kode);
+    if (!itemCache) { updateSesi(userId, { pendingBarangKode: null }); return; }
+    const item = await segarkanItemRealtime(tokoKode, kode) || itemCache;
     
     const parsedQty = parseInputJenisQty(message);
     if (!parsedQty) {
@@ -6757,14 +6986,14 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     const exactItem = DATA_BARANG.find(d => d.kode === message.trim().toUpperCase());
     if (exactItem) {
       updateSesi(userId, { pendingBarangKode: exactItem.kode });
-      await kirim(chatId, tampilkanBarangPilihan(exactItem, tokoKode, userId, soInfo.rakAktif), { reply_markup: KB_KEMBALI_SO });
+      await kirim(chatId, await tampilkanBarangPilihanLive(exactItem, tokoKode, userId, soInfo.rakAktif), { reply_markup: KB_KEMBALI_SO });
       return;
     }
-    
+
     const hasil = cariBarang(message);
     if (hasil.hasil.length === 1) {
       updateSesi(userId, { pendingBarangKode: hasil.hasil[0].kode });
-      await kirim(chatId, tampilkanBarangPilihan(hasil.hasil[0], tokoKode, userId, soInfo.rakAktif), { reply_markup: KB_KEMBALI_SO });
+      await kirim(chatId, await tampilkanBarangPilihanLive(hasil.hasil[0], tokoKode, userId, soInfo.rakAktif), { reply_markup: KB_KEMBALI_SO });
       return;
     }
     
@@ -9083,6 +9312,7 @@ bot.onText(/\/reload/, async (msg) => {
   loadExcel();
   const r = await iposBridge.syncStok(DATA_BARANG, { verbose: true });
   const rn = iposNk ? await iposNk.syncStok(DATA_BARANG, { verbose: true }) : null;
+  const rk = iposKefa ? await iposKefa.syncStok(DATA_BARANG, { verbose: true }) : null;
   kirim(msg.chat.id,
     `✅ Excel reloaded! ${DATA_BARANG.length} barang\n` +
     (r.ok
@@ -9092,7 +9322,12 @@ bot.onText(/\/reload/, async (msg) => {
       ? (rn.ok
         ? `\n🔄 iPos NK: ubah ${rn.ubah}, baru ${rn.baru}, hapus ${rn.hapus} (dari ${rn.total} item)`
         : `\n⚠️ iPos NK gagal: ${rn.err} (pakai data Excel)`)
-      : '\n⚪ iPos NK: belum dikonfigurasi (IPOS_NK_URL kosong)'));
+      : '\n⚪ iPos NK: belum dikonfigurasi (IPOS_NK_URL kosong)') +
+    (iposKefa
+      ? (rk.ok
+        ? `\n🔄 iPos KEFA: ubah ${rk.ubah}, baru ${rk.baru}, hapus ${rk.hapus} (dari ${rk.total} item)`
+        : `\n⚠️ iPos KEFA gagal: ${rk.err} (pakai data Excel)`)
+      : '\n⚪ iPos KEFA: belum dikonfigurasi (IPOS_KEFA_URL kosong)'));
 });
 
 // Status koneksi iPos (admin)
@@ -9100,6 +9335,7 @@ bot.onText(/\/ipos/, async (msg) => {
   if (!isAdmin(msg.from.id)) return;
   const s = iposBridge.status();
   const sn = iposNk ? iposNk.status() : null;
+  const sk = iposKefa ? iposKefa.status() : null;
   kirim(msg.chat.id,
     `🔌 *iPos Bridge*\n` +
     `*CP* — ${s.online ? '🟢 online' : '🔴 offline'} | ${s.sse}\n` +
@@ -9111,7 +9347,13 @@ bot.onText(/\/ipos/, async (msg) => {
         `📦 ${sn.total} item | 🏪 ${sn.toko.join(', ')}\n` +
         `⏱️ update: ${sn.umurDetik === null ? '-' : sn.umurDetik + ' dtk lalu'} | 🌐 ${sn.url}` +
         (sn.lastError ? `\n⚠️ ${sn.lastError}` : '')
-      : `\n\n*NK* — ⚪ belum dikonfigurasi (IPOS_NK_URL kosong)`),
+      : `\n\n*NK* — ⚪ belum dikonfigurasi (IPOS_NK_URL kosong)`) +
+    (sk
+      ? `\n\n*KEFA* — ${sk.online ? '🟢 online' : '🔴 offline'} | ${sk.sse}\n` +
+        `📦 ${sk.total} item | 🏪 ${sk.toko.join(', ')}\n` +
+        `⏱️ update: ${sk.umurDetik === null ? '-' : sk.umurDetik + ' dtk lalu'} | 🌐 ${sk.url}` +
+        (sk.lastError ? `\n⚠️ ${sk.lastError}` : '')
+      : `\n\n*KEFA* — ⚪ belum dikonfigurasi (IPOS_KEFA_URL kosong)`),
     { parse_mode: 'Markdown' });
 });
 
@@ -9141,6 +9383,27 @@ bot.onText(/^\/kasirnk(?:\s+(.+))?$/, async (msg, match) => {
   return tampilkanLaporanKasir(msg.chat.id, msg.from.id, ymdLokal(0), undefined, 'nk');
 });
 
+// Laporan penjualan per kasir TOKO KEFA — Perabot Mamaku Kefamenanu (staff laporan + admin)
+// Contoh: /jualkefa | /jualkefa kemarin | /jualkefa 24/09/2026
+bot.onText(/^\/jualkefa(?:\s+(.+))?$/, async (msg, match) => {
+  if (!bisaAksesLaporan(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus staff laporan.');
+  const arg = String(match[1] || '').toLowerCase().trim();
+  if (arg) {
+    const ymd = parseTanggalLaporan(arg);
+    if (!ymd) return kirim(msg.chat.id, '⚠️ Tanggal tidak dikenali. Contoh: `/jualkefa 24/09/2026` atau `/jualkefa kemarin`.', { parse_mode: 'Markdown' });
+    return tampilkanLaporanKasir(msg.chat.id, msg.from.id, ymd, undefined, 'kefa');
+  }
+  return tampilkanLaporanKasir(msg.chat.id, msg.from.id, ymdLokal(0), undefined, 'kefa');
+});
+
+// Harga/stok TOKO KEFA — Perabot Mamaku Kefamenanu (data iPos API KEFA)
+// Contoh: /hargakefa NN11133 | /hargakefa speaker advance | /stokkefa NN11133
+bot.onText(/^\/(hargakefa|stokkefa)(?:\s+(.+))?$/, async (msg, match) => {
+  const arg = String(match[2] || '').trim();
+  if (!arg) return kirim(msg.chat.id, `⚠️ Ketik kode/nama barang. Contoh: \`/${match[1]} NN11133\``, { parse_mode: 'Markdown' });
+  return prosesCari(msg.chat.id, msg.from.id, arg, 'kefa');
+});
+
 // Laporan penjualan per merek HOMMY & KIREI — rentang tanggal
 // /homy → alur tanggal awal→akhir; /homy 1-20 september 2026 → langsung
 bot.onText(/^\/homy(?:kirei)?(?:\s+(.+))?$/i, async (msg, match) => {
@@ -9153,6 +9416,18 @@ bot.onText(/^\/homy(?:kirei)?(?:\s+(.+))?$/i, async (msg, match) => {
 bot.onText(/^\/homynk(?:kirei)?(?:\s+(.+))?$/i, async (msg, match) => {
   if (!bisaAksesLaporan(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus staff laporan.');
   return mulaiLaporanMerek(msg.chat.id, msg.from.id, String(match[1] || ''), 'nk');
+});
+
+// /homykefa → sama, toko KEFA (Perabot Mamaku Kefamenanu)
+bot.onText(/^\/homykefa(?:kirei)?(?:\s+(.+))?$/i, async (msg, match) => {
+  if (!bisaAksesLaporan(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus staff laporan.');
+  return mulaiLaporanMerek(msg.chat.id, msg.from.id, String(match[1] || ''), 'kefa');
+});
+
+// /mpkefa → laporan marketplace KEFA (pilih tanggal / langsung)
+bot.onText(/^\/mpkefa(?:\s+(.+))?$/i, async (msg, match) => {
+  if (!bisaAksesLaporan(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus staff laporan.');
+  return mulaiLaporanMarketplace(msg.chat.id, msg.from.id, String(match[1] || ''), 'kefa');
 });
 
 // Manual backup SO untuk admin
@@ -10282,24 +10557,37 @@ async function handleScanRakPindah(chatId, userId, imageBuffer, session) {
 // ════════════════════════════════════════════════════════════════
 
 const SAPAAN_MAP = {
-  'halo': ['Halo','Haloo','Hai juga'],
-  'hai': ['Hai','Haiii','Halo juga'],
-  'hi': ['Hi','Hiii','Hello'],
-  'hello': ['Hello','Helloo'],
-  'assalamualaikum': ['Waalaikumsalam warahmatullahi wabarakatuh'],
-  'pagi': ['Selamat pagi','Pagi juga'],
-  'siang': ['Selamat siang','Siang juga'],
-  'sore': ['Selamat sore','Sore juga'],
-  'malam': ['Selamat malam','Malam juga'],
-  'hey': ['Hey','Heyyy'],
+  'halo': ['Halo e','Haloo bo\u2019i','Hai juga e'],
+  'hai': ['Hai e','Haiii bo\u2019i','Halo juga e'],
+  'hi': ['Hi e','Hiii','Hello e'],
+  'hello': ['Hello e','Helloo bo\u2019i'],
+  'hei': ['Hei e','Heii bo\u2019i'],
+  'hey': ['Hey e','Heyyy'],
+  'assalamualaikum': ['Waalaikumsalam warahmatullahi wabarakatuh e'],
+  'pagi': ['Pagi juga e','Bae pagi, bo\u2019i'],
+  'siang': ['Siang juga e','Bae siang, bo\u2019i'],
+  'sore': ['Sore juga e','Bae sore, bo\u2019i'],
+  'malam': ['Malam juga e','Bae malam, bo\u2019i'],
+  'tabe': ['Tabe juga e','Tabe, bo\u2019i'],
+  'permisi': ['Iya e, ada yang beta bisa bantu kow..?'],
 };
 
-const TERIMAKASIH_LIST = ['terima kasih','terimakasih','makasih','thanks','thank you','thx','tq','ty'];
+const SAPAAN_KUPANG_MAP = {
+  'be su datang': 'halo', 'beta datang': 'halo', 'lu ada': 'halo',
+  'karmana': 'halo', 'bae': 'halo', 'bo\u2019i': 'halo',
+};
+
+const TERIMAKASIH_LIST = ['terima kasih','terimakasih','makasih','thanks','thank you','thx','tq','ty','makasi','trimakasih'];
 
 function isSapaan(low) {
   const sorted = Object.keys(SAPAAN_MAP).sort((a, b) => b.length - a.length);
   for (const k of sorted) {
     if (low === k || low.startsWith(k + ' ') || low.startsWith(k + ',') || low.startsWith(k + '!')) return k;
+  }
+  // sapaan khas Kupang: be su datang, lu ada, karmana, bae, bo'i...
+  const kupang = Object.keys(SAPAAN_KUPANG_MAP).sort((a, b) => b.length - a.length);
+  for (const k of kupang) {
+    if (low === k || low.startsWith(k + ' ') || low.startsWith(k + ',') || low.startsWith(k + '!')) return SAPAAN_KUPANG_MAP[k];
   }
   return null;
 }
@@ -10310,15 +10598,15 @@ function isTerimakasih(low) {
 
 function balasSapaan(userId, kataSapaan) {
   const nama = getNama(userId);
-  const balasan = SAPAAN_MAP[kataSapaan] || ['Halo'];
+  const balasan = SAPAAN_MAP[kataSapaan] || ['Halo e'];
   const p = balasan[Math.floor(Math.random() * balasan.length)];
-  return p + (nama ? `, *${escapeMd(nama)}*` : '') + '! 😊';
+  return p + (nama ? `, *${escapeMd(nama)}*` : '') + '! 😊 Ada yang beta bisa bantu kow..?';
 }
 
 function balasTerimakasih(userId) {
   const nama = getNama(userId);
   const n = nama ? `, *${escapeMd(nama)}*` : '';
-  const ops = [`Sama-sama${n}! 😊`, `Senang bisa membantu${n}! ✨`, `Anytime${n}! 🙏`];
+  const ops = [`Sama-sama${n} e! 😊`, `Senang bisa bantu${n} e! ✨`, `Sonde masalah${n}, kapan sa beta ada ni 🙏`];
   return ops[Math.floor(Math.random() * ops.length)];
 }
 
@@ -10509,6 +10797,18 @@ async function executeMenuAction(chatId, userId, action) {
     if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
     return mulaiLaporanMerek(chatId, userId);
   }
+  if (action === 'menu:hknk') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    return mulaiLaporanMerek(chatId, userId, '', 'nk');
+  }
+  if (action === 'menu:hkkefa') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    return mulaiLaporanMerek(chatId, userId, '', 'kefa');
+  }
+  if (action === 'menu:mpkefa') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    return mulaiLaporanMarketplace(chatId, userId, '', 'kefa');
+  }
     // ★ Homebase
   if (action === 'menu:7') {
     if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak.');
@@ -10529,8 +10829,8 @@ async function executeMenuAction(chatId, userId, action) {
   
   if (action === 'menu:help') {
     return kirim(chatId,
-      '❓ *PANDUAN*\n' + GARIS_TEBAL + '\n\n' +
-      '💬 *Cara cepat (ketik langsung):*\n' +
+      '❓ *PANDUAN E*\n' + GARIS_TEBAL + '\n\n' +
+      '💬 *Cara capat (ketik langsung sa):*\n' +
       '• `stock opname` - buka SO\n' +
       '• `cari barang` - cari\n' +
       '• `laporan harga` - lap harga\n' +
@@ -10538,8 +10838,10 @@ async function executeMenuAction(chatId, userId, action) {
       '• `laporan nk penjualan 24/09` - penjualan kasir NK\n' +
       '• `laporan homy kirei` - penjualan HOMMY & KIREI (pilih tanggal)\n' +
       '• `laporan homy nk 1-20 september 2026` - HOMMY & KIREI NK\n' +
+      '• `laporan homy kefa 1-20 september 2026` - HOMMY & KIREI KEFA\n' +
       '• `marketplace` - lap mp\n' +
       '• `laporan marketplace nk 25/09` - lap mp NK\n' +
+      '• `laporan marketplace kefa 25/09` - lap mp KEFA\n' +
       '• `berita acara` - BA\n' +
       '• `info` - info bot\n\n' +
       '🔍 *Cari barang langsung:*\n' +
@@ -10819,7 +11121,7 @@ bot.on('message', async (msg) => {
   if (session.pendingHK && bisaAksesLaporan(userId)) {
     const hk = session.pendingHK;
     const hkToko = hk.toko || 'cp';
-    const mintaLain = /(laporan|rekap|\blap\b|penjualan|kasir|marketplace|cari|harga)/.test(low) && !deteksiLaporanMerek(text) && !deteksiLaporanMerekNk(text);
+    const mintaLain = /(laporan|rekap|\blap\b|penjualan|kasir|marketplace|cari|harga)/.test(low) && !deteksiLaporanMerek(text) && !deteksiLaporanMerekNk(text) && !deteksiLaporanMerekKefa(text);
     if (KATA_RESET.includes(low)) {
       updateSesi(userId, { pendingHK: null });
       // lanjut ke PRIORITY 3 (reset)
@@ -10869,7 +11171,7 @@ bot.on('message', async (msg) => {
   if (session.pendingMP && bisaAksesLaporan(userId)) {
     const mp = session.pendingMP;
     const mpToko = mp.toko || 'cp';
-    const mintaLain = /(laporan|rekap|\blap\b|penjualan|kasir|homy|hommy|kirei|cari|harga)/.test(low) && !deteksiLaporanMarketplace(text) && !deteksiLaporanMarketplaceNk(text);
+    const mintaLain = /(laporan|rekap|\blap\b|penjualan|kasir|homy|hommy|kirei|cari|harga)/.test(low) && !deteksiLaporanMarketplace(text) && !deteksiLaporanMarketplaceNk(text) && !deteksiLaporanMarketplaceKefa(text);
     if (KATA_RESET.includes(low)) {
       updateSesi(userId, { pendingMP: null });
       // lanjut ke PRIORITY 3 (reset)
@@ -10903,6 +11205,11 @@ bot.on('message', async (msg) => {
   if (bisaAksesLaporan(userId) && deteksiLaporanMerekNk(text)) {
     return mulaiLaporanMerek(chatId, userId, text, 'nk');
   }
+
+  // ★ PRIORITY 3.39: Laporan penjualan HOMMY & KIREI KEFA via chat bebas (pola persis NK)
+  if (bisaAksesLaporan(userId) && deteksiLaporanMerekKefa(text)) {
+    return mulaiLaporanMerek(chatId, userId, text, 'kefa');
+  }
   
   // ★ PRIORITY 3.4: Laporan penjualan HOMMY & KIREI via chat bebas
   // (mis. "laporan homy kirei", "laporan homy 1-20 september 2026", "homy kirei")
@@ -10914,6 +11221,11 @@ bot.on('message', async (msg) => {
   // (mis. "laporan marketplace nk kemarin", "mp nk 25 september 2026")
   if (bisaAksesLaporan(userId) && deteksiLaporanMarketplaceNk(text)) {
     return mulaiLaporanMarketplace(chatId, userId, text, 'nk');
+  }
+
+  // ★ PRIORITY 3.47: Laporan MARKETPLACE KEFA via chat bebas (pola persis NK)
+  if (bisaAksesLaporan(userId) && deteksiLaporanMarketplaceKefa(text)) {
+    return mulaiLaporanMarketplace(chatId, userId, text, 'kefa');
   }
   
   // ★ PRIORITY 3.45: Laporan MARKETPLACE via chat bebas
@@ -10927,6 +11239,13 @@ bot.on('message', async (msg) => {
   if (bisaAksesLaporan(userId)) {
     const ymdNk = deteksiLaporanKasirNk(text);
     if (ymdNk) return tampilkanLaporanKasir(chatId, userId, ymdNk, undefined, 'nk');
+  }
+
+  // ★ PRIORITY 3.49: Laporan penjualan kasir KEFA via chat bebas (pola persis NK)
+  // (mis. "laporan kefa kemarin", "laporan kasir kefa 24/09/2026", "omzet kefa hari ini")
+  if (bisaAksesLaporan(userId)) {
+    const ymdKefa = deteksiLaporanKasirKefa(text);
+    if (ymdKefa) return tampilkanLaporanKasir(chatId, userId, ymdKefa, undefined, 'kefa');
   }
   
   // ★ PRIORITY 3.5: Laporan penjualan kasir CP via chat bebas
@@ -11029,14 +11348,14 @@ bot.on('message', async (msg) => {
   
   // ★ PRIORITY 10: Teks pendek/tidak jelas → tampilkan menu
   if (text.length < 4) {
-    return kirim(chatId, 
-      `🤔 Saya tidak mengerti "${escapeMd(text)}"\n\n` +
-      `💡 *Coba ketik:*\n` +
+    return kirim(chatId,
+      `🤔 Beta sonde mangarti "${escapeMd(text)}" e..\n\n` +
+      `💡 *Co ketik:*\n` +
       `• \`stock opname\` - buka SO\n` +
       `• \`cari [nama barang]\` - cari\n` +
       `• \`info\` - info bot\n` +
       `• \`menu\` - menu utama\n\n` +
-      `Atau pilih dari tombol:`,
+      `Atau pi pilih dari tombol di bawah ni e:`,
       { reply_markup: kbMainMenu(userId) }
     );
   }
@@ -11083,6 +11402,12 @@ bot.on('callback_query', async (query) => {
     return tampilkanLaporanKasir(chatId, userId, ymd, undefined, 'nk');
   }
 
+  if (data.startsWith('jualkasirkefa:')) {
+    const ymd = data.slice('jualkasirkefa:'.length);
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    return tampilkanLaporanKasir(chatId, userId, ymd, undefined, 'kefa');
+  }
+
   // ════════════ LAPORAN HOMMY & KIREI (per merek) ════════════
   
   if (data === 'hk:mulai' || data === 'menu:hk') {
@@ -11095,6 +11420,12 @@ bot.on('callback_query', async (query) => {
     if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
     try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
     return mulaiLaporanMerek(chatId, userId, '', 'nk');
+  }
+
+  if (data === 'hkkefa:mulai' || data === 'menu:hkkefa') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
+    return mulaiLaporanMerek(chatId, userId, '', 'kefa');
   }
   
   if (data === 'hk:ini' || data === 'hk:lalu') {
@@ -11135,6 +11466,24 @@ bot.on('callback_query', async (query) => {
     return tampilkanLaporanMerek(chatId, userId, dari, sampai, 'nk');
   }
 
+  if (data === 'hkkefa:ini' || data === 'hkkefa:lalu') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
+    const d = new Date();
+    let y = d.getFullYear(), m = d.getMonth();
+    if (data === 'hkkefa:lalu') { m -= 1; if (m < 0) { m = 11; y -= 1; } }
+    const pad = (n) => String(n).padStart(2, '0');
+    const dari = `${y}-${pad(m + 1)}-01`;
+    let sampai;
+    if (data === 'hkkefa:lalu') {
+      const akhir = new Date(y, m + 1, 0);
+      sampai = `${akhir.getFullYear()}-${pad(akhir.getMonth() + 1)}-${pad(akhir.getDate())}`;
+    } else {
+      sampai = ymdLokal(0);
+    }
+    return tampilkanLaporanMerek(chatId, userId, dari, sampai, 'kefa');
+  }
+
   // ════════════ LAPORAN MARKETPLACE (otomatis dari iPos) ════════════
 
   if (data === 'mp:ini' || data === 'mp:lalu') {
@@ -11149,6 +11498,12 @@ bot.on('callback_query', async (query) => {
     return tampilkanLaporanMarketplace(chatId, userId, ymd, ymd, 'nk');
   }
 
+  if (data === 'mpkefa:ini' || data === 'mpkefa:lalu') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    const ymd = ymdLokal(data === 'mpkefa:lalu' ? -1 : 0);
+    return tampilkanLaporanMarketplace(chatId, userId, ymd, ymd, 'kefa');
+  }
+
   if (data === 'mp:tanggal') {
     if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
     updateSesi(userId, { pendingMP: { step: 'tanggal', toko: 'cp' }, pendingHK: null, pendingParkir: null, menu: null });
@@ -11161,6 +11516,13 @@ bot.on('callback_query', async (query) => {
     updateSesi(userId, { pendingMP: { step: 'tanggal', toko: 'nk' }, pendingHK: null, pendingParkir: null, menu: null });
     try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
     return kirim(chatId, PROMPT_MP_TANGGAL('', 'nk'), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace('nk') });
+  }
+
+  if (data === 'mpkefa:tanggal') {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    updateSesi(userId, { pendingMP: { step: 'tanggal', toko: 'kefa' }, pendingHK: null, pendingParkir: null, menu: null });
+    try { await bot.deleteMessage(chatId, msgId); } catch(e) {}
+    return kirim(chatId, PROMPT_MP_TANGGAL('', 'kefa'), { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace('kefa') });
   }
 
   // ════════════ PAGINATION CARI BARANG ════════════
@@ -11345,8 +11707,11 @@ bot.on('callback_query', async (query) => {
         '• `cari barang` - cari\n' +
         '• `laporan harga` - lap harga\n' +
         '• `laporan nk penjualan 24/09` - penjualan kasir NK\n' +
+        '• `laporan kefa penjualan 24/09` - penjualan kasir KEFA\n' +
         '• `laporan homy nk 1-20 september 2026` - HOMMY & KIREI NK\n' +
+        '• `laporan homy kefa 1-20 september 2026` - HOMMY & KIREI KEFA\n' +
         '• `laporan marketplace nk 25/09` - lap mp NK\n' +
+        '• `laporan marketplace kefa 25/09` - lap mp KEFA\n' +
         '• `marketplace` - lap mp\n' +
         '• `berita acara` - BA\n' +
         '• `homebase` - input nota\n' +
@@ -11597,7 +11962,7 @@ bot.on('callback_query', async (query) => {
     if (!item) return;
     const session = getSesi(userId);
     updateSesi(userId, { pendingBarangKode: kode });
-    kirim(chatId, tampilkanBarangPilihan(item, session.tokoKode, userId, session.soInfo?.rakAktif), { reply_markup: KB_KEMBALI_SO });
+    kirim(chatId, await tampilkanBarangPilihanLive(item, session.tokoKode, userId, session.soInfo?.rakAktif), { reply_markup: KB_KEMBALI_SO });
     return;
   }
   
@@ -11937,7 +12302,7 @@ bot.on('callback_query', async (query) => {
     const namaToko = NAMA_TOKO[session.tokoKode];
     await kirim(chatId, '📊 _Membuat laporan & Excel gabungan (dengan foto)..._\n_Ini mungkin memakan waktu jika banyak foto._');
     try {
-      const laporan = generateLaporanSOGabungan(session.tokoKode, namaToko);
+      const laporan = await generateLaporanSOGabungan(session.tokoKode, namaToko);
       await kirim(chatId, laporan);
       const excelPath = await generateExcelSOGabungan(session.tokoKode, namaToko);
       await bot.sendDocument(chatId, excelPath, {}, { filename: `SO_Gabungan_${session.tokoKode.toUpperCase()}_${getTanggalSlash(false).replace(/\//g, '-')}.xlsx` });
@@ -11956,7 +12321,7 @@ bot.on('callback_query', async (query) => {
     const namaToko = NAMA_TOKO[session.tokoKode];
     await kirim(chatId, '📊 _Membuat Excel gabungan (dengan foto)..._');
     try {
-      const laporan = generateLaporanSOGabungan(session.tokoKode, namaToko);
+      const laporan = await generateLaporanSOGabungan(session.tokoKode, namaToko);
       await kirim(chatId, laporan);
       const excelPath = await generateExcelSOGabungan(session.tokoKode, namaToko);
       await bot.sendDocument(chatId, excelPath, {}, { filename: `SO_Gabungan_${session.tokoKode.toUpperCase()}_${getTanggalSlash(false).replace(/\//g, '-')}.xlsx` });
