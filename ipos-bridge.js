@@ -39,7 +39,7 @@
 function buatBridge({ url, key, toko, label }) {
   const IPOS_URL = String(url || '').replace(/\/+$/, '');
   const IPOS_KEY = String(key || '');
-  const IPOS_TIMEOUT = Number(process.env.IPOS_TIMEOUT_MS || 3000); // item-live ±3ms DB + jaringan Tailscale
+  const IPOS_TIMEOUT = Number(process.env.IPOS_TIMEOUT_MS || 15000); // full katalog ribuan item butuh timeout lebih longgar; item-live tetap cepat
   const LABEL = label || (toko && toko[0] ? toko[0].toUpperCase() : 'iPos');
 
   let lastSync = 0;
@@ -62,7 +62,7 @@ function buatBridge({ url, key, toko, label }) {
   async function ambilItems() {
     if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), IPOS_TIMEOUT);
+    const timer = setTimeout(() => controller.abort(), Number(process.env.IPOS_CATALOG_TIMEOUT_MS || 60000));
     try {
       const res = await fetch(`${IPOS_URL}/api/items?key=${encodeURIComponent(IPOS_KEY)}`,
         { signal: controller.signal });
