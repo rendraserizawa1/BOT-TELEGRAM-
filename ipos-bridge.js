@@ -105,8 +105,8 @@ function buatBridge({ url, key, toko, label }) {
         kode: k,
         nama: it.nama,
         satuan: it.satuan || 'PCS',
-        harga: Number(it.harga) || 0,
-        harga2: Number(it.harga2) || 0,
+        harga: it.harga === null || it.harga === undefined || it.harga === '' ? 0 : Number(it.harga),
+        harga2: it.harga2 === null || it.harga2 === undefined || it.harga2 === '' ? 0 : Number(it.harga2),
         stok: Number(it.stok) || 0,
         hpp: Number(it.hpp) || 0,
         statusjual: it.statusjual || '',
@@ -151,8 +151,8 @@ function buatBridge({ url, key, toko, label }) {
       return 'hapus';
     }
 
-    const ecer = Number(ip.harga) || 0;
-    const ambil = Number(ip.harga2) > 0 ? Number(ip.harga2) : ecer; // harga2 kosong → ecer
+    const ecer = ip.harga === null || ip.harga === undefined || ip.harga === '' ? 0 : Number(ip.harga) || 0;
+    const ambil = ip.harga2 === null || ip.harga2 === undefined || ip.harga2 === '' ? 0 : Number(ip.harga2) || 0;
     const hpp = Number(ip.hpp) || 0;
     const stok = Number(ip.stok) || 0;
 
@@ -182,10 +182,15 @@ function buatBridge({ url, key, toko, label }) {
 
     // hitung dulu apa yang benar-benar berubah (buat log akurat)
     const h = barang.harga[toko[0]];
+    const hargaTokoLain = toko.some((tk) => tk !== toko[0] && barang.harga[tk]);
     const beda = barang.nama !== (ip.nama || barang.nama)
       || barang.satuan !== (ip.satuan || barang.satuan)
       || !h || h.ecer !== ecer || h.ambil !== ambil || h.stok !== stok || h.hpp !== hpp;
 
+    if (hargaTokoLain && !h) {
+      barang.tokoList = [...new Set([...(barang.tokoList || []), ...toko])];
+      for (const tk of toko) barang.harga[tk] = { ecer, ambil, stok, hpp };
+    }
     barang.nama = ip.nama || barang.nama;
     barang.satuan = ip.satuan || barang.satuan;
     barang.lastUpdatedPerToko = barang.lastUpdatedPerToko || {};
@@ -258,10 +263,10 @@ function buatBridge({ url, key, toko, label }) {
   const lapCache = new Map(); // kunci → { t, data }
   const LAP_TTL = 1000;
   let lastJualEvent = 0; // timestamp SSE jual terakhir (kasir simpan/edit/void)
-  async function ambilLaporan(url) {
+  async function ambilLaporan(url, fresh = false) {
     const kini = Date.now();
     const c = lapCache.get(url);
-    if (c && kini - c.t < LAP_TTL) return c.data;
+    if (!fresh && c && kini - c.t < LAP_TTL) return c.data;
     if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30000);
@@ -289,7 +294,7 @@ function buatBridge({ url, key, toko, label }) {
     if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
       let url = `${IPOS_URL}/api/jual?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai || dari)}&key=${encodeURIComponent(IPOS_KEY)}`;
       if (opts && opts.hanyaKasir) url += '&kasir_only=1';
-      return ambilLaporan(url);
+      return ambilLaporan(url, !!(opts && opts.fresh));
   }
 
   /**

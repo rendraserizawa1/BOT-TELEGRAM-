@@ -613,7 +613,7 @@ async function saveExcelToGitHub(tokoKode, fileBuffer, retryCount = 0) {
 // GitHub = sumber kebenaran. Beda → tarik ke lokal + reload Excel + reset DB index.
 // Terjadi: saat startup + tiap SYNC_XLSX_INTERVAL_MENIT menit.
 // Upload via bot: simpan lokal → push GitHub (saveExcelToGitHub) → GitHub jadi acuan.
-const SYNC_XLSX_INTERVAL_MENIT = 10;
+const SYNC_XLSX_INTERVAL_MENIT = 60;
 
 async function syncExcelFromGitHub(verbose = false) {
   if (!isGitHubEnabled) return { updated: [] };
@@ -957,8 +957,8 @@ function getTanggalIndonesia() {
 }
 
 function formatRp(n) {
-  const v = parseFloat(n) || 0;
-  return v === 0 ? 'Rp. -' : 'Rp. ' + v.toLocaleString('id-ID');
+  const v = Number(n);
+  return Number.isFinite(v) && v !== 0 ? 'Rp. ' + v.toLocaleString('id-ID') : '0';
 }
 
 const fRp = formatRp;
@@ -1317,7 +1317,7 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
   // tunai/debit/kredit & ecer/grosir pun murni kasir, konsisten dgn iPos.
   let r;
   try {
-    r = await bridge.ambilLaporanKasir(ymd, ymd, isIposCabang ? { hanyaKasir: true } : undefined);
+    r = await bridge.ambilLaporanKasir(ymd, ymd, { ...(isIposCabang ? { hanyaKasir: true } : {}), fresh: isIposCabang && ymd === ymdLokal(0) });
   } catch (e) {
     return kirim(chatId, `⚠️ iPos API tidak merespons: ${escapeMd(e.message || String(e))}`, { parse_mode: 'Markdown' });
   }
@@ -4349,19 +4349,19 @@ setInterval(() => syncExcelFromGitHub(false), SYNC_XLSX_INTERVAL_MENIT * 60 * 10
 // [IPOS] nama + harga (ecer=L1, ambil=L2) + stok realtime dari iPos 5.0 (i5_CP2026).
 // SSE: perubahan diterapkan ≤ ~1 dtk. Sync penuh tiap IPOS_SYNC_MS = jaring pengaman.
 // Kalau API mati, bot tetap jalan pakai data Excel terakhir.
-// IPOS_SYNC_MS default 5 dtk: jaring pengaman bukan jalur utama (SSE + item-live).
-iposBridge.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 5000));
+// IPOS_SYNC_MS default 60 dtk: SSE jalur utama; full sync hanya jaring pengaman.
+iposBridge.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 15000));
 
 // [IPOS-NK] idem untuk Nasional Kitchen (iPos 5.0 i5_INPRES2025, API di mesin NK).
 // Jalan hanya kalau IPOS_NK_URL diisi di .env — kalau kosong, bot persis seperti sebelumnya.
 if (iposNk) {
-  iposNk.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 5000));
+  iposNk.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 15000));
 }
 
 // [IPOS-KEFA] idem untuk Perabot Mamaku Kefamenanu (API di mesin KEFA).
 // Jalan hanya kalau IPOS_KEFA_URL diisi di .env — kalau kosong, fitur KEFA mati.
 if (iposKefa) {
-  iposKefa.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 5000));
+  iposKefa.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 15000));
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -5866,11 +5866,16 @@ function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
   
   if (tokoKode && tokoKode !== 'all') {
     const t = TOKO_LIST.find(x => x.kode === tokoKode);
+    item.harga = item.harga || {};
     const h = item.harga[tokoKode];
     msg += `${t.icon} *${t.nama}*\n`;
     if (!h) {
-      // barang tidak dijual di toko ini (mis. item baru dari iPos hanya utk toko cp)
-      msg += `⚪ _Tidak ada data harga di toko ini_\n`;
+      // Toko iPos (NK/KEFA): harga nol/missing harus terlihat sebagai "-".
+      if (tokoKode === 'nk' || tokoKode === 'kefa') {
+        msg += `💵 Ecer: ${formatRp(0)}\n📦 Ambil: ${formatRp(0)}\n📊 Stok: 0 ⚠️\n`;
+      } else {
+        msg += `⚪ _Tidak ada data harga di toko ini_\n`;
+      }
     } else {
       if (tipeHarga === 'grosir') {
         msg += `📦 Ambil (6+): ${formatRp(h.ambil)}\n`;
@@ -5913,6 +5918,12 @@ function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
 
 const HASIL_PER_HALAMAN = 15; // ★ Item per halaman (bisa disesuaikan)
 
+async function segarkanHargaHasil(items, tokoKode) {
+  const toko = tokoKode && tokoKode !== 'all' ? [tokoKode] : ['cp', 'nk', 'kefa'];
+  if (!Array.isArray(items)) return;
+  await Promise.all(items.flatMap((item) => toko.map((tk) => segarkanItemRealtime(tk, item.kode))));
+}
+
 async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
   trackSearch(keyword);
   const loading = await kirim(chatId, '🔍 _Sedang mencari di database..._');
@@ -5924,6 +5935,7 @@ async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
   const tokoKode = tokoFilter || (tokoDisebut.length > 0 ? tokoDisebut[0].kode : null);
   
   const results = cariBarang(cleanKeyword);
+  await segarkanHargaHasil(results.hasil.length ? results.hasil.slice(0, HASIL_PER_HALAMAN) : (results.saran || []), tokoKode);
   
   try { if (loading) await bot.deleteMessage(chatId, loading.message_id); } catch(e) {}
   
@@ -6027,6 +6039,8 @@ async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
         const tglT = (item.lastUpdatedPerToko && item.lastUpdatedPerToko[tokoKode]) || '';
         const lastUpd = tglT ? ` 📅 ${tglT}` : '';
         msg += `   💰 ${formatRp(harga)} | 📊 ${h.stok} ${h.stok > 0 ? '✅' : '⚠️'}${lastUpd}\n`;
+      } else if (tokoKode === 'nk' || tokoKode === 'kefa') {
+        msg += `   💰 ${formatRp(0)} | 📊 0 ⚠️\n`;
       } else {
         msg += `   ⚪ _Tidak ada di toko ini_\n`;
       }
@@ -9372,7 +9386,7 @@ bot.onText(/^\/kasir(?:\s+(.+))?$/, async (msg, match) => {
 
 // Laporan penjualan per kasir TOKO NK — Nasional Kitchen (staff laporan + admin)
 // Contoh: /kasirnk | /kasirnk kemarin | /kasirnk 24/09/2026
-bot.onText(/^\/kasirnk(?:\s+(.+))?$/, async (msg, match) => {
+bot.onText(/^\/(?:kasirnk|jualnk)(?:\s+(.+))?$/, async (msg, match) => {
   if (!bisaAksesLaporan(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus staff laporan.');
   const arg = String(match[1] || '').toLowerCase().trim();
   if (arg) {
@@ -9385,7 +9399,7 @@ bot.onText(/^\/kasirnk(?:\s+(.+))?$/, async (msg, match) => {
 
 // Laporan penjualan per kasir TOKO KEFA — Perabot Mamaku Kefamenanu (staff laporan + admin)
 // Contoh: /jualkefa | /jualkefa kemarin | /jualkefa 24/09/2026
-bot.onText(/^\/jualkefa(?:\s+(.+))?$/, async (msg, match) => {
+bot.onText(/^\/(?:jualkefa|kasirkefa)(?:\s+(.+))?$/, async (msg, match) => {
   if (!bisaAksesLaporan(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus staff laporan.');
   const arg = String(match[1] || '').toLowerCase().trim();
   if (arg) {
@@ -11938,8 +11952,11 @@ bot.on('callback_query', async (query) => {
   
   if (data.startsWith('detail:')) {
     const [, kode, tokoKode] = data.split(':');
-    const item = DATA_BARANG.find(d => d.kode === kode);
+    let item = DATA_BARANG.find(d => d.kode === kode);
     if (!item) return;
+    if (tokoKode === 'all') await Promise.all(['cp', 'nk', 'kefa'].map((tk) => segarkanItemRealtime(tk, kode)));
+    else if (tokoKode === 'kefa' || tokoKode === 'nk' || tokoKode === 'cp') await segarkanItemRealtime(tokoKode, kode);
+    item = DATA_BARANG.find(d => d.kode === kode) || item;
     const buttons = [];
     TOKO_LIST.forEach(t => { if (t.kode !== tokoKode) buttons.push([{ text: `${t.icon} Lihat di ${t.nama}`, callback_data: `detail:${kode}:${t.kode}` }]); });
     buttons.push([{ text: '🌐 Semua Toko', callback_data: `detail:${kode}:all` }]);
