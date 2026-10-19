@@ -5919,9 +5919,8 @@ function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
 const HASIL_PER_HALAMAN = 15; // ★ Item per halaman (bisa disesuaikan)
 
 async function segarkanHargaHasil(items, tokoKode) {
-  const toko = tokoKode && tokoKode !== 'all' ? [tokoKode] : ['cp', 'nk', 'kefa'];
-  if (!Array.isArray(items)) return;
-  await Promise.all(items.flatMap((item) => toko.map((tk) => segarkanItemRealtime(tk, item.kode))));
+  if (!Array.isArray(items) || !tokoKode || tokoKode === 'all') return;
+  await Promise.all(items.map((item) => segarkanItemRealtime(tokoKode, item.kode)));
 }
 
 async function prosesCari(chatId, userId, keyword, tokoFilter, page = 0) {
