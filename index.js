@@ -2775,7 +2775,7 @@ console.log('═'.repeat(60));
 // ════════════════════════════════════════════════════════════════
 
 async function visionGemini(imageBuffer, prompt) {
-  if (!CONFIG.geminiKey || !Buffer.isBuffer(imageBuffer)) return null;
+  if ((!CONFIG.geminiKey && !CONFIG.geminiKey2 && !CONFIG.geminiKey3) || !Buffer.isBuffer(imageBuffer)) return null;
   
   let mimeType = 'image/jpeg';
   const header = imageBuffer.slice(0, 12);
@@ -2786,8 +2786,8 @@ async function visionGemini(imageBuffer, prompt) {
   
   const imageBase64 = imageBuffer.toString('base64');
   const keys = [CONFIG.geminiKey, CONFIG.geminiKey2, CONFIG.geminiKey3].filter(Boolean);
-  const MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest'];
-  const MAX_RETRY = 3;
+  const MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+  const MAX_RETRY = 2;
   
   for (const key of keys) {
     for (const model of MODELS) {
@@ -2804,13 +2804,13 @@ async function visionGemini(imageBuffer, prompt) {
                 { inline_data: { mime_type: mimeType, data: imageBase64 }}
               ]
             }],
-            generationConfig: { 
-              temperature: 0.1, 
-              maxOutputTokens: 8192,
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 4096,
               topK: 40,
               topP: 0.95,
             }
-          }, { timeout: 90000 });
+          }, { timeout: 30000 });
           
           const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
           if (text) {
@@ -2819,9 +2819,9 @@ async function visionGemini(imageBuffer, prompt) {
           }
         } catch(err) {
           const status = err.response?.status;
-          if (status === 429 || status === 503) {
+          if ((status === 429 || status === 503) && attempt < MAX_RETRY) {
             console.warn(`[GEMINI ${model}] ${status}, retry ${attempt}/${MAX_RETRY}...`);
-            await new Promise(r => setTimeout(r, 4000 * attempt));
+            await new Promise(r => setTimeout(r, 800 * attempt));
             continue;
           }
           console.warn(`[GEMINI ${model}]`, status || err.message);
@@ -2929,7 +2929,7 @@ async function analisaGambarBuffer(imageBuffer, prompt) {
   console.log('📸 Image:', (imageBuffer.length / 1024).toFixed(1), 'KB');
   
   const providers = [
-    { name: 'GEMINI', fn: visionGemini, enabled: !!CONFIG.geminiKey },
+    { name: 'GEMINI', fn: visionGemini, enabled: !!(CONFIG.geminiKey || CONFIG.geminiKey2 || CONFIG.geminiKey3) },
     { name: 'GROQ', fn: visionGroq, enabled: false },
     { name: 'OPENROUTER', fn: visionOpenRouter, enabled: !!CONFIG.openrouterKey },
   ].filter(p => p.enabled);
@@ -3511,7 +3511,7 @@ Sekarang respon dengan natural sesuai konteks!`;
 
 // AI Chat dengan Gemini (support history)
 async function chatGeminiNatural(userId, userMessage, userName) {
-  if (!CONFIG.geminiKey) return null;
+  if (!CONFIG.geminiKey && !CONFIG.geminiKey2 && !CONFIG.geminiKey3) return null;
   
   const keys = [CONFIG.geminiKey, CONFIG.geminiKey2, CONFIG.geminiKey3].filter(Boolean);
   const memory = getChatMemory(userId);
@@ -9170,6 +9170,7 @@ bot.onText(/\/start/, (msg) => {
 bot.onText(/\/menu/, (msg) => {
   const userId = msg.from.id;
   if (!isMember(userId)) return kirim(msg.chat.id, buildGuestWelcome(msg.from.first_name, userId));
+  resetSesi(userId);
   kirim(msg.chat.id, '📋 *MENU UTAMA*', { reply_markup: kbMainMenu(userId) });
 });
 
@@ -10109,7 +10110,7 @@ async function notaOCRRace(imageBuffer) {
   const keys = [CONFIG.geminiKey, CONFIG.geminiKey2, CONFIG.geminiKey3].filter(Boolean);
   if (!keys.length || !Buffer.isBuffer(imageBuffer)) throw new Error('Tidak ada AI provider');
   const imageBase64 = imageBuffer.toString('base64');
-  const MODELS = ['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-flash-lite-latest'];
+  const MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
   const urut = notaModelFavorit ? [notaModelFavorit, ...MODELS.filter(m => m !== notaModelFavorit)] : MODELS;
   const now = Date.now();
   for (const model of urut) {
@@ -10220,8 +10221,9 @@ bot.on('photo', async (msg) => {
   
   try {
     const photo = msg.photo[msg.photo.length - 1];
+    await kirim(chatId, '📥 Foto diterima, sedang diproses…');
     const fileLink = await bot.getFileLink(photo.file_id);
-    const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
+    const response = await axios.get(fileLink, { responseType: 'arraybuffer', timeout: 20000, maxContentLength: 12 * 1024 * 1024 });
     const imageBuffer = Buffer.from(response.data);
     
     const session = getSesi(userId);
@@ -10772,6 +10774,7 @@ async function executeMenuAction(chatId, userId, action) {
   // Simulasikan klik tombol
 // ★ TAMBAH INI: Handler Menu Utama
   if (action === 'menu:main') {
+    resetSesi(userId);
     const userName = getNama(userId) || 'Kakak';
     return kirim(chatId, buildWelcome(userId, userName), { 
       reply_markup: kbMainMenu(userId) 
@@ -10988,45 +10991,7 @@ async function prosesUpdateExcelToko(chatId, userId, tokoKode, fileId, fileName)
 
 bot.on('message', async (msg) => {
   // HANDLER DOCUMENT/EXCEL
-  if (msg.document) {
-    const doc = msg.document;
-    const fileName = (doc.file_name || '').toLowerCase();
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    
-    if (!isMember(userId)) return kirim(chatId, buildGuestWelcome(msg.from.first_name, userId));
-    
-    if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
-      return kirim(chatId, '⚠️ Silakan kirim file dengan format Excel (`.xlsx` atau `.xls`).');
-    }
-    
-    if (!isAdmin(userId) && !isStaff(userId)) {
-      return kirim(chatId, '🚫 Hanya Admin atau Staff yang diizinkan mengupdate file Excel harga toko.');
-    }
-    
-    let tokoKode = null;
-    for (const t of TOKO_LIST) {
-      if (fileName.includes(t.kode)) {
-        tokoKode = t.kode;
-        break;
-      }
-    }
-    
-    if (!tokoKode) {
-      const inlineButtons = TOKO_LIST.map(t => [{
-        text: `${t.icon} ${t.nama} (${t.kode.toUpperCase()})`,
-        callback_data: `upload_excel:${t.kode}:${doc.file_id}`
-      }]);
-      return kirim(chatId, 
-        `📊 *FILE EXCEL DITERIMA: ${doc.file_name}*\n${GARIS_TEBAL}\n\n` +
-        `Silakan pilih toko mana yang akan di-update harga tokonya:`, 
-        { reply_markup: { inline_keyboard: inlineButtons } }
-      );
-    }
-    
-    await prosesUpdateExcelToko(chatId, userId, tokoKode, doc.file_id, doc.file_name);
-    return;
-  }
+  if (msg.document) return; // dokumen ditangani khusus oleh handler 'document' di atas
   
   if (msg.text && msg.text.startsWith('/')) return;
   if (!msg.text) return;
@@ -11392,6 +11357,7 @@ bot.on('callback_query', async (query) => {
   // ════════════ UPLOAD EXCEL HANDLER ════════════
   
   if (data.startsWith('upload_excel:')) {
+    if (!isAdmin(userId) && !isStaff(userId)) return kirim(chatId, '🚫 Hanya Admin atau Staff yang diizinkan mengupdate file Excel harga toko.');
     const parts = data.split(':');
     const tokoKode = parts[1];
     const fileId = parts[2];
@@ -11630,6 +11596,7 @@ bot.on('callback_query', async (query) => {
   // ════════════ MENU NAVIGATION ════════════
   
   if (data === 'menu:main') {
+    resetSesi(userId);
     const userName = getNama(userId) || query.from.first_name || 'Kakak';
     try {
       await bot.editMessageText(buildWelcome(userId, userName), {
