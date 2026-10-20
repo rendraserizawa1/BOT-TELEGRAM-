@@ -2787,47 +2787,28 @@ async function visionGemini(imageBuffer, prompt) {
   const imageBase64 = imageBuffer.toString('base64');
   const keys = [CONFIG.geminiKey, CONFIG.geminiKey2, CONFIG.geminiKey3].filter(Boolean);
   const MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
-  const MAX_RETRY = 2;
   
-  for (const key of keys) {
-    for (const model of MODELS) {
-      let attempt = 0;
-      while (attempt < MAX_RETRY) {
-        attempt++;
-        try {
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-          const response = await axios.post(url, {
-            contents: [{
-              role: 'user',
-              parts: [
-                { text: prompt },
-                { inline_data: { mime_type: mimeType, data: imageBase64 }}
-              ]
-            }],
-            generationConfig: {
-              temperature: 0.1,
-              maxOutputTokens: 4096,
-              topK: 40,
-              topP: 0.95,
-            }
-          }, { timeout: 30000 });
-          
-          const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) {
-            console.log(`✅ [GEMINI ${model}] Response: ${text.length} chars`);
-            return { provider: 'GEMINI', model, text };
-          }
-        } catch(err) {
-          const status = err.response?.status;
-          if ((status === 429 || status === 503) && attempt < MAX_RETRY) {
-            console.warn(`[GEMINI ${model}] ${status}, retry ${attempt}/${MAX_RETRY}...`);
-            await new Promise(r => setTimeout(r, 800 * attempt));
-            continue;
-          }
-          console.warn(`[GEMINI ${model}]`, status || err.message);
-          break;
-        }
+  for (const model of MODELS) {
+    try {
+      const response = await Promise.any(keys.map((key) => axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+        {
+          contents: [{ role: 'user', parts: [
+            { text: prompt },
+            { inline_data: { mime_type: mimeType, data: imageBase64 } },
+          ]}],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 4096, topK: 40, topP: 0.95 },
+        },
+        { timeout: 20000 },
+      )));
+      const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        console.log(`✅ [GEMINI ${model}] Response: ${text.length} chars`);
+        return { provider: 'GEMINI', model, text };
       }
+    } catch(err) {
+      const reasons = err.errors || [err];
+      console.warn(`[GEMINI ${model}]`, reasons.map(e => e.response?.status || e.code || e.message).join(', '));
     }
   }
   return null;
@@ -5557,7 +5538,10 @@ async function generateExcelBA(baData, tokoKode, namaToko) {
 //   21. INISIASI BOT TELEGRAM
 // ════════════════════════════════════════════════════════════════
 
-const bot = new TelegramBot(CONFIG.botToken, { polling: true });
+const bot = new TelegramBot(CONFIG.botToken, {
+  polling: { autoStart: true, interval: 0, params: { timeout: 25, limit: 100 } },
+  request: { timeout: 35000, forever: true },
+});
 
 console.log(`🤖 AI: ${[CONFIG.geminiKey && 'Gemini', CONFIG.groqKey && 'Groq', CONFIG.openrouterKey && 'OpenRouter'].filter(Boolean).join(', ') || 'None'}`);
 console.log('═'.repeat(60));
@@ -11005,6 +10989,10 @@ bot.on('message', async (msg) => {
   if (!isMember(userId)) {
     return kirim(chatId, buildGuestWelcome(msg.from.first_name, userId));
   }
+  if (/^(menu|menu utama|batal|keluar|stop|reset)$/i.test(text) || low === 'mulai') {
+    resetSesi(userId);
+    return kirim(chatId, '📋 *MENU UTAMA*', { reply_markup: kbMainMenu(userId) });
+  }
   
   trackChat(userId, text);
   const session = getSesi(userId);
@@ -11347,12 +11335,13 @@ bot.on('message', async (msg) => {
 // ════════════════════════════════════════════════════════════════
 
 bot.on('callback_query', async (query) => {
-  const chatId = query.message.chat.id;
-  const userId = query.from.id;
-  const data = query.data;
-  const msgId = query.message.message_id;
+  const chatId = query.message?.chat?.id;
+  const userId = query.from?.id;
+  const data = query.data || '';
+  const msgId = query.message?.message_id;
+  if (!chatId || !userId) return;
   
-  try { await bot.answerCallbackQuery(query.id); } catch(e) {}
+  bot.answerCallbackQuery(query.id).catch((e) => log.warn('CALLBACK_ACK', e.message));
   
   // ════════════ UPLOAD EXCEL HANDLER ════════════
   
@@ -13220,8 +13209,14 @@ let isShuttingDown = false;
 
 // Polling error handler - jangan crash, biarkan auto-retry
 let pollingConflictTimer = null;
+const pollingErrorBuckets = new Map();
 bot.on('polling_error', (err) => {
   const msg = err.message || err.code || String(err);
+  const bucket = `${err.code || ''}:${msg.slice(0, 80)}`;
+  const now = Date.now();
+  const prior = pollingErrorBuckets.get(bucket) || 0;
+  if (now - prior < 60000) return;
+  pollingErrorBuckets.set(bucket, now);
   
   // Error 409 = conflict (ada bot lain running / webhook aktif)
   if (msg.includes('409') || msg.includes('Conflict')) {
