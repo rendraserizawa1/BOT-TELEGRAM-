@@ -13272,6 +13272,28 @@ process.on('unhandledRejection', (reason) => {
   log.error('SYSTEM', 'Unhandled Rejection: ' + String(reason));
 });
 
+// ── Self-heal polling: pulihkan dalam hitungan detik, tanpa menunggu watchdog 2 menit ──
+let pollingHealBusy = false;
+const pollingHealTimer = setInterval(async () => {
+  if (isShuttingDown || isFatalExiting || pollingHealBusy || pollingConflictTimer) return;
+  let hidup = true;
+  try { hidup = bot.isPolling(); } catch (e) { hidup = false; }
+  if (hidup) return;
+  pollingHealBusy = true;
+  try {
+    log.warn('POLLING', '⚠️ Polling mati - self-heal...');
+    try { await bot.stopPolling({ cancel: true }); } catch (e) {}
+    await new Promise(r => setTimeout(r, 3000));
+    await bot.startPolling();
+    log.info('POLLING', '✅ Polling pulih otomatis');
+  } catch (e) {
+    log.error('POLLING', 'Self-heal gagal: ' + e.message);
+  } finally {
+    pollingHealBusy = false;
+  }
+}, 120000);
+if (pollingHealTimer.unref) pollingHealTimer.unref();
+
 // Graceful shutdown function
 async function gracefulShutdown(signal) {
   if (isShuttingDown) return;

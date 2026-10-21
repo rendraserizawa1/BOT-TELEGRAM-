@@ -104,9 +104,15 @@ if ($li -and $li.Umur -lt 180) {
 Log "bot tidak sehat ($reason2) - recovery"
 Set-Location $dir
 
-# A killed PM2 child auto-restarts. Give full startup time before trying again.
-$hadListener = KillListener
-if (-not $hadListener) {
+# Coba graceful restart dulu (SIGINT -> simpan data), baru hard kill bila gagal.
+$hadListener = $null -ne (ListenerInfo)
+if ($hadListener) {
+  Log 'coba graceful restart via PM2'
+  Pm2 restart telegram-perabot --update-env 2>&1 | Out-Null
+  if (WaitHealthy 90) { Log 'pulih setelah graceful restart'; exit 0 }
+  Log 'graceful restart gagal - hard kill listener'
+  KillListener | Out-Null
+} else {
   Pm2 resurrect 2>&1 | Out-Null
   Start-Sleep -Seconds 3
   if (-not (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)) {
