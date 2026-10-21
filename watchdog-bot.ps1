@@ -30,7 +30,8 @@ function Pm2 {
 
 # Sehat => $null. Tidak sehat => alasan (string).
 function HealthReason {
-  try { $r = Invoke-RestMethod -Uri "http://127.0.0.1:$port/health" -TimeoutSec 8 }
+  # 20s toleransi: mesin 4GB sering page-thrash, lag event loop bisa >8s saat load Excel/iPos.
+  try { $r = Invoke-RestMethod -Uri "http://127.0.0.1:$port/health" -TimeoutSec 20 }
   catch { return 'health timeout/error' }
   if (-not $r -or $r.status -ne 'OK') { return 'status bukan OK' }
   if ($null -ne $r.polling -and -not $r.polling) { return 'polling Telegram mati' }
