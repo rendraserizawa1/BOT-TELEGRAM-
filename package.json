@@ -4,6 +4,8 @@
   "description": "Bot Telegram Toko Perabot",
   "main": "index.js",
   "scripts": {
+    "setup": "node setup.js",
+    "check:setup": "node setup.js --check",
     "start": "node index.js"
   },
   "engines": {

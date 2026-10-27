@@ -6,6 +6,51 @@ Bot Telegram dengan fitur:
 - 💬 AI Chat (coming soon)
 - 📊 Laporan & Stock Opname (coming soon)
 
+## Pasang di komputer baru
+
+Syarat: Node.js 20 LTS, akses internet, token bot Telegram, dan `ADMIN_ID`.
+Untuk harga/stok iPos, komputer juga harus punya jalur jaringan aman ke API
+masing-masing toko (contoh: Tailscale); kunci iPos tidak ikut dalam installer.
+Jangan jalankan dua salinan bot dengan token Telegram yang sama bersamaan.
+
+### Windows PowerShell
+
+```powershell
+git clone <URL-REPO-PRIBAT> bot-telegram
+cd bot-telegram
+Copy-Item .env.example .env
+notepad .env
+npm run setup
+```
+
+Isi `BOT_TOKEN` dan `ADMIN_ID` di `.env`; isi `IPOS_*_URL`/`IPOS_*_KEY`
+serta kunci AI/GitHub bila diperlukan. Nilai rahasia disimpan lokal, bukan di Git.
+`npm run setup` memeriksa konfigurasi, memasang dependensi, lalu menjalankan bot
+langsung di terminal. Terminal harus tetap terbuka; untuk server yang selalu hidup,
+pakai PM2 atau Docker dan atur restart otomatis.
+
+### Linux/macOS
+
+```sh
+git clone <URL-REPO-PRIBAT> bot-telegram
+cd bot-telegram
+cp .env.example .env
+nano .env
+npm run setup
+```
+
+`npm start` menjalankan bot setelah dependensi terpasang. Perintah setup aman
+untuk instalasi awal; menjalankannya lagi tidak menimpa `.env` yang sudah ada.
+
+### Cara kerja installer
+
+1. `setup.js` membuat `.env` dari `.env.example` bila belum ada.
+2. Memastikan `BOT_TOKEN` dan `ADMIN_ID` tersedia tanpa mencetak nilainya.
+3. Memasang dependency Node dari `package.json`.
+4. Menjalankan `index.js`; bot menerima update Telegram dan mengakses iPos/API
+   serta GitHub hanya bila URL/kredensial lokal disediakan.
+5. Tutup proses dengan `Ctrl+C`. Untuk deployment permanen, gunakan process manager.
+
 ## Setup di Railway
 
 Set Environment Variables:

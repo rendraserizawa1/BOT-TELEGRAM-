@@ -350,7 +350,7 @@ let githubClient = null;
 if (isGitHubEnabled) {
   try {
     const { Octokit } = require('@octokit/rest');
-    githubClient = new Octokit({ auth: GITHUB_CONFIG.token });
+    githubClient = new Octokit({ auth: GITHUB_CONFIG.token, request: { timeout: Number(process.env.GITHUB_TIMEOUT_MS || 12000) } });
     console.log('═'.repeat(60));
     console.log(`✅ [GITHUB] Storage aktif`);
     console.log(`   📁 Repo: ${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}`);
@@ -362,7 +362,7 @@ if (isGitHubEnabled) {
   }
 } else {
   console.warn('⚠️ [GITHUB] Storage NONAKTIF - Data hanya di memory!');
-  console.warn('   Set GITHUB_TOKEN, GITHUB_USERNAME, GITHUB_REPO di Railway Variables');
+  console.warn('   Set GITHUB_TOKEN, GITHUB_USERNAME, GITHUB_REPO di environment lokal/deployment');
 }
 
 const githubFileSHA = {};
@@ -615,10 +615,13 @@ async function saveExcelToGitHub(tokoKode, fileBuffer, retryCount = 0) {
 // Upload via bot: simpan lokal → push GitHub (saveExcelToGitHub) → GitHub jadi acuan.
 const SYNC_XLSX_INTERVAL_MENIT = 60;
 
+let syncExcelFromGitHubPromise = null;
 async function syncExcelFromGitHub(verbose = false) {
   if (!isGitHubEnabled) return { updated: [] };
-  const updated = [];
-  for (const tokoKode of Object.keys(CONFIG.paths.excelPerToko)) {
+  if (syncExcelFromGitHubPromise) return syncExcelFromGitHubPromise;
+  const syncPromise = (async () => {
+    const updated = [];
+    for (const tokoKode of Object.keys(CONFIG.paths.excelPerToko)) {
     const filePath = `harga_toko/${tokoKode}.xlsx`;
     const localPath = CONFIG.paths.excelPerToko[tokoKode];
     try {
@@ -635,6 +638,7 @@ async function syncExcelFromGitHub(verbose = false) {
       const rawRes = await axios.get(rawUrl, {
         headers: { Authorization: `token ${GITHUB_CONFIG.token}` },
         responseType: 'arraybuffer',
+        timeout: Number(process.env.GITHUB_TIMEOUT_MS || 12000),
         maxContentLength: Infinity,
       });
       const remoteBuf = Buffer.from(rawRes.data);
@@ -667,6 +671,10 @@ async function syncExcelFromGitHub(verbose = false) {
     console.log(`[GITHUB] Excel ${updated.join(', ')} di-reload dari GitHub`);
   }
   return { updated };
+  })();
+  syncExcelFromGitHubPromise = syncPromise;
+  try { return await syncPromise; }
+  finally { if (syncExcelFromGitHubPromise === syncPromise) syncExcelFromGitHubPromise = null; }
 }
 
 const githubSaveTimers = {};
@@ -1317,7 +1325,7 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
   // tunai/debit/kredit & ecer/grosir pun murni kasir, konsisten dgn iPos.
   let r;
   try {
-    r = await bridge.ambilLaporanKasir(ymd, ymd, { ...(isIposCabang ? { hanyaKasir: true } : {}), fresh: isIposCabang && ymd === ymdLokal(0) });
+    r = await bridge.ambilLaporanKasir(ymd, ymd, { ...(isIposCabang ? { hanyaKasir: true } : {}), fresh: ymd === ymdLokal(0) });
   } catch (e) {
     return kirim(chatId, `⚠️ iPos API tidak merespons: ${escapeMd(e.message || String(e))}`, { parse_mode: 'Markdown' });
   }
@@ -1731,14 +1739,23 @@ async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai, toko = 
   const namaBulanMp = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
   const tglPanjang = (ymd) => { const [y, m, d] = String(ymd).split('-').map(Number); return `${d} ${namaBulanMp[m - 1]} ${y}`; };
   const periode = dari === sampai ? tglPanjang(dari) : `${tglPanjang(dari)} s/d ${tglPanjang(sampai)}`;
+  const tunggu = await kirim(chatId, `⏳ Mengambil laporan marketplace ${escapeMd(periode)} dari iPos...`);
   let r;
   try {
     r = await bridge.ambilLaporanMarketplace(dari, sampai);
   } catch (e) {
-    return kirim(chatId, `${pesanLaporanGagal(e, toko)}\nCoba lagi sebentar ya kak.`, { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
+    const pesan = `${pesanLaporanGagal(e, toko)}\nCoba lagi sebentar ya kak.`;
+    if (tunggu && tunggu.message_id) {
+      try { return await bot.editMessageText(pesan, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) }); } catch (editError) {}
+    }
+    return kirim(chatId, pesan, { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
   }
   if (!r || !r.siap) {
-    return kirim(chatId, '⏳ *Data penjualan iPos masih dimuat* di server (± 2-5 menit setelah API di-restart).\nCoba lagi sebentar ya kak.', { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
+    const pesan = '⏳ *Data penjualan iPos masih dimuat* di server (± 2-5 menit setelah API di-restart).\nCoba lagi sebentar ya kak.';
+    if (tunggu && tunggu.message_id) {
+      try { return await bot.editMessageText(pesan, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) }); } catch (editError) {}
+    }
+    return kirim(chatId, pesan, { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
   }
   const tokoMp = Array.isArray(r.toko) ? r.toko : [];
   const omzetTokoMp = (re) => {
@@ -1781,6 +1798,9 @@ async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai, toko = 
     for (const n of ksr) lines.push(baris(n));
   }
   // polos tanpa parse_mode & tanpa tombol — persis format laporan manual
+  if (tunggu && tunggu.message_id) {
+    try { return await bot.editMessageText(lines.join('\n'), { chat_id: chatId, message_id: tunggu.message_id }); } catch (editError) {}
+  }
   return kirim(chatId, lines.join('\n'));
 }
 
@@ -2404,7 +2424,7 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
       if (b.fotoFileId) {
         try {
           const fileLink = await bot.getFileLink(b.fotoFileId);
-          const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
+          const response = await axios.get(fileLink, { responseType: 'arraybuffer', timeout: 20000, maxContentLength: 25 * 1024 * 1024 });
           const imageBuffer = Buffer.from(response.data);
           
           const imageId = wb.addImage({ buffer: imageBuffer, extension: 'jpeg' });
@@ -5540,7 +5560,7 @@ async function generateExcelBA(baData, tokoKode, namaToko) {
 
 const bot = new TelegramBot(CONFIG.botToken, {
   polling: { autoStart: true, interval: 0, params: { timeout: 25, limit: 100 } },
-  request: { timeout: 35000, forever: true },
+  request: { timeout: 35000, forever: true, agentOptions: { keepAlive: true, maxSockets: 25, maxFreeSockets: 10 } },
 });
 
 console.log(`🤖 AI: ${[CONFIG.geminiKey && 'Gemini', CONFIG.groqKey && 'Groq', CONFIG.openrouterKey && 'OpenRouter'].filter(Boolean).join(', ') || 'None'}`);
@@ -5719,6 +5739,8 @@ function splitMessage(text, maxLength = 4000) {
   return chunks;
 }
 
+const { shouldRetryTelegramSend, sendTelegramMessage } = require('./telegram-send-error');
+
 async function kirim(chatId, text, opts = {}) {
   const MAX_LENGTH = 4000;
   
@@ -5726,16 +5748,10 @@ async function kirim(chatId, text, opts = {}) {
     if (!text || text.length <= MAX_LENGTH) {
       const options = { parse_mode: 'Markdown', ...opts };
       try {
-        return await bot.sendMessage(chatId, text, options);
+        return await sendTelegramMessage(bot.sendMessage.bind(bot), chatId, text, options);
       } catch(err) {
         log.error('SEND', err.message);
-        try {
-          return await bot.sendMessage(chatId, text.replace(/[*_`\[\]]/g, ''), 
-            { ...opts, parse_mode: undefined });
-        } catch(e) {
-          log.error('SEND-FALLBACK', e.message);
-          return null;
-        }
+        return null;
       }
     }
     
@@ -5761,13 +5777,15 @@ async function kirim(chatId, text, opts = {}) {
         if (!isLast) await tunggu(400);
       } catch(err) {
         log.error('SEND-CHUNK', `Gagal chunk ${i + 1}/${total}: ${err.message}`);
+        if (!shouldRetryTelegramSend(err)) break;
         try {
           const cleanText = chunkText.replace(/[*_`\[\]]/g, '');
-          lastResult = await bot.sendMessage(chatId, cleanText, 
+          lastResult = await sendTelegramMessage(bot.sendMessage.bind(bot), chatId, cleanText,
             isLast ? { ...opts, parse_mode: undefined } : {});
           if (!isLast) await tunggu(400);
         } catch(e) {
           log.error('SEND-CHUNK-FALLBACK', `Chunk ${i + 1} gagal total: ${e.message}`);
+          break;
         }
       }
     }
@@ -5775,12 +5793,7 @@ async function kirim(chatId, text, opts = {}) {
     
   } catch(err) {
     log.error('SEND', 'Error utama: ' + err.message);
-    try {
-      return await bot.sendMessage(chatId, 
-        text.substring(0, 4000).replace(/[*_`\[\]]/g, ''));
-    } catch(e) {
-      return null;
-    }
+    return null;
   }
 }
 
@@ -9591,7 +9604,7 @@ async function rejectUser(chatId, targetId) {
 // Force sync SEMUA data ke GitHub
 bot.onText(/\/synctogithub/, async (msg) => {
   if (!isAdmin(msg.from.id)) return kirim(msg.chat.id, '🚫 Khusus admin.');
-  if (!isGitHubEnabled) return kirim(msg.chat.id, '❌ GitHub Storage belum diaktifkan!\n\nSet GITHUB_TOKEN di Railway Variables.');
+  if (!isGitHubEnabled) return kirim(msg.chat.id, '❌ GitHub Storage belum diaktifkan!\n\nIsi GITHUB_TOKEN lokal/deployment.');
   
   await kirim(msg.chat.id, '🔄 _Syncing data ke GitHub..._');
   
@@ -9649,17 +9662,17 @@ bot.onText(/\/githubstatus/, (msg) => {
   
   if (!isGitHubEnabled) {
     m += `❌ *STATUS: NONAKTIF*\n\n`;
-    m += `⚠️ Data hanya di memory Railway.\nSetiap deploy → DATA HILANG!\n\n`;
+    m += `⚠️ Data hanya di memory lokal.\nJika storage persisten tidak aktif, siapkan backup lokal.\n\n`;
     m += `${GARIS_TIPIS}\n💡 *Cara Aktifkan:*\n`;
     m += `1. GitHub → Settings → Developer settings\n`;
     m += `2. Personal access tokens → Generate\n`;
     m += `3. Scope: repo (full access)\n`;
     m += `4. Copy token\n`;
-    m += `5. Railway → Variables → Add:\n`;
+    m += `5. Isi konfigurasi environment deployment:\n`;
     m += `   • GITHUB_TOKEN = ghp_xxx\n`;
     m += `   • GITHUB_USERNAME = username\n`;
     m += `   • GITHUB_REPO = nama-repo\n`;
-    m += `6. Redeploy service`;
+    m += `6. Restart bot`;
   } else {
     m += `✅ *STATUS: AKTIF*\n\n`;
     m += `📁 Repo: \`${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}\`\n`;
@@ -9674,7 +9687,7 @@ bot.onText(/\/githubstatus/, (msg) => {
     m += `• /synctogithub - Push semua data ke GitHub\n`;
     m += `• /loadfromgithub - Pull data dari GitHub\n`;
     m += `• /githubstatus - Status ini\n\n`;
-    m += `✅ *Data AMAN!*\nSetiap perubahan otomatis backup ke GitHub.\nData tetap ada meski Railway restart/deploy.`;
+    m += `✅ *Backup GitHub aktif.*\nData lokal tetap disimpan di folder storage; pastikan sinkronisasi berhasil.`;
   }
   
   kirim(msg.chat.id, m);
@@ -9784,7 +9797,7 @@ bot.on('voice', async (msg) => {
     
     // Download audio
     const fileLink = await bot.getFileLink(msg.voice.file_id);
-    const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
+    const response = await axios.get(fileLink, { responseType: 'arraybuffer', timeout: 20000, maxContentLength: 25 * 1024 * 1024 });
     const audioBuffer = Buffer.from(response.data);
     
     // Transcribe
@@ -10157,7 +10170,7 @@ async function handleSimpanNotaText(chatId, userId, text, session) {
   if (session.notaPendingFileId) {
     try {
       const fileLink = await bot.getFileLink(session.notaPendingFileId);
-      const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
+      const response = await axios.get(fileLink, { responseType: 'arraybuffer', timeout: 20000, maxContentLength: 25 * 1024 * 1024 });
       imageBuffer = Buffer.from(response.data);
     } catch(e) { log.warn('NOTA', 'Re-download foto gagal: ' + e.message); }
   }
@@ -10923,7 +10936,7 @@ async function prosesUpdateExcelToko(chatId, userId, tokoKode, fileId, fileName)
   
   try {
     const fileLink = await bot.getFileLink(fileId);
-    const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
+    const response = await axios.get(fileLink, { responseType: 'arraybuffer', timeout: 20000, maxContentLength: 25 * 1024 * 1024 });
     const fileBuffer = Buffer.from(response.data);
     
     // Simpan file Excel ke lokal server
@@ -12580,6 +12593,27 @@ bot.on('callback_query', async (query) => {
 // ════════════════════════════════════════════════════════════════
 
 const webApp = express();
+
+// Keep watchdog health checks ahead of body/session middleware: no body parsing,
+// session I/O, or dashboard routing on the liveness path.
+webApp.get('/health', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.set('Connection', 'close');
+  res.set('Content-Type', 'application/json; charset=utf-8');
+  if (req.method !== 'GET') return res.sendStatus(405);
+  let polling = false;
+  try { polling = bot.isPolling(); } catch (e) {}
+  res.json({
+    status: 'OK', uptime: process.uptime(),
+    barang: DATA_BARANG.length, members: MEMBERS.length,
+    pid: process.pid,
+    rssMB: Math.round(process.memoryUsage().rss / 1048576),
+    polling,
+    loopLagMs,
+    loopLagMax60s: _lagHist.length ? Math.max(..._lagHist) : 0,
+  });
+});
+
 webApp.use(express.json({ limit: '10mb' }));
 webApp.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -13164,21 +13198,6 @@ const _lagHist = [];
   if (t.unref) t.unref();
 }
 
-webApp.get('/health', (req, res) => {
-  let polling = false;
-  try { polling = bot.isPolling(); } catch(e) {}
-  const lagMaks = _lagHist.length ? Math.max(..._lagHist) : 0;
-  res.json({
-    status: 'OK', uptime: process.uptime(),
-    barang: DATA_BARANG.length, members: MEMBERS.length,
-    pid: process.pid,
-    rssMB: Math.round(process.memoryUsage().rss / 1048576),
-    polling,
-    loopLagMs,
-    loopLagMax60s: lagMaks,
-  });
-});
-
 webApp.get('/logout', (req, res) => {
   req.session.destroy();
   res.redirect('/');
@@ -13343,7 +13362,7 @@ async function gracefulShutdown(signal) {
 
 // Listen ke berbagai signal shutdown
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));   // Ctrl+C
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM')); // Railway restart
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM')); // graceful process-manager/container stop
 process.on('SIGHUP', () => gracefulShutdown('SIGHUP'));   // Terminal close
 
 console.log('═'.repeat(60));

@@ -8,6 +8,7 @@
 .env.production
 .env.development
 .env.*
+!.env.example
 *.env
 
 # Kredensial & Password
@@ -54,7 +55,6 @@ backup_*
 # ══════════════════════════════════════════
 
 node_modules/
-package-lock.json
 .npm/
 .pnp/
 .pnp.js

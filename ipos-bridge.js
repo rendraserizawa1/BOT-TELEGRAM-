@@ -263,23 +263,28 @@ function buatBridge({ url, key, toko, label }) {
   const lapCache = new Map(); // kunci → { t, data }
   const LAP_TTL = 1000;
   let lastJualEvent = 0; // timestamp SSE jual terakhir (kasir simpan/edit/void)
-  async function ambilLaporan(url, fresh = false) {
+  async function ambilLaporan(url, fresh = false, attempt = 0) {
     const kini = Date.now();
     const c = lapCache.get(url);
     if (!fresh && c && kini - c.t < LAP_TTL) return c.data;
     if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
+    const jualSaatMulai = lastJualEvent;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30000);
+    const timer = setTimeout(() => controller.abort(), 15000);
+    let data;
     try {
       const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      lapCache.set(url, { t: kini, data, jualE: lastJualEvent });
-      if (lapCache.size > 200) lapCache.delete(lapCache.keys().next().value);
-      return data;
+      data = await res.json();
     } finally {
       clearTimeout(timer);
     }
+    if (jualSaatMulai !== lastJualEvent && attempt < 2) return ambilLaporan(url, true, attempt + 1);
+    if (jualSaatMulai === lastJualEvent) {
+      lapCache.set(url, { t: Date.now(), data, jualE: jualSaatMulai });
+      if (lapCache.size > 200) lapCache.delete(lapCache.keys().next().value);
+    }
+    return data;
   }
 
   /**
@@ -306,24 +311,8 @@ function buatBridge({ url, key, toko, label }) {
    * @returns {Promise<object>} { siap, dari, sampai, merek[], data[], total, update }
    */
   async function ambilLaporanMerek(dari, sampai = dari, merek = '') {
-      let url = `${IPOS_URL}/api/jual-merek?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai || dari)}&key=${encodeURIComponent(IPOS_KEY)}`;
-      if (merek) url += `&merek=${encodeURIComponent(merek)}`;
-      const controller = new AbortController();
-      // 120 dtk: query tbl_ikdt bisa lambat saat cache PG dingin (jarang dipakai)
-      const timer = setTimeout(() => controller.abort(), 120000);
-      try {
-        const res = await fetch(url, { signal: controller.signal });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        lapCache.set(url, { t: Date.now(), data });
-        return data;
-      } catch (e) {
-        const c = lapCache.get(url);
-        if (c) return c.data; // DB dingin timeout → sajikan cache terakhir, bukan error
-        throw e;
-      } finally {
-        clearTimeout(timer);
-      }
+    const url = `${IPOS_URL}/api/jual-merek?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai || dari)}&key=${encodeURIComponent(IPOS_KEY)}${merek ? `&merek=${encodeURIComponent(merek)}` : ''}`;
+    return ambilLaporan(url, true);
   }
 
   /**
@@ -333,8 +322,8 @@ function buatBridge({ url, key, toko, label }) {
    * @returns {Promise<object>} { siap, dari, sampai, toko[], central, total, nomor, update }
    */
   async function ambilLaporanMarketplace(dari, sampai = dari) {
-      const url = `${IPOS_URL}/api/jual-marketplace?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai || dari)}&key=${encodeURIComponent(IPOS_KEY)}`;
-      return ambilLaporan(url);
+    const url = `${IPOS_URL}/api/jual-marketplace?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai || dari)}&key=${encodeURIComponent(IPOS_KEY)}`;
+    return ambilLaporan(url, true);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -411,14 +400,22 @@ function buatBridge({ url, key, toko, label }) {
    * pengaman). Panggil SEKALI saat startup per instans.
    * @param {() => Array} getDataBarang  fungsi yg mengembalikan DATA_BARANG terkini
    */
-  function mulaiAutoSync(getDataBarang, intervalMs = Number(process.env.IPOS_SYNC_MS || 5000)) {
+  function mulaiAutoSync(getDataBarang, intervalMs = Number(process.env.IPOS_SYNC_MS || 60000)) {
+    let syncing = false;
     const jalan = async (verbose) => {
+      if (syncing) return;
+      syncing = true;
+      const started = Date.now();
       try { await syncStok(getDataBarang(), { verbose }); }
       catch (e) { console.warn(`⚠️ [iPos ${LABEL}] auto-sync:`, e.message); }
+      finally {
+        syncing = false;
+        if (verbose) console.log(`[iPos ${LABEL}] sync awal selesai ${Date.now() - started}ms`);
+      }
     };
-    jalan(true);
+    void jalan(true);
     if (IPOS_KEY) mulaiSSE(getDataBarang);
-    const t = setInterval(() => jalan(false), intervalMs);
+    const t = setInterval(() => void jalan(false), intervalMs);
     if (t.unref) t.unref();
     return () => clearInterval(t);
   }
