@@ -1781,7 +1781,7 @@ async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai, toko = 
     lines.push(`Toko Central Perabot ${MP_RP(c.omzet)}`);
   }
   lines.push(MP_GARIS);
-  lines.push('Penjualan via WA : Rp. -');
+  lines.push(`Penjualan via WA : ${MP_RP(r.total)}`);
   lines.push('Penjualan via Shopee: Rp. -');
   lines.push('Penjualan via Tiktok Shop: Rp. -');
   lines.push('Penjualan via Tokopedia : Rp. -');
@@ -4187,7 +4187,7 @@ function loadExcelPerToko(tokoKode) {
  * Barang dengan kode SAMA di multi-toko akan di-merge menjadi 1 entry
  * dengan harga per toko masing-masing.
  */
-function loadExcel() {
+function loadExcel({ syncIpos = true } = {}) {
   const perTokoItems = {};
   const totalPerToko = {};
   
@@ -4261,19 +4261,18 @@ function loadExcel() {
   console.log(`📦 TOTAL UNIQUE BARANG: ${DATA_BARANG.length}`);
   console.log('═'.repeat(60));
   
-  // [IPOS] setelah Excel dimuat, segera timpa nama/harga/stok dengan data iPos.
-  // Sengaja fire-and-forget: loadExcel() tetap sinkron, bot tidak menunggu API.
-  iposBridge.syncStok(DATA_BARANG, { verbose: false })
-    .catch((e) => console.warn('⚠️ [iPos] sync setelah loadExcel gagal:', e.message));
-  // [IPOS-NK] idem untuk Nasional Kitchen (kalau dikonfigurasi).
-  if (iposNk) {
-    iposNk.syncStok(DATA_BARANG, { verbose: false })
-      .catch((e) => console.warn('⚠️ [iPos NK] sync setelah loadExcel gagal:', e.message));
-  }
-  // [IPOS-KEFA] idem untuk Perabot Mamaku Kefamenanu (kalau dikonfigurasi).
-  if (iposKefa) {
-    iposKefa.syncStok(DATA_BARANG, { verbose: false })
-      .catch((e) => console.warn('⚠️ [iPos KEFA] sync setelah loadExcel gagal:', e.message));
+  if (syncIpos) {
+    // iPos segera timpa nama/harga/stok; panggilan langsung tetap non-blocking.
+    iposBridge.syncStok(DATA_BARANG, { verbose: false })
+      .catch((e) => console.warn('⚠️ [iPos] sync setelah loadExcel gagal:', e.message));
+    if (iposNk) {
+      iposNk.syncStok(DATA_BARANG, { verbose: false })
+        .catch((e) => console.warn('⚠️ [iPos NK] sync setelah loadExcel gagal:', e.message));
+    }
+    if (iposKefa) {
+      iposKefa.syncStok(DATA_BARANG, { verbose: false })
+        .catch((e) => console.warn('⚠️ [iPos KEFA] sync setelah loadExcel gagal:', e.message));
+    }
   }
 
   return DATA_BARANG.length > 0;
@@ -4340,8 +4339,8 @@ async function syncLastUpdatedFromGitHub() {
   console.log(`✅ [LASTUPDATED] ${updatedCount}/${DATA_BARANG.length} barang punya tanggal update`);
 }
 
-// Load saat startup
-loadExcel();
+// Load saat startup; mulaiAutoSync memulai satu sync iPos per cabang.
+loadExcel({ syncIpos: false });
 syncLastUpdatedFromGitHub();
 // [SYNC-XLSX] tarik xlsx terbaru dari GitHub → lokal (biar selalu sama), reload bila berubah
 syncExcelFromGitHub(true);
@@ -4351,18 +4350,18 @@ setInterval(() => syncExcelFromGitHub(false), SYNC_XLSX_INTERVAL_MENIT * 60 * 10
 // SSE: perubahan diterapkan ≤ ~1 dtk. Sync penuh tiap IPOS_SYNC_MS = jaring pengaman.
 // Kalau API mati, bot tetap jalan pakai data Excel terakhir.
 // IPOS_SYNC_MS default 60 dtk: SSE jalur utama; full sync hanya jaring pengaman.
-iposBridge.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 15000));
+iposBridge.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 60000));
 
 // [IPOS-NK] idem untuk Nasional Kitchen (iPos 5.0 i5_INPRES2025, API di mesin NK).
 // Jalan hanya kalau IPOS_NK_URL diisi di .env — kalau kosong, bot persis seperti sebelumnya.
 if (iposNk) {
-  iposNk.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 15000));
+  iposNk.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 60000));
 }
 
 // [IPOS-KEFA] idem untuk Perabot Mamaku Kefamenanu (API di mesin KEFA).
 // Jalan hanya kalau IPOS_KEFA_URL diisi di .env — kalau kosong, fitur KEFA mati.
 if (iposKefa) {
-  iposKefa.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 15000));
+  iposKefa.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 60000));
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -9320,7 +9319,7 @@ bot.onText(/\/hapuskontak (\d+)/, (msg, match) => {
 
 bot.onText(/\/reload/, async (msg) => {
   if (!isAdmin(msg.from.id)) return;
-  loadExcel();
+  loadExcel({ syncIpos: false });
   const r = await iposBridge.syncStok(DATA_BARANG, { verbose: true });
   const rn = iposNk ? await iposNk.syncStok(DATA_BARANG, { verbose: true }) : null;
   const rk = iposKefa ? await iposKefa.syncStok(DATA_BARANG, { verbose: true }) : null;

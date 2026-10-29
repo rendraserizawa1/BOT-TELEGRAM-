@@ -1,0 +1,12 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const source = fs.readFileSync(require('node:path').join(__dirname, 'index.js'), 'utf8').replace(/\r/g, '');
+const start = source.indexOf('async function tampilkanLaporanMarketplace(');
+const end = source.indexOf('// ════════════════════════════════════════════════════════════════\n//   8. BERITA ACARA', start);
+const report = source.slice(start, end);
+assert.ok(report.includes("lines.push(`Penjualan via WA : ${MP_RP(r.total)}`);"), 'WA line must show marketplace report total');
+assert.ok(report.includes("lines.push('Penjualan via Shopee: Rp. -');"), 'Shopee stays dash');
+assert.ok(report.includes("lines.push('Penjualan via Tiktok Shop: Rp. -');"), 'TikTok Shop stays dash');
+assert.ok(report.includes("lines.push('Penjualan via Tokopedia : Rp. -');"), 'Tokopedia stays dash');
+console.log('OK WA displays report total; other channels stay blank');

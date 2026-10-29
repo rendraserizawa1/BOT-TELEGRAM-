@@ -1,0 +1,15 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const source = fs.readFileSync(require('node:path').join(__dirname, 'index.js'), 'utf8').replace(/\r/g, '');
+assert.ok(source.includes('function loadExcel({ syncIpos = true } = {})'), 'loadExcel must preserve iPos refresh by default');
+const start = source.indexOf('function loadExcel(');
+const end = source.indexOf('// ═══ SYNC LAST UPDATED DATES FROM GITHUB COMMITS', start);
+const loadExcel = source.slice(start, end);
+assert.ok(loadExcel.includes('if (syncIpos) {') && loadExcel.includes('iposBridge.syncStok(DATA_BARANG'), 'Excel refresh should skip only explicitly-owned iPos sync');
+assert.ok(source.includes('loadExcel({ syncIpos: false });\nsyncLastUpdatedFromGitHub();'), 'startup must rely on the single auto-sync startup pass');
+const reloadStart = source.indexOf("bot.onText(/\\/reload/");
+const reloadEnd = source.indexOf('// Status koneksi iPos', reloadStart);
+const reload = source.slice(reloadStart, reloadEnd);
+assert.ok(reload.includes('loadExcel({ syncIpos: false });') && reload.includes('await iposBridge.syncStok'), '/reload must await exactly one iPos pass');
+console.log('OK Excel reload avoids duplicate full iPos sync');

@@ -29,14 +29,26 @@ function Pm2 {
 }
 
 # Sehat => $null. Tidak sehat => alasan (string).
+# Tanpa batas RAM (keputusan user): macet dideteksi via lag event loop + gagal beruntun.
+$lagLimitMs = 45000
+$failCounter = 'C:\Users\kassa\.pm2\watchdog-fails.txt'
 function HealthReason {
   # 20s toleransi: mesin 4GB sering page-thrash, lag event loop bisa >8s saat load Excel/iPos.
   try { $r = Invoke-RestMethod -Uri "http://127.0.0.1:$port/health" -TimeoutSec 20 }
   catch { return 'health timeout/error' }
   if (-not $r -or $r.status -ne 'OK') { return 'status bukan OK' }
   if ($null -ne $r.polling -and -not $r.polling) { return 'polling Telegram mati' }
+  if ($null -ne $r.loopLagMax60s -and [long]$r.loopLagMax60s -gt $lagLimitMs) {
+    return "event loop macet (lag $($r.loopLagMax60s)ms)"
+  }
   return $null
 }
+
+function GetFailStreak {
+  try { $n = [int](Get-Content $failCounter -TotalCount 1); if ($n -ge 0) { return $n } } catch {}
+  return 0
+}
+function SetFailStreak([int]$n) { try { Set-Content $failCounter "$n" } catch {} }
 
 function ListenerInfo {
   $c = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -82,7 +94,12 @@ function WaitHealthy([int]$seconds) {
 }
 
 $reason = HealthReason
-if ($null -eq $reason) { exit 0 }
+if ($null -eq $reason) { SetFailStreak 0; exit 0 }
+
+# Gagal beruntun: restart hanya setelah 2 siklus gagal berturut-turut (tugas tiap 2 menit).
+$gagalBeruntun = (GetFailStreak) + 1
+SetFailStreak $gagalBeruntun
+if ($gagalBeruntun -lt 2) { Log "gagal #$gagalBeruntun ($reason) - tunggu konfirmasi siklus berikut"; exit 0 }
 
 # Konfirmasi ganda: beri operasi sinkron besar (mis. muat Excel) waktu selesai.
 Start-Sleep -Seconds 30

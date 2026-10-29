@@ -51,9 +51,10 @@ function buatBridge({ url, key, toko, label }) {
   // kode → item iPos terakhir diketahui (untuk status & debug)
   let snapshot = new Map();
 
-  const tglHariIni = () => new Intl.DateTimeFormat('id-ID', {
+  const formatterTanggal = new Intl.DateTimeFormat('id-ID', {
     timeZone: 'Asia/Jakarta', day: '2-digit', month: '2-digit', year: 'numeric',
-  }).format(new Date());
+  });
+  const tglHariIni = () => formatterTanggal.format(new Date());
 
   // ─────────────────────────────────────────────────────────────────────────
   // FETCH
