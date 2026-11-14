@@ -17,11 +17,25 @@ ENV DATA_DIR=/data
 ENV STORAGE_DIR=/data/storage
 ENV LOGS_DIR=/data/logs
 ENV HARGA_DIR=/data/harga_toko
+
+# ── PENANDA VOLUME (dibuat di IMAGE, bukan saat runtime) ──────────────────
+# Ini uji volume yang TIDAK BISA DIPALSUKAN. Bila volume benar-benar ter-mount
+# di /data, mount itu menutupi folder image sehingga .image-only TIDAK terlihat.
+# Kalau penanda ini masih terlihat saat bot jalan, artinya /data masih folder
+# image -> volume tidak terpasang -> boot/volume-check.js menolak dan admin
+# diberi tahu. Entrypoint TIDAK pernah membuat file ini.
+# WAJIB dibuat SEBELUM instruksi VOLUME: perubahan pada folder volume setelah
+# VOLUME dideklarasikan akan dibuang oleh Docker.
+RUN mkdir -p /data && touch /data/.image-only
+
 VOLUME ["/data"]
 
 COPY package.json package-lock.json* ./
 # --omit=dev: image produksi tidak butuh devDependencies.
-# sharp butuh build native; node:24-slim sudah membawa toolchain minimal.
+# Catatan: node:24-slim TIDAK punya python3/make/g++. sharp@0.33 biasanya
+# memakai binary prebuilt (@img/sharp-linux-x64) sehingga tidak perlu
+# toolchain; kalau unduhan prebuilt gagal, build akan error di sini. Bila itu
+# terjadi, tambahkan: apt-get install -y --no-install-recommends python3 make g++
 RUN npm install --omit=dev --no-audit --no-fund
 
 COPY . .

@@ -13,6 +13,7 @@ const crypto = require('crypto');
 
 let DatabaseSync = null;
 let galatRequire = null;
+let sudahDiperingatkanDegradasi = false;
 try {
   ({ DatabaseSync } = require('node:sqlite'));
 } catch (err) {
@@ -43,7 +44,13 @@ function pastikanTersedia() {
   if (DatabaseSync) return;
   const pesan = pesanTanpaSqlite();
   if (!ALLOW_DEGRADED) throw new Error(pesan);
-  console.error('[DB] ' + pesan);
+  // Mode degradasi: peringatkan SEKALI saja. Semua log.info/warn/error ikut
+  // memanggil recordEvent(), jadi tanpa penjaga ini satu instance degradasi
+  // akan mencetak blok error yang sama ribuan kali.
+  if (!sudahDiperingatkanDegradasi) {
+    sudahDiperingatkanDegradasi = true;
+    console.error('[DB] ' + pesan);
+  }
 }
 
 const ROOT = __dirname;

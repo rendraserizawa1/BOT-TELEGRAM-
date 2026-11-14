@@ -35,7 +35,10 @@ const fs = require('fs');
 const path = require('path');
 const childProcess = require('child_process');
 
-const LOCK_FILE_DEFAULT = path.join(__dirname, 'storage', 'bot.lock');
+// Lock ikut STORAGE_DIR supaya di container tidak tertinggal di disk image.
+// Tanpa env, nilainya PERSIS sama seperti sebelumnya (<root>/storage/bot.lock).
+const STORAGE_DIR = process.env.STORAGE_DIR || path.join(__dirname, 'storage');
+const LOCK_FILE_DEFAULT = path.join(STORAGE_DIR, 'bot.lock');
 const PORT_DEFAULT = Number(process.env.PORT || 3001);
 
 // Berapa lama proses node yang memegang lock boleh belum listen port sebelum

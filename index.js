@@ -26,15 +26,23 @@ const _INSTANCE_PORT = _lockMod.PORT_DEFAULT;
 // ── PENJAGA JUMLAH REPLIKA ────────────────────────────────────────────
 // Kunci single-instance di bawah memakai `wmic` + `netstat -ano` (khusus
 // Windows). Di Linux keduanya gagal -> lock selalu boleh diambil. Karena itu
-// jumlah replika harus dijaga di level platform: >1 replika = dua poller
-// getUpdates dengan token sama = Telegram 409 Conflict = pesan & tombol
-// pengguna hilang. Lihat boot/replika-guard.js.
+// di container dipakai kunci FILE eksklusif di dalam volume (open 'wx' =
+// O_CREAT|O_EXCL, atomik di POSIX). Dua replika = dua poller getUpdates
+// dengan token sama = Telegram 409 Conflict = pesan & tombol pengguna hilang.
+// Lihat boot/replika-guard.js.
+let _kunciReplika = null;
 try {
-  const { pastikanSatuReplika } = require('./boot/replika-guard');
-  const _repl = pastikanSatuReplika();
+  const _rg = require('./boot/replika-guard');
+  const _repl = _rg.pastikanSatuReplika();
   if (!_repl.ok) {
     console.error('🛑 ' + _repl.alasan);
     process.exit(3);
+  }
+  _kunciReplika = _repl.fileKunci || null;
+  if (_kunciReplika) {
+    // Lepas kunci saat keluar normal, supaya redeploy berikutnya tidak
+    // menemukan kunci basi (walau kunci basi tetap bisa diambil alih).
+    process.on('exit', () => { try { _rg.lepasKunciReplika({ fileKunci: _kunciReplika }); } catch (_) {} });
   }
 } catch (e) {
   // Modul gagal dimuat: jangan matikan bot karena ini.
@@ -197,6 +205,54 @@ try {
 // single-instance: proses kedua TIDAK boleh ikut polling Telegram.
 // Sengaja dideklarasikan sangat awal agar tidak ada risiko TDZ.
 let webServerListening = false;
+
+// ── ANTREAN NOTA ──────────────────────────────────────────────────────
+// Nota yang gagal masuk folder share disimpan di storage/nota-gagal beserta
+// catatan .json berisi folder tujuan. Sapuan berkala di bawah memindahkannya
+// begitu share terjangkau lagi. Tanpa sapuan ini, pesan "akan disalin
+// otomatis" ke pengguna hanyalah janji kosong.
+let notaTertunda = 0;
+let notaTertundaTerakhir = null;
+let _sapuNotaTimer = null;
+
+function hitungNotaTertunda() {
+  try {
+    const dir = path.join(CONFIG.paths.storage, 'nota-gagal');
+    if (!fs.existsSync(dir)) { notaTertunda = 0; return 0; }
+    notaTertunda = fs.readdirSync(dir).filter((f) => !f.endsWith('.json') && !f.startsWith('.')).length;
+  } catch (_) {
+    notaTertunda = 0;
+  }
+  return notaTertunda;
+}
+
+async function sapuNotaSekarang() {
+  try {
+    const notaMod = require('./boot/nota-simpan');
+    const dir = path.join(CONFIG.paths.storage, 'nota-gagal');
+    if (!fs.existsSync(dir)) { notaTertunda = 0; return; }
+    const hasil = notaMod.sapuAntrean({ folderAntrean: dir });
+    notaTertundaTerakhir = new Date().toISOString();
+    notaTertunda = hasil.tersisa;
+    if (hasil.dipindah > 0) {
+      log.info('NOTA', `Antrean: ${hasil.dipindah} nota dipindahkan ke folder share`);
+    }
+    if (hasil.tersisa > 0 && hasil.alasanShare) {
+      log.warn('NOTA', `Antrean: ${hasil.tersisa} nota masih tertunda (${hasil.alasanShare})`);
+    }
+  } catch (e) {
+    log.warn('NOTA', 'Sapuan antrean gagal: ' + (e && e.message ? e.message : String(e)));
+  }
+}
+
+function mulaiSapuanNota() {
+  if (_sapuNotaTimer) return;
+  hitungNotaTertunda();
+  // Sekali saat start, lalu tiap 10 menit.
+  setTimeout(() => { sapuNotaSekarang().catch(() => {}); }, 60000).unref?.();
+  _sapuNotaTimer = setInterval(() => { sapuNotaSekarang().catch(() => {}); }, 10 * 60 * 1000);
+  if (_sapuNotaTimer.unref) _sapuNotaTimer.unref();
+}
 
 // ════════════════════════════════════════════════════════════════
 //   2. EMOJI & DATA TOKO
@@ -11512,14 +11568,14 @@ async function simpanFileNota(chatId, userId, imageBuffer, info) {
   const namaFolderBulan = buildFolderNota(info, cfg);
   const folderShare = path.join(cfg.base, namaFolderBulan);
   const namaFile = buildNamaFileNota(info);
-  const folderFallback = path.join(CONFIG.paths.storage, 'nota-gagal');
+  const folderAntrean = path.join(CONFIG.paths.storage, 'nota-gagal');
 
-  const { simpanDenganFallback } = require('./boot/nota-simpan');
-  const hasil = simpanDenganFallback({
+  const notaMod = require('./boot/nota-simpan');
+  const hasil = notaMod.simpanDenganFallback({
     folderShare,
     namaFile,
     buffer: imageBuffer,
-    folderFallback,
+    folderFallback: folderAntrean,
   });
 
   if (!hasil.ok) {
@@ -11542,22 +11598,33 @@ async function simpanFileNota(chatId, userId, imageBuffer, info) {
   }
 
   // Fallback: nota SELAMAT, tapi belum masuk share. Katakan terus terang.
+  // Nota dicatat di antrean (nota + .json berisi alasan & waktu) supaya
+  // sapuAntrean() benar-benar bisa mengirimnya nanti. Tanpa catatan itu,
+  // janji "akan disalin" hanyalah kebohongan.
+  const antre = notaMod.simpanKeAntrean(folderAntrean, namaFile, imageBuffer, hasil.alasanShare, folderShare);
   log.warn('NOTA', `Share tidak terjangkau (${hasil.alasanShare}) - disimpan lokal: ${hasil.path}`);
   if (CONFIG.adminId) {
-    bot.sendMessage(CONFIG.adminId,
-      '⚠️ *NOTA TERSIMPAN LOKAL* (share tidak terjangkau)\n\n'
-      + `🔖 ${escapeMd(namaFile)}\n`
-      + `📅 ${info.tanggal} ${bulan} ${info.tahun}\n`
-      + `📁 \`${escapeMd(hasil.path)}\`\n\n`
-      + `❗ ${escapeMd(hasil.alasanShare || 'tidak diketahui')}`,
-      { parse_mode: 'Markdown' }).catch(() => {});
+    try {
+      await bot.sendMessage(CONFIG.adminId,
+        '⚠️ *NOTA TERSIMPAN LOKAL* (share tidak terjangkau)\n\n'
+        + `🔖 ${escapeMd(namaFile)}\n`
+        + `📅 ${info.tanggal} ${bulan} ${info.tahun}\n`
+        + `📁 \`${escapeMd(hasil.path)}\`\n\n`
+        + `❗ ${escapeMd(hasil.alasanShare || 'tidak diketahui')}\n`
+        + (antre && antre.ok
+          ? '🔁 Masuk antrean: akan dicoba kirim ulang otomatis ke folder share.'
+          : '❗ Gagal masuk antrean: ' + escapeMd((antre && antre.error) || 'tidak diketahui')),
+        { parse_mode: 'Markdown' });
+    } catch (e) {
+      log.warn('NOTA', 'Notifikasi admin gagal: ' + (e && e.message ? e.message : String(e)));
+    }
   }
   await kirim(chatId,
     '✅ *NOTA TERSIMPAN!*\n' + GARIS_TEBAL +
     `\n🔖 ${escapeMd(namaFile)}` +
     `\n📅 ${info.tanggal} ${bulan} ${info.tahun}` +
-    '\n\n📦 Tersimpan di penyimpanan bot. Folder share sedang tidak terjangkau,'
-    + ' jadi nota akan disalin ke sana saat tersedia. Admin sudah diberi tahu.'
+    '\n\n📦 Tersimpan di penyimpanan bot. Folder share sedang tidak terjangkau;'
+    + ' bot akan mencoba memindahkannya otomatis ke folder share, dan admin sudah diberi tahu.'
     + '\n\n📸 Kirim foto nota lain, atau ketik *batal*.',
     { reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]] } }
   );
@@ -14045,6 +14112,10 @@ webApp.get('/health', (req, res) => {
     // dan SEMUA data akan hilang saat redeploy.
     volumeOk,
     volumeAlasan,
+    // Nota yang belum berhasil masuk folder share. Bila angka ini terus naik,
+    // share sedang tidak terjangkau dan nota menumpuk di penyimpanan bot.
+    notaTertunda,
+    notaTertundaTerakhir,
     db: botDb.stats(),
     loopLagMs,
     loopLagMax60s: _lagHist.length ? Math.max(..._lagHist) : 0,
@@ -14968,6 +15039,9 @@ const server = webApp.listen(PORT, HOST, () => {
         { parse_mode: 'Markdown' }))
       .catch(() => {});
   }
+
+  // Mulai sapuan antrean nota: kirim ulang nota yang tadi gagal masuk share.
+  try { mulaiSapuanNota(); } catch (e) { log.warn('NOTA', 'sapuan antrean tidak dimulai: ' + e.message); }
 });
 
 server.on('error', (err) => {

@@ -21,7 +21,7 @@ Yang tersisa hanya langkah yang butuh akun Anda.
 | Gagal keras bila `node:sqlite` hilang | `bot-db.js` | Dulu `return null` → riwayat/sesi/file hilang tanpa error |
 | Path dari env + fallback | `bot-db.js`, `index.js` | Data harus di volume `/data`, tapi PC tidak boleh berubah |
 | Deteksi volume tidak persisten | `boot/volume-check.js`, `/health` | Volume lupa dipasang = data hilang tiap redeploy |
-| Tolak replika >1 | `boot/replika-guard.js` | Lock tidak jalan di Linux; >1 replika = 409 Conflict |
+| Tolak replika >1 | `boot/replika-guard.js` | Kunci file eksklusif di volume (`open 'wx'`); lock Windows lama tak jalan di Linux |
 | Nota: fallback lokal + notif admin | `boot/nota-simpan.js`, `index.js` | Path UNC tidak ada di container |
 | **Perbaikan path share nota** | `index.js` | Path lama menunjuk share yang TIDAK ADA (bug pra-ada) |
 | Alasan eksplisit data tidak segar | `boot/status-jujur.js`, `/health` | Pengguna tidak boleh melihat angka basi tanpa sebab |
@@ -112,7 +112,7 @@ Jangan matikan bot lokal sebelum semua ini lulus.
 | No | Uji | Cara | Lulus bila |
 |---|---|---|---|
 | 1 | Bot hidup | `curl https://<domain>/health` | `status:OK`, `polling:true`, `streak:0` |
-| 2 | Volume persisten | lihat field `volumeOk` | `true` |
+| 2 | Volume persisten | lihat `volumeOk` + `volumeAlasan` | `true` |
 | 3 | DB nyata | kirim pesan, cek `db.messages` | jumlahnya naik |
 | 4 | Tombol inline | tap tombol di Telegram | `telegramCallbackCount` naik |
 | 5 | CP realtime | `/health` | `ipos.cp.itemSegar:true` |
@@ -122,6 +122,13 @@ Jangan matikan bot lokal sebelum semua ini lulus.
 | 9 | Data tidak basi | `node boot\verify-all.js` (arahkan ke domain) | 25/25 |
 | 10 | Setelah 20:00 | uji malam | KEFA tetap `itemSegar:true` |
 
+**Bukti `volumeOk` tidak bisa dipalsukan.** Nilainya `false` bila penanda
+`.image-only` — yang dibuat saat BUILD image — masih terlihat di folder data.
+Kalau volume benar-benar ter-mount, mount itu menutupi folder image sehingga
+penandanya tidak terlihat. Entrypoint tidak pernah membuat penanda ini, jadi
+"berhasil menulis ke /data" tidak bisa dipakai membohongi pemeriksaan.
+Bila `RAILWAY_VOLUME_MOUNT_PATH` tersedia, nilainya juga dicocokkan.
+
 ---
 
 ## 5. Jebakan yang sudah diantisipasi
@@ -129,10 +136,12 @@ Jangan matikan bot lokal sebelum semua ini lulus.
 | Jebakan | Akibat | Sudah ditangani |
 |---|---|---|
 | Node 20 | DB mati senyap | Dockerfile Node 24 + gagal keras |
-| Volume lupa | Data hilang tiap redeploy | `volumeOk` + notif admin |
-| 2 replika | 409 Conflict, tombol mati | `replika-guard.js` exit 3 |
-| Path UNC di Linux | Nota hilang | fallback lokal + notif admin |
-| Lock `wmic`/`netstat` di Linux | Lock tak berfungsi | replika dijaga di level platform |
+| Volume lupa | Data hilang tiap redeploy | `volumeOk` (penanda image) + notif admin |
+| 2 replika | 409 Conflict, tombol mati | kunci file eksklusif di volume (`replika-guard.js`) |
+| Path UNC di Linux | Nota hilang / "tersimpan" palsu | `bisaJadiShare()` tolak UNC di POSIX + fallback |
+| SMB putus saat tulis | Nota 0 byte bernama benar | tulis atomik `.part` → rename |
+| Nota jatuh ke fallback | Menumpuk, tak pernah dikirim | antrean + sapuan tiap 10 menit + `notaTertunda` |
+| Lock `wmic`/`netstat` di Linux | Lock tak berfungsi | kunci file POSIX (`open 'wx'`) |
 | Workflow GitHub Actions | Poller kedua | sudah `disabled_manually` |
 | `PORT` diisi manual | Lock salah kunci | jangan diisi |
 

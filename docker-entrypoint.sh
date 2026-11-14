@@ -13,14 +13,26 @@ DATA_ROOT="${DATA_DIR:-/data}"
 
 # ── SIAPKAN VOLUME ────────────────────────────────────────────────────
 # Semua state bot hidup di sini. Tanpa volume, folder ini ada di disk
-# container dan HILANG saat redeploy. Penanda .volume-ok dibaca
-# boot/volume-check.js: kalau hilang, bot berteriak ke admin.
-mkdir -p "$DATA_ROOT/data" "$DATA_ROOT/storage" "$DATA_ROOT/logs" "$HARGA_DIR"
-if [ -w "$DATA_ROOT" ]; then
-  : > "$DATA_ROOT/.volume-ok" 2>/dev/null || true
-  echo "[ENTRY] Penanda volume: $DATA_ROOT/.volume-ok"
+# container dan HILANG saat redeploy.
+#
+# CATATAN PENTING: entrypoint ini TIDAK dipakai untuk membuktikan volume
+# terpasang. Kalau volume tidak ada, /data hanyalah folder biasa di disk
+# container -> mkdir di bawah tetap berhasil, jadi "berhasil menulis" bukan
+# bukti apa pun. Uji volume yang sah ada di boot/volume-check.js dan memakai
+# penanda .image-only yang dibuat saat BUILD image.
+#
+# Jangan pakai `set -e` mematikan container di sini: kalau mkdir gagal kita
+# ingin bot tetap start, mencatat penyebabnya, dan memberi tahu admin -
+# bukan restart-loop tanpa penjelasan.
+if ! mkdir -p "$DATA_ROOT/data" "$DATA_ROOT/storage" "$DATA_ROOT/logs" "$HARGA_DIR"; then
+  echo "[ENTRY] PERINGATAN: gagal membuat folder di $DATA_ROOT (read-only / volume tidak terpasang)."
+  echo "[ENTRY]            Bot tetap dijalankan; boot/volume-check.js akan melaporkan ini ke admin."
+fi
+if [ -f "$DATA_ROOT/.image-only" ]; then
+  echo "[ENTRY] PERINGATAN: penanda image $DATA_ROOT/.image-only masih terlihat."
+  echo "[ENTRY]            Artinya volume TIDAK ter-mount: data akan hilang saat redeploy."
 else
-  echo "[ENTRY] PERINGATAN: $DATA_ROOT tidak bisa ditulis - volume mungkin tidak terpasang."
+  echo "[ENTRY] Folder data siap: $DATA_ROOT (volume ter-mount)"
 fi
 
 dl() { # $1=outfile $2=repo-relative-path

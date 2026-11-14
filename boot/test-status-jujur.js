@@ -1,37 +1,76 @@
 'use strict';
 /**
- * Tes: alasan eksplisit saat data iPos tidak segar.
+ * Tes: alasanTidakSegar harus JUJUR dan tidak pernah menipu.
  *
- * Kenapa: bila kunci Tailscale kedaluwarsa atau toko tidak terjangkau, bot
- * tetap hidup dan menyajikan angka TERAKHIR tanpa penjelasan. Pengguna
- * mengira itu harga hari ini. Harapan wajar: status menyebut SEBAB-nya.
+ * TEMUAN REVIEW (Important I2): `Number(null) === 0`, `Number('') === 0`,
+ * `Number(false) === 0`. Hanya `undefined` yang menjadi NaN. ipos-bridge.js
+ * mengisi umurItemDetik = null bila toko BELUM PERNAH sinkron, sehingga
+ * pemeriksaan `Number.isFinite(umur)` lolos dan fungsi jatuh ke kalimat
+ * "Data item terakhir 0 detik lalu — sedang disegarkan dari iPos."
  *
- * Kontrak: alasanTidakSegar(s) -> string|null
+ * Itu kebalikan dari tujuan modul ini: pengguna diberi tahu datanya BARU
+ * padahal belum ada data sama sekali. Selain itu mengubah perilaku lokal,
+ * karena stempelKesegaran() lama mengembalikan '' untuk kasus null.
+ *
+ * Kontrak:
+ *   itemSegar === true          -> null (tidak ada peringatan)
+ *   umur null/undefined/''/NaN  -> kalimat "belum ada data", TIDAK menyebut detik
+ *   offline + umur sah          -> kalimat "tidak terjangkau (N detik lalu)"
+ *   online + umur sah           -> kalimat "N detik lalu, sedang disegarkan"
  */
 
 const { alasanTidakSegar } = require('./status-jujur.js');
 
 let gagal = 0;
+function cek(nama, kondisi, detail) {
+  if (kondisi) console.log('  PASS  ' + nama);
+  else { console.error('  GAGAL ' + nama + (detail !== undefined ? ' -> ' + detail : '')); gagal++; }
+}
 
-// 1) Koneksi mati -> sebut "tidak terjangkau"
-let a = alasanTidakSegar({ online: false, itemSegar: false, umurItemDetik: 9999 });
-if (!a || !/tidak terjangkau/i.test(a)) { console.error('GAGAL 1: ' + a); gagal++; }
+function tidakBohong(teks) {
+  if (typeof teks !== 'string') return false;
+  if (/undefined|null|NaN/.test(teks)) return false;
+  if (/0 detik/.test(teks)) return false;
+  return true;
+}
 
-// 2) Online tapi data item tua -> sebut umurnya
-let b = alasanTidakSegar({ online: true, itemSegar: false, umurItemDetik: 400 });
-if (!b || !/400/.test(b)) { console.error('GAGAL 2: ' + b); gagal++; }
+// ── 1. Data segar -> tidak ada peringatan
+cek('segar -> null', alasanTidakSegar({ itemSegar: true, umurItemDetik: 12, online: true }) === null);
 
-// 3) Segar -> null
-let c = alasanTidakSegar({ online: true, itemSegar: true, umurItemDetik: 5 });
-if (c !== null) { console.error('GAGAL 3: harus null, dapat ' + c); gagal++; }
+// ── 2. KASUS INTI I2: belum pernah sinkron (umurItemDetik = null)
+const a = alasanTidakSegar({ itemSegar: false, umurItemDetik: null, online: false });
+cek('null + offline -> jujur, tanpa "0 detik"', tidakBohong(a), a);
+cek('null + offline menyebut belum ada data', /belum ada data/i.test(a || ''), a);
 
-// 4) Belum pernah ada data sama sekali -> jangan tampilkan "undefined"
-let d = alasanTidakSegar({ online: true, itemSegar: false, umurItemDetik: null });
-if (!d || /undefined|null|NaN/.test(d)) { console.error('GAGAL 4: ' + d); gagal++; }
+const b = alasanTidakSegar({ itemSegar: false, umurItemDetik: null, online: true });
+cek('null + online -> jujur, tanpa "0 detik"', tidakBohong(b), b);
+cek('null + online menyebut belum ada data', /belum ada data/i.test(b || ''), b);
 
-// 5) Masukan kosong -> jangan crash
-let e = alasanTidakSegar(null);
-if (typeof e !== 'string' && e !== null) { console.error('GAGAL 5: ' + e); gagal++; }
+// ── 3. undefined / '' / NaN diperlakukan sama
+for (const nilai of [undefined, '', NaN, false]) {
+  const t = alasanTidakSegar({ itemSegar: false, umurItemDetik: nilai, online: true });
+  cek('umur=' + String(nilai) + ' -> tidak menipu', tidakBohong(t) && /belum ada data/i.test(t || ''), t);
+}
 
-if (gagal) process.exit(1);
-console.log('OK status-jujur 5/5');
+// ── 4. Offline dengan umur sah -> sebut angka
+const c = alasanTidakSegar({ itemSegar: false, umurItemDetik: 90, online: false });
+cek('offline + 90 dtk -> sebut 90', /90 detik lalu/.test(c || ''), c);
+cek('offline + 90 dtk -> sebut tidak terjangkau', /tidak terjangkau/i.test(c || ''), c);
+
+// ── 5. Online tapi basi -> sebut angka
+const d = alasanTidakSegar({ itemSegar: false, umurItemDetik: 300, online: true });
+cek('online + 300 dtk -> sebut 300', /300 detik lalu/.test(d || ''), d);
+
+// ── 6. Masukan rusak tidak boleh melempar
+for (const buruk of [null, undefined, 0, 'x', []]) {
+  let lempar = false;
+  try { alasanTidakSegar(buruk); } catch (_) { lempar = true; }
+  cek('masukan ' + JSON.stringify(buruk) + ' tidak melempar', !lempar);
+}
+
+// ── 7. umur 0 yang SAH (baru saja) tetap boleh menyebut 0 detik
+const e = alasanTidakSegar({ itemSegar: false, umurItemDetik: 0, online: true });
+cek('umur 0 sah -> kalimat tetap masuk akal', typeof e === 'string' && !/undefined|null|NaN/.test(e), e);
+
+if (gagal) { console.error('\n' + gagal + ' GAGAL'); process.exit(1); }
+console.log('\nOK status-jujur: tidak pernah menipu saat data belum ada');
