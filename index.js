@@ -146,6 +146,25 @@ if (!CONFIG.geminiKey) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
+// ── PEMERIKSAAN VOLUME ────────────────────────────────────────────────
+// Di Railway, kalau volume /data lupa dipasang, bot tetap jalan dan menulis
+// ke disk container. Semua data hilang saat redeploy tanpa error apa pun.
+// Modul ini membuat kondisi itu KELIHATAN. Tidak mematikan bot (chat tetap
+// dilayani) tetapi dicatat ke log, /health, dan notifikasi admin.
+let volumeOk = true;
+let volumeAlasan = 'mode lokal';
+try {
+  const { periksaVolume } = require('./boot/volume-check');
+  const v = periksaVolume(botDb.DATA_DIR);
+  volumeOk = v.ok;
+  volumeAlasan = v.alasan;
+  if (!v.ok) {
+    console.error('[VOLUME] ' + v.alasan);
+  }
+} catch (e) {
+  volumeAlasan = 'pemeriksaan volume gagal dimuat: ' + e.message;
+}
+
 // Penanda port benar-benar dikuasai proses ini. Dipakai sebagai kunci
 // single-instance: proses kedua TIDAK boleh ikut polling Telegram.
 // Sengaja dideklarasikan sangat awal agar tidak ada risiko TDZ.
@@ -13954,6 +13973,10 @@ webApp.get('/health', (req, res) => {
     telegramAllowedUpdates: POLL_ALLOWED_UPDATES,
     telegramCallbackCount: _callbackCount,
     telegramLastCallbackAt,
+    // Volume persisten: di Railway, false berarti volume /data tidak terpasang
+    // dan SEMUA data akan hilang saat redeploy.
+    volumeOk,
+    volumeAlasan,
     db: botDb.stats(),
     loopLagMs,
     loopLagMax60s: _lagHist.length ? Math.max(..._lagHist) : 0,
@@ -14864,6 +14887,19 @@ const server = webApp.listen(PORT, HOST, () => {
   console.log(`🌐 Listening: ${HOST}:${PORT}`);
   console.log(`🌐 Local: http://localhost:${PORT}`);
   console.log('═'.repeat(60));
+
+  // Beri tahu admin bila volume TIDAK persisten. Ini kondisi paling berbahaya
+  // di Railway: bot tampak sehat, tapi semua data akan hilang saat redeploy.
+  if (!volumeOk && CONFIG.adminId) {
+    Promise.resolve()
+      .then(() => bot.sendMessage(CONFIG.adminId,
+        '⚠️ *VOLUME TIDAK PERSISTEN*\n\n'
+        + escapeMd(volumeAlasan) + '\n\n'
+        + 'Semua riwayat chat, sesi, file, dan backup akan HILANG saat redeploy.\n'
+        + 'Perbaiki: pasang volume Railway dan mount ke folder data.',
+        { parse_mode: 'Markdown' }))
+      .catch(() => {});
+  }
 });
 
 server.on('error', (err) => {
