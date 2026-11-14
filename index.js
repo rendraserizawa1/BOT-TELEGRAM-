@@ -148,8 +148,15 @@ const CONFIG = {
     // Bila share tidak terjangkau (mis. bot berjalan di container Railway),
     // nota disimpan ke storage/nota-gagal dan admin diberi tahu — lihat
     // boot/nota-simpan.js. Tidak ada nota yang hilang tanpa jejak.
-    ELT: { base: '\\\\100.125.99.99\\TOKO NASIONAL KITCHEN\\Nota Toko Nasional Kitchen', formatBulan: 'Nota bulan {bulan} {tahun}' },
-    KEF: { base: '\\\\100.125.99.99\\E_Drive\\Nota Toko Perabot Mamaku Kefamenanu', formatBulan: '{BULAN} {tahun}' },
+    //
+    // BUG PRA-ADA (ditemukan 2026-11-14): path ELT lama menunjuk
+    // `\\100.125.99.99\TOKO NASIONAL KITCHEN\...` padahal share itu TIDAK ADA
+    // di server (share yang ada: E, Intel, Users). Akibatnya setiap simpan
+    // nota NK selalu gagal. Folder sebenarnya ada DI DALAM share E.
+    // Dibuktikan: `net view \\100.125.99.99` -> E/Intel/Users;
+    // Test-Path '\\100.125.99.99\E\TOKO NASIONAL KITCHEN\Nota Toko Nasional Kitchen' -> True.
+    ELT: { base: '\\\\100.125.99.99\\E\\TOKO NASIONAL KITCHEN\\Nota Toko Nasional Kitchen', formatBulan: 'Nota bulan {bulan} {tahun}' },
+    KEF: { base: '\\\\100.125.99.99\\E\\Nota Toko Perabot Mamaku Kefamenanu', formatBulan: '{BULAN} {tahun}' },
   },
 };
 
