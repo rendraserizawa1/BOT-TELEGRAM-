@@ -1,5 +1,6 @@
 .git
 .github
+.gitignore
 node_modules
 logs
 storage
@@ -7,7 +8,31 @@ harga_toko
 .env
 .env.*
 *.log
+
+# DATA RUNTIME — jangan pernah masuk image.
+# data/ berisi bot.db (riwayat chat, sesi, file, kredensial), data/backups,
+# dan data/secure/env.backup yang berisi token & key.
+data
+backup
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Kredensial
 kredensial.txt
 password.txt
 secrets.txt
 secrets/
+config-secret.js
+
+# Scratch & artefak pengujian
+boot/_*
+boot/*.txt
+tmp-*.js
+.superpowers
+docs/superpowers
+*.bak
+*.old
+*.tmp
