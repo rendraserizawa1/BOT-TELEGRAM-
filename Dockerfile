@@ -24,11 +24,13 @@ ENV HARGA_DIR=/data/harga_toko
 # Kalau penanda ini masih terlihat saat bot jalan, artinya /data masih folder
 # image -> volume tidak terpasang -> boot/volume-check.js menolak dan admin
 # diberi tahu. Entrypoint TIDAK pernah membuat file ini.
-# WAJIB dibuat SEBELUM instruksi VOLUME: perubahan pada folder volume setelah
-# VOLUME dideklarasikan akan dibuang oleh Docker.
+#
+# CATATAN: instruksi `VOLUME ["/data"]` sengaja TIDAK dipakai. Railway
+# menolak Dockerfile yang mendeklarasikan VOLUME ("docker VOLUME at Line N is
+# not supported, use Railway Volumes"). Volume Railway dipasang di level
+# platform (/data, lihat railway.json / dashboard), dan justru itulah yang
+# dibuktikan oleh penanda .image-only di atas.
 RUN mkdir -p /data && touch /data/.image-only
-
-VOLUME ["/data"]
 
 COPY package.json package-lock.json* ./
 # --omit=dev: image produksi tidak butuh devDependencies.

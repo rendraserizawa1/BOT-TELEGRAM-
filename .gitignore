@@ -156,3 +156,10 @@ boot/autostart-backup.json
 
 # Workspace skill superpowers (scratch)
 .superpowers/
+
+# Biner cloudflared (52MB) - jangan pernah masuk repo
+boot/cloudflared.exe
+boot/_cf*.txt
+boot/_log*.txt
+boot/_rw-*.txt
+boot/_railway-login*.txt
