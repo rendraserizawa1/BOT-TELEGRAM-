@@ -1847,10 +1847,19 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
     lines.push(`${GARIS_TEBAL}`);
     lines.push(`Total Parkir  ${fmtBayar(parkir.komputer + parkir.luar)}`);
   }
-  const umur = r.update ? Math.round((Date.now() - r.update) / 60000) : null;
-  if (umur !== null && umur > 5) {
-    lines.push(`\n⚠️ Data ${umur} mnt lalu — kasir baru saja jual, tunggu ±1 mnt lalu ketik ulang.`);
-  } else if (umur !== null) lines.push(`\n🕐 Update data: ${umur <= 0 ? 'baru saja' : umur + ' mnt lalu'}`);
+  // Kalimat umur data lewat modul tersendiri agar aturannya bisa diuji dan
+  // tidak lagi menyesatkan saat SUMBER data yang mati (bukan transaksi baru).
+  const umurLaporan = (() => {
+    try { return require('./boot/umur-laporan').kalimatUmurLaporan; } catch (e) { return null; }
+  })();
+  const kalimatUmur = umurLaporan
+    ? umurLaporan(r.update)
+    : (() => {
+      const u = r.update ? Math.round((Date.now() - r.update) / 60000) : null;
+      if (u === null) return '';
+      return `\n🕐 Update data: ${u <= 0 ? 'baru saja' : u + ' mnt lalu'}`;
+    })();
+  if (kalimatUmur) lines.push(kalimatUmur);
   lines.push(`💡 Ketik: \`laporan ${isKefa ? 'kefa ' : isNk ? 'nk ' : ''}penjualan 24/09\` atau /${isKefa ? 'jualkefa' : isNk ? 'kasirnk' : 'kasir'} kemarin`);
   await kirim(chatId, lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd, toko) });
 
@@ -2068,10 +2077,18 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai, toko = 'cp') 
       lines.push(`\n📦 Data iPos tersedia: ${r.jangkauan.dari} s/d ${r.jangkauan.sampai}`);
     }
   }
-  const umur = r.update ? Math.round((Date.now() - r.update) / 60000) : null;
-  if (umur !== null && umur > 5) {
-    lines.push(`\n⚠️ Data ${umur} mnt lalu — kasir baru saja jual, tunggu ±1 mnt lalu ketik ulang.`);
-  } else if (umur !== null) lines.push(`\n🕐 Update data: ${umur <= 0 ? 'baru saja' : umur + ' mnt lalu'}`);
+  // Kalimat umur data lewat modul tersendiri (lihat boot/umur-laporan.js).
+  const umurLaporan = (() => {
+    try { return require('./boot/umur-laporan').kalimatUmurLaporan; } catch (e) { return null; }
+  })();
+  const kalimatUmur = umurLaporan
+    ? umurLaporan(r.update)
+    : (() => {
+      const u = r.update ? Math.round((Date.now() - r.update) / 60000) : null;
+      if (u === null) return '';
+      return `\n🕐 Update data: ${u <= 0 ? 'baru saja' : u + ' mnt lalu'}`;
+    })();
+  if (kalimatUmur) lines.push(kalimatUmur);
   lines.push(`💡 Ketik: \`laporan homy ${toko === 'cp' ? '' : toko + ' '}1-20 september 2026\``);
   const hasil = lines.join('\n');
   if (tunggu && tunggu.message_id) {
@@ -7023,8 +7040,14 @@ async function resumeOutbox() {
 function backupEnvSecaraAman() {
   try {
     const envPath = path.join(__dirname, '.env');
-    if (!fs.existsSync(envPath)) {
-      log.error('SECURE', 'File .env tidak ditemukan! Kredensial tidak bisa dipulihkan otomatis.');
+    const { klasifikasiBackupEnv, diPlatformEnv } = require('./boot/env-backup');
+    const putusan = klasifikasiBackupEnv({
+      adaFileEnv: fs.existsSync(envPath),
+      envPlatform: diPlatformEnv(),
+    });
+    if (putusan.aksi !== 'backup') {
+      if (putusan.level === 'error') log.error('SECURE', putusan.pesan);
+      else log.info('SECURE', putusan.pesan);
       return;
     }
     const target = path.join(botDb.SECURE_DIR, 'env.backup');
@@ -14082,6 +14105,14 @@ webApp.get('/health', (req, res) => {
         // sudah tidak sama dengan iPos, meski koneksi masih "hidup".
         umurItemDetik: s.umurItemDetik,
         itemSegar: s.itemSegar,
+        // Kesegaran DATA PENJUALAN — TERPISAH dari item. Sumber bisa mati
+        // sementara katalog tetap segar (persis kasus CP 2026-11-14: item umur
+        // 83 dtk, laporan beku 146 menit). Tanpa ini /health berbohong "segar".
+        laporanUmurDetik: s.laporanUmurDetik === undefined ? null : s.laporanUmurDetik,
+        laporanBasi: s.laporanBasi === undefined ? null : s.laporanBasi,
+        laporanUpdate: s.laporanUpdate === undefined ? null : s.laporanUpdate,
+        laporanErr: s.laporanErr || null,
+        laporanDiperiksaDetik: s.laporanDiperiksaDetik === undefined ? null : s.laporanDiperiksaDetik,
         // SEBAB data tidak segar, dalam bahasa manusia. null bila segar.
         alasanTidakSegar: alasan,
         notaTanpaItemDetik: s.notaTanpaItemDetik,

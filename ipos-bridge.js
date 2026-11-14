@@ -369,6 +369,19 @@ function buatBridge({ url, key, toko, label }) {
   const lapCache = new Map(); // kunci → { t, data }
   const LAP_TTL = 1000;
   let lastJualEvent = 0; // timestamp SSE jual terakhir (kasir simpan/edit/void)
+  // Kebasian LAPORAN (bukan item). `update` dari API = kapan data penjualan
+  // terakhir diperbarui DI SUMBER. Kalau DB sumber mati, item tetap segar
+  // (jalur lain) tapi laporan membeku — persis yang terjadi pada CP 2026-11-14:
+  // item umur 83 dtk (segar) padahal laporan beku 146 menit. Tanpa penjaga ini
+  // bot melaporkan "segar" untuk data yang sudah basi.
+  let lapUpdateTerakhir = 0;      // `update` terakhir yang diterima dari API
+  let lapDiperiksaPada = 0;       // kapan terakhir ada respons laporan sukses
+  let lapErrTerakhir = null;      // pesan gagal laporan terakhir (jika ada)
+  // Batas wajar: laporan dianggap basi bila sumber tidak memperbarui data
+  // selama ini. 10 menit cukup longgar untuk toko yang sedang sepi (tidak ada
+  // nota baru memang TIDAK memperbarui `update`), jadi dipakai 30 menit agar
+  // tidak memicu alarm palsu saat toko tutup.
+  const LAP_BASI_DETIK = 1800;
   // Backoff kegagalan laporan. Kalau host toko benar-benar mati, TCP connect
   // menghabiskan seluruh batas waktu (terukur UND_ERR_CONNECT_TIMEOUT 35 dtk
   // saat CP mati). Tanpa backoff, penjaga backup tiap 30 dtk akan mencoba
@@ -396,8 +409,17 @@ function buatBridge({ url, key, toko, label }) {
       data = await res.json();
       gagalLaporanBerturut = 0;
       bolehCobaLagiPada = 0;
+      lapErrTerakhir = null;
+      lapDiperiksaPada = Date.now();
+      // `update` = kapan SUMBER terakhir memperbarui data penjualan.
+      // Dicatat agar /health bisa menunjukkan kebasian laporan, bukan hanya item.
+      const upd = Number(data && data.update);
+      if (Number.isFinite(upd) && upd > 0) {
+        lapUpdateTerakhir = upd > 1e12 ? upd : upd * 1000; // detik -> ms bila perlu
+      }
     } catch (e) {
       gagalLaporanBerturut++;
+      lapErrTerakhir = String((e && e.message) || e);
       // 30 dtk, 60, 120, 240, maksimal 300 dtk. Host mati tidak akan sembuh
       // dalam hitungan detik, dan tiap percobaan memakan 15-35 dtk.
       const jeda = Math.min(300, 30 * Math.pow(2, Math.min(4, gagalLaporanBerturut - 1)));
@@ -596,6 +618,17 @@ function buatBridge({ url, key, toko, label }) {
       // rusak. Dipakai /health agar masalah ini TERLIHAT, bukan tersembunyi.
       notaTanpaItemDetik: lastJualAt > lastItemAt
         ? Math.round((Date.now() - lastJualAt) / 1000) : 0,
+      // Kebasian LAPORAN (terpisah dari item). Sumber bisa mati sementara
+      // katalog tetap segar — persis kasus CP 2026-11-14. Tanpa ini /health
+      // melaporkan "segar" untuk penjualan yang sudah beku berjam-jam.
+      laporanUmurDetik: lapUpdateTerakhir
+        ? Math.round((Date.now() - lapUpdateTerakhir) / 1000) : null,
+      laporanBasi: lapUpdateTerakhir
+        ? (Date.now() - lapUpdateTerakhir) / 1000 > LAP_BASI_DETIK : null,
+      laporanUpdate: lapUpdateTerakhir || null,
+      laporanErr: lapErrTerakhir,
+      laporanDiperiksaDetik: lapDiperiksaPada
+        ? Math.round((Date.now() - lapDiperiksaPada) / 1000) : null,
       toko, url: IPOS_URL,
     };
   }
