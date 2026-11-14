@@ -2,20 +2,15 @@ $ErrorActionPreference = 'SilentlyContinue'
 # Watchdog Bot Telegram - Scheduled Task "Watchdog-Bot-Telegram".
 # Checks /health + polling. Kills an unresponsive listener only after
 # a second failed probe and startup grace to avoid interrupting active work.
+# SEMUA PATH = KOMPUTER INI (BCODE-KEFA, user rdpadmin). Tidak ada path server lama.
 
-# One-shot admin hook used for production maintenance.
-$markerProd = 'C:\Users\kassa\AppData\Local\Temp\opencode\run_prod.txt'
-if (Test-Path $markerProd) {
-  Remove-Item $markerProd -Force
-  & powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\Users\kassa\AppData\Local\Temp\opencode\restart_prod.ps1' *> 'C:\Users\kassa\AppData\Local\Temp\opencode\restart_prod_child.log'
-}
-
-$dir = 'C:\Users\kassa\BOT-TELEGRAM-'
-$log = 'C:\Users\kassa\.pm2\watchdog.log'
-$npmDir = 'C:\Users\kassa\AppData\Roaming\npm'
+$dir = 'C:\BOT-TELEGRAM-'
+$log = 'C:\Users\rdpadmin\.pm2\watchdog.log'
+$npmDir = 'C:\Users\rdpadmin\AppData\Roaming\npm'
 $nodeDir = 'C:\Program Files\nodejs'
 $port = 3001
 $env:Path = "$nodeDir;$npmDir;$env:Path"
+$env:PM2_HOME = 'C:\Users\rdpadmin\.pm2'
 
 # Keep the log small (trim to last 400 lines above 512 KB).
 if ((Test-Path $log) -and ((Get-Item $log).Length -gt 524288)) {
@@ -31,7 +26,7 @@ function Pm2 {
 # Sehat => $null. Tidak sehat => alasan (string).
 # Tanpa batas RAM (keputusan user): macet dideteksi via lag event loop + gagal beruntun.
 $lagLimitMs = 45000
-$failCounter = 'C:\Users\kassa\.pm2\watchdog-fails.txt'
+$failCounter = 'C:\Users\rdpadmin\.pm2\watchdog-fails.txt'
 function HealthReason {
   # 20s toleransi: mesin 4GB sering page-thrash, lag event loop bisa >8s saat load Excel/iPos.
   try { $r = Invoke-RestMethod -Uri "http://127.0.0.1:$port/health" -TimeoutSec 20 }

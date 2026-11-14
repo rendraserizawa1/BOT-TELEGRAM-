@@ -51,6 +51,30 @@ backup_*
 *.old
 
 # ══════════════════════════════════════════
+# DATA RUNTIME BOT — JANGAN PERNAH DI-COMMIT
+# ══════════════════════════════════════════
+# data/ berisi:
+#   bot.db (+ -wal/-shm) = SELURUH riwayat chat, sesi, file, kredensial
+#   data/backups/        = salinan DB
+#   data/secure/env.backup = SALINAN .env (berisi token & key!)
+#   data/files/          = berkas yang dikirim/diterima lewat bot
+# Ini data privat pengguna, bukan kode. Tidak boleh masuk repo.
+data/
+
+# Arsip snapshot manual (salinan index.js dll) — tidak perlu di repo
+backup/
+
+# Artefak sementara pengujian/diagnostik di boot/
+boot/_*.txt
+boot/_*.log
+boot/_*.json
+
+# Skrip uji sekali-pakai di root
+tmp-*.js
+test_backup_*.js
+test_sync_github_alias.js
+
+# ══════════════════════════════════════════
 # NODE.JS
 # ══════════════════════════════════════════
 

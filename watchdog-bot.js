@@ -1,7 +1,7 @@
 var sh = new ActiveXObject("WScript.Shell");
 var fso = new ActiveXObject("Scripting.FileSystemObject");
-var LOG = "C:\\Users\\kassa\\.pm2\\watchdog.log";
-var BOTDIR = "C:\\Users\\kassa\\BOT-TELEGRAM-";
+var LOG = "C:\\Users\\rdpadmin\\.pm2\\watchdog.log";
+var BOTDIR = "C:\\BOT-TELEGRAM-";
 
 function log(m) {
   try {

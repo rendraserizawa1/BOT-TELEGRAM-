@@ -8,16 +8,61 @@
 // override:true => .env SELALU menang atas env Windows yang mungkin basi
 // (pernah kejadian: GITHUB_TOKEN lama di env User menimpa token baru di .env)
 require('dotenv').config({ override: true });
+const _fsGuard = require('fs');
+const _pathGuard = require('path');
+
+// ════════════════════════════════════════════════════════════════
+//   GUARD SINGLE-INSTANCE (sinkron, sebelum I/O berat)
+//   Dua lapis:
+//   1) lock file sinkron  -> proses kedua berhenti SEKETIKA, sebelum load
+//      Excel/GitHub/iPos (host ini RAM-nya kecil; duplikasi I/O startup
+//      membuat pagefile thrash).
+//   2) cek port dashboard -> sumber kebenaran terakhir (lihat bawah).
+//   Tujuan: tidak pernah ada dua poller getUpdates dengan token sama (409).
+// ════════════════════════════════════════════════════════════════
+const _lockMod = require('./bot-instance-lock');
+const _INSTANCE_PORT = _lockMod.PORT_DEFAULT;
+
+// ════════════════════════════════════════════════════════════════
+//   BUG NYATA (2026-11-14): BOT DIAM TOTAL GARA-GARA LOCK BASI
+//   Lock menyimpan PID mentah dan dipakai process.kill(pid,0) untuk
+//   menebak hidup/mati. Di Windows PID cepat didaur ulang: setelah bot
+//   mati, PID 8928 dipakai ulang oleh SecurityHealthService.exe milik
+//   user lain -> EPERM -> dianggap HIDUP -> SETIAP instance baru
+//   langsung process.exit(2). Wrapper berhenti dan watchdog me-restart
+//   sia-sia tiap ~3 menit: nol poller getUpdates, port 3001 tidak
+//   pernah listen, bot tidak membalas chat sama sekali.
+//   Perbaikan ada di bot-instance-lock.js (verifikasi identitas proses,
+//   bukan PID mentah) dan diuji oleh boot/test-instance-lock.js.
+// ════════════════════════════════════════════════════════════════
+if (!_lockMod.acquire({
+  port: _INSTANCE_PORT,
+  log: (m) => { try { console.error(m); } catch (e) {} }
+})) process.exit(2);
+process.on('exit', () => _lockMod.release());
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGBREAK']) {
+  try { process.on(sig, () => { _lockMod.release(); process.exit(0); }); } catch (e) {}
+}
+
+// Lapis kedua TIDAK memakai probe port: percobaan bind port oleh probe
+// berbalapan dengan express.listen pada tick yang sama dan memicu
+// EADDRINUSE palsu (pernah membuat bot gagal start). Kunci kepemilikan
+// port ditangani langsung oleh handler EADDRINUSE pada server express,
+// dan poller dijaga oleh flag webServerListening.
+
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
+const botDb = require('./bot-db');
 const xlsx = require('xlsx');
 const ExcelJS = require('exceljs');
 const express = require('express');
 const session = require('express-session');
 const iposBridge = require('./ipos-bridge');
+const excelParse = require('./excel-parse');
 // Instans NK (Nasional Kitchen / INPRES) — null kalau IPOS_NK_URL kosong di .env
 const iposNk = iposBridge.nk;
 // Instans KEFA (Perabot Mamaku Kefamenanu) — null kalau IPOS_KEFA_URL kosong di .env
@@ -63,6 +108,10 @@ const CONFIG = {
       cp: path.join(__dirname, 'harga_toko', 'cp.xlsx'),
     },
     logs: path.join(__dirname, 'logs', 'error.log'),
+    // BACKUP-DATA-TERAKHIR: snapshot laporan + harga per toko (dipakai saat
+    // API/DB toko mati — tampil dengan stempel waktu, TIDAK menimpa data fresh).
+    backupLaporan: path.join(__dirname, 'storage', 'backup_laporan.json'),
+    backupHarga: path.join(__dirname, 'storage', 'backup_harga.json'),
   },
   
   maxMember: parseInt(process.env.MAX_MEMBER || '50'),
@@ -70,8 +119,9 @@ const CONFIG = {
   sesiTimeoutMenit: 30,
   webPort: process.env.PORT || 3000,
   notaTokoFolder: {
-    ELT: { base: 'E:\\TOKO NASIONAL KITCHEN\\Nota Toko Nasional Kitchen', formatBulan: 'Nota bulan {bulan} {tahun}' },
-    KEF: { base: 'E:\\Nota Toko Perabot Mamaku Kefamenanu', formatBulan: '{BULAN} {tahun}' },
+    // Simpan nota ke share jaringan ADMIN_DIMAS — TANPA fallback.
+    ELT: { base: '\\\\100.125.99.99\\TOKO NASIONAL KITCHEN\\Nota Toko Nasional Kitchen', formatBulan: 'Nota bulan {bulan} {tahun}' },
+    KEF: { base: '\\\\100.125.99.99\\E_Drive\\Nota Toko Perabot Mamaku Kefamenanu', formatBulan: '{BULAN} {tahun}' },
   },
 };
 
@@ -88,6 +138,11 @@ if (!CONFIG.geminiKey) {
 [CONFIG.paths.storage, path.dirname(CONFIG.paths.logs), CONFIG.paths.excelFolder].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
+
+// Penanda port benar-benar dikuasai proses ini. Dipakai sebagai kunci
+// single-instance: proses kedua TIDAK boleh ikut polling Telegram.
+// Sengaja dideklarasikan sangat awal agar tidak ada risiko TDZ.
+let webServerListening = false;
 
 // ════════════════════════════════════════════════════════════════
 //   2. EMOJI & DATA TOKO
@@ -253,12 +308,19 @@ function timestamp() {
 }
 
 const log = {
-  info: (ctx, msg) => console.log(`[${timestamp()}] [INFO ] [${ctx}] ${msg}`),
-  warn: (ctx, msg) => console.warn(`[${timestamp()}] [WARN ] [${ctx}] ${msg}`),
+  info: (ctx, msg) => {
+    console.log(`[${timestamp()}] [INFO ] [${ctx}] ${msg}`);
+    try { botDb.recordEvent('INFO', ctx, msg); } catch(e) {}
+  },
+  warn: (ctx, msg) => {
+    console.warn(`[${timestamp()}] [WARN ] [${ctx}] ${msg}`);
+    try { botDb.recordEvent('WARN', ctx, msg); } catch(e) {}
+  },
   error: (ctx, msg, err) => {
     const full = `[${timestamp()}] [ERROR] [${ctx}] ${msg}`;
     console.error(full, err || '');
     try { fs.appendFileSync(CONFIG.paths.logs, full + (err ? ' | ' + String(err) : '') + '\n'); } catch(e) {}
+    try { botDb.recordEvent('ERROR', ctx, msg, err ? { error: String(err) } : null); } catch(e) {}
   },
 };
 
@@ -269,13 +331,53 @@ const log = {
 function loadJSON(filePath, def) {
   try {
     if (fs.existsSync(filePath)) return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch(e) { log.error('STORAGE', 'Load fail: ' + filePath, e.message); }
+  } catch(e) {
+    log.error('STORAGE', 'Load fail: ' + filePath, e.message);
+    // Coba salinan .bak terakhir sebelum menyerah.
+    try {
+      const bak = filePath + '.bak';
+      if (fs.existsSync(bak)) {
+        const data = JSON.parse(fs.readFileSync(bak, 'utf8'));
+        log.warn('STORAGE', 'Memakai backup .bak: ' + bak);
+        return data;
+      }
+    } catch(e2) { log.error('STORAGE', 'Backup .bak juga gagal: ' + filePath, e2.message); }
+  }
   return def;
 }
 
+const _lastJsonBakAt = new Map();
 function saveJSON(filePath, data) {
-  try { fs.writeFileSync(filePath, JSON.stringify(data, null, 2)); return true; }
-  catch(e) { log.error('STORAGE', 'Save fail', e.message); return false; }
+  const tmp = filePath + '.tmp-' + process.pid;
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    // backup_harga.json berisi snapshot 3 toko (~5 MB pretty-print). File ini
+    // ditulis ringkas (3 MB), tanpa salinan .bak, dan tidak perlu indentasi:
+    // tujuannya restore cepat, bukan dibaca manusia. Ini mengurangi freeze
+    // disk/AV yang membuat health check Telegram timeout.
+    const besar = filePath.endsWith('backup_harga.json');
+    if (!besar) {
+      // Simpan .bak maksimal tiap 10 menit; menyalin file besar tiap save
+      // membuat event loop macet dan bot terlambat menjawab Telegram.
+      const lastBak = _lastJsonBakAt.get(filePath) || 0;
+      if (fs.existsSync(filePath) && Date.now() - lastBak > 10 * 60 * 1000) {
+        try { fs.copyFileSync(filePath, filePath + '.bak'); _lastJsonBakAt.set(filePath, Date.now()); } catch(e) {}
+      }
+    }
+    fs.writeFileSync(tmp, besar ? JSON.stringify(data) : JSON.stringify(data, null, 2));
+    try {
+      fs.renameSync(tmp, filePath);
+    } catch(e) {
+      // Windows kadang menolak rename menimpa file yang sedang dibuka.
+      fs.copyFileSync(tmp, filePath);
+      try { fs.unlinkSync(tmp); } catch(e2) {}
+    }
+    return true;
+  } catch(e) {
+    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch(e2) {}
+    log.error('STORAGE', 'Save fail', e.message);
+    return false;
+  }
 }
 
 let MEMBERS = loadJSON(CONFIG.paths.members, []);
@@ -287,6 +389,107 @@ let STOCKOPNAME = loadJSON(CONFIG.paths.stockopname, {});
 let BERITA_ACARA = loadJSON(CONFIG.paths.beritaacara, {});
 let SO_SHARED = loadJSON(CONFIG.paths.soShared, {});
 let ROLE_LAPORAN = loadJSON(CONFIG.paths.roleLaporan, []);
+
+// Pulihkan sesi dari database bila file JSON tertinggal/terhapus.
+try {
+  const repaired = botDb.repairSessions();
+  if (repaired > 0) log.info('DB', `Metadata sesi lama diperbaiki: ${repaired}`);
+  const rows = botDb.loadSessions();
+  let restored = 0;
+  for (const row of rows) {
+    let state;
+    try { state = JSON.parse(row.state); } catch(e) { continue; }
+    if (!state || typeof state !== 'object') continue;
+    const current = SESI[row.user_id];
+    const dbTime = Number(row.updated_at || row.last_seen_at || 0);
+    if (!current || dbTime > Number(current._lastActive || 0)) {
+      SESI[row.user_id] = state;
+      restored++;
+    }
+  }
+  if (restored > 0) {
+    saveJSON(CONFIG.paths.sesi, SESI);
+    log.info('DB', `Sesi dipulihkan dari database: ${restored}`);
+  }
+} catch(e) { log.warn('DB', 'Gagal memulihkan sesi: ' + e.message); }
+
+// ════════════════════════════════════════════════════════════════
+//   4b. BACKUP DATA TERAKHIR (saat API/DB toko mati)
+//   ────────────────────────────────────────────────────────────────
+//   Setiap respon laporan/harga SUKSES disimpan per toko ke file lokal.
+//   Saat API gagal, backup ditampilkan dengan stempel waktu pengambilan
+//   ("data jam HH:MM, DD MMM YYYY — backup terakhir").
+//   Backup TIDAK PERNAH menimpa data fresh: hanya dibaca saat fetch gagal,
+//   dan hanya ditimpa oleh respon sukses berikutnya.
+// ════════════════════════════════════════════════════════════════
+const BACKUP_MAKS_UMUR_JAM = 72; // backup > 3 hari dianggap basi, jangan tampil
+function muatBackupLaporan() { return loadJSON(CONFIG.paths.backupLaporan, {}); }
+function simpanBackupLaporan(toko, jenis, kunci, data) {
+  try {
+    const semua = loadJSON(CONFIG.paths.backupLaporan, {});
+    if (!semua[toko]) semua[toko] = {};
+    if (!semua[toko][jenis]) semua[toko][jenis] = {};
+    semua[toko][jenis][kunci] = { diambil: Date.now(), data };
+    // batasi 40 entri per jenis per toko (hemat disk)
+    const daftar = Object.keys(semua[toko][jenis]);
+    if (daftar.length > 40) {
+      daftar.sort((a, b) => (semua[toko][jenis][a].diambil || 0) - (semua[toko][jenis][b].diambil || 0));
+      for (const buang of daftar.slice(0, daftar.length - 40)) delete semua[toko][jenis][buang];
+    }
+    saveJSON(CONFIG.paths.backupLaporan, semua);
+  } catch (e) { /* backup gagal disimpan — jangan ganggu alur utama */ }
+}
+function ambilBackupLaporan(toko, jenis, kunci) {
+  try {
+    const semua = loadJSON(CONFIG.paths.backupLaporan, {});
+    const entri = (((semua || {})[toko] || {})[jenis] || {})[kunci];
+    if (!entri || !entri.data) return null;
+    const umurJam = (Date.now() - (entri.diambil || 0)) / 3600000;
+    if (umurJam > BACKUP_MAKS_UMUR_JAM) return null;
+    return entri;
+  } catch (e) { return null; }
+}
+function muatBackupHarga() { return loadJSON(CONFIG.paths.backupHarga, {}); }
+// Snapshot harga 4 MB tidak perlu ditulis tiap 30 detik. Throttle per toko
+// supaya event loop tidak macet dan polling Telegram tetap responsif.
+const _hargaSaveAt = {};
+const HARGA_SAVE_INTERVAL_MS = 15 * 60 * 1000;
+function simpanBackupHarga(toko, daftarHarga) {
+  try {
+    const sekarang = Date.now();
+    if (_hargaSaveAt[toko] && sekarang - _hargaSaveAt[toko] < HARGA_SAVE_INTERVAL_MS) return;
+    _hargaSaveAt[toko] = sekarang;
+    const semua = loadJSON(CONFIG.paths.backupHarga, {});
+    semua[toko] = { diambil: sekarang, jumlah: Array.isArray(daftarHarga) ? daftarHarga.length : 0, data: daftarHarga };
+    saveJSON(CONFIG.paths.backupHarga, semua);
+  } catch (e) { /* abaikan */ }
+}
+function ambilBackupHarga(toko) {
+  try {
+    const semua = loadJSON(CONFIG.paths.backupHarga, {});
+    const entri = semua[toko];
+    if (!entri || !entri.data) return null;
+    const umurJam = (Date.now() - (entri.diambil || 0)) / 3600000;
+    if (umurJam > BACKUP_MAKS_UMUR_JAM) return null;
+    return entri;
+  } catch (e) { return null; }
+}
+// Stempel "data terakhir diambil" — format lokal WITA.
+function labelWaktuBackup(ts) {
+  try {
+    const d = new Date(Number(ts) || Date.now());
+    const tgl = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+    const jam = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+    const umurMnt = Math.round((Date.now() - d.getTime()) / 60000);
+    const umur = umurMnt < 60 ? `${umurMnt} mnt lalu` : `${Math.floor(umurMnt / 60)} jam ${umurMnt % 60} mnt lalu`;
+    return { tgl, jam, umur };
+  } catch (e) { return { tgl: '-', jam: '-', umur: '-' }; }
+}
+// Header peringatan backup — dipakai semua laporan saat API mati.
+function headerBackup(diambil, namaToko) {
+  const w = labelWaktuBackup(diambil);
+  return `⚠️ *API ${namaToko} MATI — DATA BACKUP TERAKHIR*\n📦 Data jam ${w.jam}, ${w.tgl} (${w.umur})\n_Inilah data terakhir sebelum mati — bukan data realtime._\n${GARIS_TEBAL}\n`;
+}
 
 log.info('INIT', `Members: ${MEMBERS.length}, Kontak: ${Object.keys(KONTAK).length}`);
 
@@ -459,6 +662,37 @@ async function saveToGitHub(fileName, data, retryCount = 0) {
 }
 
 // ═══ LOAD SEMUA saat startup (PENTING!) ═══
+// GUARD-DATA-LOKAL: salinan GitHub yang BASI tidak boleh menimpa data lokal
+// yang lebih lengkap (mis. SO masih berjalan, role baru ditambah). Kalau
+// lokal lebih kaya → pertahankan lokal + kirim ulang ke GitHub.
+function refDataLokal(nama) {
+  switch (nama) {
+    case 'members': return MEMBERS;
+    case 'kontak': return KONTAK;
+    case 'pending': return PENDING;
+    case 'roleLaporan': return ROLE_LAPORAN;
+    case 'stockopname': return STOCKOPNAME;
+    case 'beritaacara': return BERITA_ACARA;
+    case 'soShared': return SO_SHARED;
+    default: return null;
+  }
+}
+function hitungIsiData(nama, data) {
+  if (!data || typeof data !== 'object') return 0;
+  if (nama === 'soShared') {
+    return Object.values(data).reduce((a, s) => {
+      const racks = Object.keys((s && s.racks) || {});
+      const items = racks.reduce((b, r) => b + Object.keys(((s.racks[r] || {}).items) || {}).length, 0);
+      return a + racks.length + items;
+    }, 0);
+  }
+  if (nama === 'stockopname') {
+    return Object.values(data).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
+  }
+  if (Array.isArray(data)) return data.length;
+  return Object.keys(data).length;
+}
+
 async function loadAllFromGitHubSync() {
   if (!isGitHubEnabled) {
     console.warn('⚠️ [GITHUB] Skip startup sync: GitHub tidak aktif');
@@ -473,6 +707,16 @@ async function loadAllFromGitHubSync() {
     try {
       const data = await loadFromGitHub(fileName);
       if (data !== null) {
+        // GUARD-DATA-LOKAL: lokal lebih lengkap → jangan timpa; kirim ulang.
+        const lokal = refDataLokal(fileName);
+        const isiLokal = hitungIsiData(fileName, lokal);
+        const isiGithub = hitungIsiData(fileName, data);
+        if (lokal && isiLokal > isiGithub) {
+          console.warn(`⚠️ [GITHUB] ${fileName}: lokal lebih lengkap (${isiLokal} > ${isiGithub}) — salinan GitHub basi TIDAK dipakai, lokal dikirim ulang`);
+          saveToGitHubDebounced(fileName, lokal);
+          await new Promise(r => setTimeout(r, 300));
+          continue;
+        }
         // Update memory & lokal file
         switch(fileName) {
           case 'members':
@@ -665,8 +909,9 @@ async function syncExcelFromGitHub(verbose = false) {
     }
   }
   if (updated.length) {
-    updated.forEach(k => loadExcelPerToko(k));
-    loadExcel();
+    // Reload in worker threads; sync xlsx.readFile here previously blocked
+    // polling for seconds after a GitHub refresh.
+    await loadExcelAsync({ syncIpos: false });
     try { syncLastUpdatedFromGitHub(); } catch (e) {}
     console.log(`[GITHUB] Excel ${updated.join(', ')} di-reload dari GitHub`);
   }
@@ -701,13 +946,23 @@ function saveToGitHubDebounced(fileName, data) {
 // Save reference SEBELUM override
 const _origSaveJSON = saveJSON;
 
+// Nama file lokal → nama kunci sync GitHub. WAJIB cocok, kalau tidak:
+// file lokal TIDAK pernah terkirim ke GitHub, lalu saat restart salinan
+// GitHub yang basi MENIMPA data lokal (data SO/role/brita acara hilang).
+const SYNC_NAME_ALIAS = {
+  so_shared: 'soShared',
+  role_laporan: 'roleLaporan',
+  berita_acara: 'beritaacara',
+};
+
 // ═══ OVERRIDE saveJSON supaya auto-sync ke GitHub ═══
 saveJSON = function(filePath, data) {
   // Save ke lokal dulu (cepat)
   const result = _origSaveJSON(filePath, data);
   
-  // Detect nama file
-  const fileName = path.basename(filePath, '.json');
+  // Detect nama file (alias agar so_shared → soShared, dst.)
+  const baseName = path.basename(filePath, '.json');
+  const fileName = SYNC_NAME_ALIAS[baseName] || baseName;
   
   // Sync ke GitHub kalau termasuk file yang perlu di-sync
   if (GITHUB_SYNC_FILES.includes(fileName)) {
@@ -853,9 +1108,23 @@ function getSesi(userId) {
 
 function resetSesi(userId) {
   const id = String(userId);
+  const prev = SESI[id] || {};
+  const chatId = prev._chatId;
   delete SESI[id];
-  SESI[id] = { _lastActive: Date.now() };
+  SESI[id] = {
+    _lastActive: Date.now(),
+    _chatId: chatId,
+    _lastMessage: prev._lastMessage,
+    _lastIntent: prev._lastIntent,
+  };
   scheduleSaveSesi();
+  try {
+    botDb.saveSession(id, chatId, SESI[id], {
+      last_message: SESI[id]._lastMessage,
+      last_intent: SESI[id]._lastIntent,
+      last_seen_at: SESI[id]._lastActive,
+    });
+  } catch(e) {}
 }
 
 function updateSesi(userId, data) {
@@ -863,6 +1132,13 @@ function updateSesi(userId, data) {
   if (!SESI[id]) SESI[id] = {};
   Object.assign(SESI[id], data, { _lastActive: Date.now() });
   scheduleSaveSesi();
+  try {
+    botDb.saveSession(id, SESI[id]._chatId, SESI[id], {
+      last_message: SESI[id]._lastMessage,
+      last_intent: SESI[id]._lastIntent,
+      last_seen_at: SESI[id]._lastActive,
+    });
+  } catch(e) {}
 }
 
 function scheduleSaveSesi() {
@@ -1324,10 +1600,24 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
   // kasir — minta API filter per kelompok (kasir_only=1) supaya total,
   // tunai/debit/kredit & ecer/grosir pun murni kasir, konsisten dgn iPos.
   let r;
-  try {
+  let dariBackup = null;
+  // GERBANG-BACKUP-30DTK: cek STATUS_TOKO (hasil penjaga 30-detik) dulu.
+  // Offline = LANGSUNG file backup lokal + header stempel (tanpa fetch
+  // yang pasti gagal & lambat). Online = fetch API realtime seperti biasa.
+  const jagaKasir = (typeof STATUS_TOKO !== 'undefined' && STATUS_TOKO[toko]) ? STATUS_TOKO[toko] : null;
+  if (jagaKasir && jagaKasir.online === false && ymd === ymdLokal(0)) {
+    const b = ambilBackupLaporan(toko, 'kasir', ymd);
+    if (b) { dariBackup = b; r = b.data; }
+  }
+  if (!r) try {
     r = await bridge.ambilLaporanKasir(ymd, ymd, { ...(isIposCabang ? { hanyaKasir: true } : {}), fresh: ymd === ymdLokal(0) });
+    // BACKUP-DATA-TERAKHIR: simpan setiap sukses (hanya timpa oleh data fresh).
+    if (r && r.siap) simpanBackupLaporan(toko, 'kasir', ymd, r);
   } catch (e) {
-    return kirim(chatId, `⚠️ iPos API tidak merespons: ${escapeMd(e.message || String(e))}`, { parse_mode: 'Markdown' });
+    // API/DB mati → tampilkan backup terakhir + stempel waktu (jangan error kosong).
+    const b = ambilBackupLaporan(toko, 'kasir', ymd);
+    if (b) { dariBackup = b; r = b.data; }
+    else return kirim(chatId, `⚠️ iPos API tidak merespons: ${escapeMd(e.message || String(e))}\n\n📦 _Belum ada data backup tersimpan untuk tanggal ini._`, { parse_mode: 'Markdown' });
   }
   if (!r || !r.siap) {
     return kirim(chatId,
@@ -1379,6 +1669,7 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
   }
 
   const lines = [];
+  if (dariBackup) lines.push(headerBackup(dariBackup.diambil, isKefa ? 'KEFA' : isNk ? 'NK' : 'CP'));
   lines.push('🧾 *LAPORAN PENJUALAN KASIR*');
   lines.push(LABEL_TOKO);
   lines.push(`📅 ${escapeMd(tglLabel)}`);
@@ -1447,7 +1738,9 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
     lines.push(`Total Parkir  ${fmtBayar(parkir.komputer + parkir.luar)}`);
   }
   const umur = r.update ? Math.round((Date.now() - r.update) / 60000) : null;
-  if (umur !== null) lines.push(`\n🕐 Update data: ${umur <= 0 ? 'baru saja' : umur + ' mnt lalu'}`);
+  if (umur !== null && umur > 5) {
+    lines.push(`\n⚠️ Data ${umur} mnt lalu — kasir baru saja jual, tunggu ±1 mnt lalu ketik ulang.`);
+  } else if (umur !== null) lines.push(`\n🕐 Update data: ${umur <= 0 ? 'baru saja' : umur + ' mnt lalu'}`);
   lines.push(`💡 Ketik: \`laporan ${isKefa ? 'kefa ' : isNk ? 'nk ' : ''}penjualan 24/09\` atau /${isKefa ? 'jualkefa' : isNk ? 'kasirnk' : 'kasir'} kemarin`);
   await kirim(chatId, lines.join('\n'), { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd, toko) });
 
@@ -1560,14 +1853,27 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai, toko = 'cp') 
   const periode = dari === sampai ? tglPendek(dari) : `${tglPendek(dari)} s/d ${tglPendek(sampai)}`;
   const tunggu = await kirim(chatId, `⏳ *Menghitung laporan HOMMY & KIREI...*\n📅 ${escapeMd(periode)}`, { parse_mode: 'Markdown' });
   let r;
-  try {
+  let dariBackupHk = null;
+  const kunciHk = `${dari}_${sampai}`;
+  // GERBANG-BACKUP-30DTK: offline = langsung file lokal (periode hari ini saja).
+  const jagaHk = (typeof STATUS_TOKO !== 'undefined' && STATUS_TOKO[toko]) ? STATUS_TOKO[toko] : null;
+  if (jagaHk && jagaHk.online === false && dari === ymdLokal(0) && sampai === ymdLokal(0)) {
+    const b0 = ambilBackupLaporan(toko, 'merek', kunciHk);
+    if (b0) { dariBackupHk = b0; r = b0.data; }
+  }
+  if (!r) try {
     r = await bridge.ambilLaporanMerek(dari, sampai);
+    if (r && r.siap) simpanBackupLaporan(toko, 'merek', kunciHk, r);
   } catch (e) {
-    const pesan = `${pesanLaporanGagal(e, toko)}\nCoba lagi sebentar ya kak.`;
-    if (tunggu && tunggu.message_id) {
-      try { return await bot.editMessageText(pesan, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) }); } catch (e2) {}
+    const b = ambilBackupLaporan(toko, 'merek', kunciHk);
+    if (b) { dariBackupHk = b; r = b.data; }
+    else {
+      const pesan = `${pesanLaporanGagal(e, toko)}\nCoba lagi sebentar ya kak.`;
+      if (tunggu && tunggu.message_id) {
+        try { return await bot.editMessageText(pesan, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) }); } catch (e2) {}
+      }
+      return kirim(chatId, pesan, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) });
     }
-    return kirim(chatId, pesan, { parse_mode: 'Markdown', reply_markup: kbLaporanMerek(toko) });
   }
   if (!r || !r.siap) {
     const pesan = '⏳ *Data penjualan iPos masih dimuat* di server (± 2-5 menit setelah API di-restart).\nCoba lagi sebentar ya kak.';
@@ -1583,6 +1889,7 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai, toko = 'cp') 
   const tglNota = (ymd) => { const [y, m, d] = String(ymd || '').split('-'); return d ? `${d}/${m}/${y}` : String(ymd || '-'); };
   const emoMerek = (m) => (m === 'HOMMY' ? '🛋️' : m === 'KIREI' ? '🪑' : '🏷️');
   const lines = [];
+  if (dariBackupHk) lines.push(headerBackup(dariBackupHk.diambil, toko === 'nk' ? 'NK' : toko === 'kefa' ? 'KEFA' : 'CP'));
   lines.push('🛋️ *LAPORAN PENJUALAN HOMMY & KIREI*');
   lines.push(LABEL_TOKO_HK);
   lines.push(`📅 ${escapeMd(periode)}`);
@@ -1652,7 +1959,9 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai, toko = 'cp') 
     }
   }
   const umur = r.update ? Math.round((Date.now() - r.update) / 60000) : null;
-  if (umur !== null) lines.push(`\n🕐 Update data: ${umur <= 0 ? 'baru saja' : umur + ' mnt lalu'}`);
+  if (umur !== null && umur > 5) {
+    lines.push(`\n⚠️ Data ${umur} mnt lalu — kasir baru saja jual, tunggu ±1 mnt lalu ketik ulang.`);
+  } else if (umur !== null) lines.push(`\n🕐 Update data: ${umur <= 0 ? 'baru saja' : umur + ' mnt lalu'}`);
   lines.push(`💡 Ketik: \`laporan homy ${toko === 'cp' ? '' : toko + ' '}1-20 september 2026\``);
   const hasil = lines.join('\n');
   if (tunggu && tunggu.message_id) {
@@ -1741,14 +2050,27 @@ async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai, toko = 
   const periode = dari === sampai ? tglPanjang(dari) : `${tglPanjang(dari)} s/d ${tglPanjang(sampai)}`;
   const tunggu = await kirim(chatId, `⏳ Mengambil laporan marketplace ${escapeMd(periode)} dari iPos...`);
   let r;
-  try {
+  let dariBackupMp = null;
+  const kunciMp = `${dari}_${sampai}`;
+  // GERBANG-BACKUP-30DTK: offline = langsung file lokal (periode hari ini saja).
+  const jagaMp = (typeof STATUS_TOKO !== 'undefined' && STATUS_TOKO[toko]) ? STATUS_TOKO[toko] : null;
+  if (jagaMp && jagaMp.online === false && dari === ymdLokal(0) && sampai === ymdLokal(0)) {
+    const b0 = ambilBackupLaporan(toko, 'marketplace', kunciMp);
+    if (b0) { dariBackupMp = b0; r = b0.data; }
+  }
+  if (!r) try {
     r = await bridge.ambilLaporanMarketplace(dari, sampai);
+    if (r && r.siap) simpanBackupLaporan(toko, 'marketplace', kunciMp, r);
   } catch (e) {
-    const pesan = `${pesanLaporanGagal(e, toko)}\nCoba lagi sebentar ya kak.`;
-    if (tunggu && tunggu.message_id) {
-      try { return await bot.editMessageText(pesan, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) }); } catch (editError) {}
+    const b = ambilBackupLaporan(toko, 'marketplace', kunciMp);
+    if (b) { dariBackupMp = b; r = b.data; }
+    else {
+      const pesan = `${pesanLaporanGagal(e, toko)}\nCoba lagi sebentar ya kak.`;
+      if (tunggu && tunggu.message_id) {
+        try { return await bot.editMessageText(pesan, { chat_id: chatId, message_id: tunggu.message_id, parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) }); } catch (editError) {}
+      }
+      return kirim(chatId, pesan, { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
     }
-    return kirim(chatId, pesan, { parse_mode: 'Markdown', reply_markup: kbLaporanMarketplace(toko) });
   }
   if (!r || !r.siap) {
     const pesan = '⏳ *Data penjualan iPos masih dimuat* di server (± 2-5 menit setelah API di-restart).\nCoba lagi sebentar ya kak.';
@@ -1767,12 +2089,30 @@ async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai, toko = 
   const notas = Array.isArray(c.notas) ? c.notas : [];
   const jl = notas.filter((n) => n.tipe === 'JL');
   const ksr = notas.filter((n) => n.tipe !== 'JL');
+  // ── TOTAL OMZET YANG BENAR ──────────────────────────────────────────────
+  // Bentuk respons iPos BERBEDA antar toko (dibuktikan dari respons mentah):
+  //   CP        : omzet ada di `central`, `toko[]` = toko pasangan (omzet 0).
+  //   NK / KEFA : `central` SELALU kosong (nota/omzet/tunai = 0), omzet asli
+  //               ada di `toko[]`. `r.total` juga 0.
+  // Dulu tampilan memakai `c.omzet`/`r.total` untuk semua toko, sehingga NK
+  // melaporkan Rp 0 padahal ada penjualan Rp 45.911.500 (30 hari). Sekarang
+  // dijumlahkan dari `toko[]` bila `central` kosong.
+  const sumTokoMp = tokoMp.reduce((s, x) => s + (Number(x.omzet) || 0), 0);
+  const centralOmzet = Number(c.omzet) || 0;
+  const totalResmi = Number(r.total) || 0;
+  const totalOmzetMp = (isNk || isKefa)
+    ? (totalResmi || centralOmzet || sumTokoMp)
+    : (totalResmi || centralOmzet);
+  // Rincian tunai/debit/nota hanya ada kalau iPos mengirim `central`.
+  // Kalau tidak ada, JANGAN tampilkan "Rp 0" (itu menyesatkan) — katakan terus terang.
+  const adaRincianMp = (Number(c.nota) || 0) > 0 || notas.length > 0;
   const lines = [];
+  if (dariBackupMp) lines.push(headerBackup(dariBackupMp.diambil, toko === 'nk' ? 'NK' : toko === 'kefa' ? 'KEFA' : 'CP'));
   if (isNk || isKefa) {
     // NK/KEFA: tidak ada toko pasangan — cukup baris toko sendiri (format manual sama)
     lines.push(`Total Penjualan Marketplace ${isNk ? 'Nasional Kitchen' : 'Perabot Mamaku Kefamenanu'} Periode ${periode}`);
     lines.push('');
-    lines.push(`Toko ${isNk ? 'Nasional Kitchen' : 'Perabot Mamaku Kefamenanu'} ${MP_RP(c.omzet)}`);
+    lines.push(`Toko ${isNk ? 'Nasional Kitchen' : 'Perabot Mamaku Kefamenanu'} ${MP_RP(totalOmzetMp)}`);
   } else {
     lines.push(`Total Penjualan Marketplace Perabot Mama Periode ${periode}`);
     lines.push('');
@@ -1781,15 +2121,24 @@ async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai, toko = 
     lines.push(`Toko Central Perabot ${MP_RP(c.omzet)}`);
   }
   lines.push(MP_GARIS);
-  lines.push(`Penjualan via WA : ${MP_RP(r.total)}`);
+  lines.push(`Penjualan via WA : ${MP_RP(totalOmzetMp)}`);
   lines.push('Penjualan via Shopee: Rp. -');
   lines.push('Penjualan via Tiktok Shop: Rp. -');
   lines.push('Penjualan via Tokopedia : Rp. -');
   lines.push('');
-  lines.push(`Total Penjualan : ${MP_RP(r.total)}`);
+  lines.push(`Total Penjualan : ${MP_RP(totalOmzetMp)}`);
   lines.push(MP_GARIS);
-  lines.push(`Tunai/CASH ${MP_RP(c.tunai)}`);
-  lines.push(`Debit/TF ${MP_RP(c.debit)}`);
+  if (adaRincianMp) {
+    lines.push(`Tunai/CASH ${MP_RP(c.tunai)}`);
+    lines.push(`Debit/TF ${MP_RP(c.debit)}`);
+  } else if (totalOmzetMp > 0) {
+    // Omzet ada, tapi iPos tidak mengirim rincian pembayaran untuk toko ini.
+    lines.push('Tunai/CASH : (rincian tidak dikirim iPos untuk toko ini)');
+    lines.push('Debit/TF   : (rincian tidak dikirim iPos untuk toko ini)');
+  } else {
+    lines.push(`Tunai/CASH ${MP_RP(0)}`);
+    lines.push(`Debit/TF ${MP_RP(0)}`);
+  }
   if (jl.length || ksr.length) {
     lines.push('');
     const baris = (n) => `- Nomor Nota ${nomor} (${n.notransaksi})`;
@@ -2302,6 +2651,25 @@ async function generateLaporanSOGabungan(tokoKode, namaToko) {
 
 // ═══ GENERATE EXCEL SO GABUNGAN (ExcelJS + Foto Embedded) ═══
 
+// Nama worksheet Excel wajib unik (case-insensitive) dan maksimal 31 karakter.
+// Bug produksi 5 Nov 2026: petugas "Irwan" dan "IRWAN" membuat addWorksheet
+// melempar "Worksheet name already exists", sehingga backup SO gagal dibuat.
+function namaSheetUnik(wb, base) {
+  const bersih = String(base || 'Sheet')
+    .replace(/[\[\]:*?\/\\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .substring(0, 31) || 'Sheet';
+  const dipakai = new Set((wb.worksheets || []).map((w) => String(w.name).toLowerCase()));
+  if (!dipakai.has(bersih.toLowerCase())) return bersih;
+  for (let n = 2; n < 1000; n++) {
+    const suffix = ` (${n})`;
+    const calon = bersih.substring(0, Math.max(1, 31 - suffix.length)) + suffix;
+    if (!dipakai.has(calon.toLowerCase())) return calon;
+  }
+  return `Sheet ${Date.now()}`.substring(0, 31);
+}
+
 async function generateExcelSOGabungan(tokoKode, namaToko) {
   const shared = getSOShared(tokoKode);
   const gabungan = getSOGabunganData(tokoKode);
@@ -2312,7 +2680,7 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
   const wb = new ExcelJS.Workbook();
   
   // ═══ SHEET 1: INFO ═══
-  const wsInfo = wb.addWorksheet('Info Opname');
+  const wsInfo = wb.addWorksheet(namaSheetUnik(wb, 'Info Opname'));
   wsInfo.columns = [{ width: 30 }, { width: 55 }];
   
   const allPetugas = new Set();
@@ -2338,7 +2706,7 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
   wsInfo.addRow(['Barang Baru', barangBaru.length]);
   
   // ═══ SHEET 2: REKAP ═══
-  const wsRekap = wb.addWorksheet('Rekap Gabungan');
+  const wsRekap = wb.addWorksheet(namaSheetUnik(wb, 'Rekap Gabungan'));
   wsRekap.columns = [
     { header: 'Kode', width: 14 }, { header: 'Nama Item', width: 45 },
     { header: 'Jenis', width: 15 }, { header: 'Merek', width: 15 },
@@ -2386,8 +2754,7 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
     });
     if (!rakRows.length) return;
     
-    const sn = `Rak ${idx + 1} ${rakName}`.substring(0, 31);
-    const ws = wb.addWorksheet(sn);
+    const ws = wb.addWorksheet(namaSheetUnik(wb, `Rak ${idx + 1} ${rakName}`));
     ws.columns = [
       { header: 'Kode', width: 18 }, { header: 'Nama Barang', width: 45 },
       { header: 'Satuan', width: 8 }, { header: 'Petugas', width: 15 },
@@ -2403,7 +2770,7 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
   
   // ═══ SHEET BARANG BARU (dengan FOTO!) ═══
   if (barangBaru.length > 0) {
-    const wsNew = wb.addWorksheet('Barang Baru');
+    const wsNew = wb.addWorksheet(namaSheetUnik(wb, 'Barang Baru'));
     wsNew.columns = [
       { header: 'No', width: 5 }, { header: 'Kode', width: 18 },
       { header: 'Nama Barang', width: 45 }, { header: 'Rak', width: 18 },
@@ -2456,8 +2823,7 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
   });
   
   Object.entries(petugasMap).forEach(([nama, rw]) => {
-    const sn = `Petugas ${nama}`.substring(0, 31);
-    const ws = wb.addWorksheet(sn);
+    const ws = wb.addWorksheet(namaSheetUnik(wb, `Petugas ${nama}`));
     ws.columns = [
       { header: 'Rak', width: 18 }, { header: 'Kode', width: 18 },
       { header: 'Nama Barang', width: 45 }, { header: 'Jenis', width: 10 },
@@ -2557,17 +2923,16 @@ async function kirimBackupKeAdmin(tokoKode, type = 'auto', forceKirim = false) {
       return false;
     }
     
-    // Cek apakah data berubah (kalau bukan force)
+    // Hash data yang akan dibackup. Hash TIDAK boleh dicatat sebelum file
+    // berhasil dibuat + terkirim + disimpan permanen; jika gagal, periode
+    // berikutnya harus retry (bukan "data tidak berubah, skip").
+    const currentHash = hashSOData(tokoKode);
     if (!forceKirim) {
-      const currentHash = hashSOData(tokoKode);
       const lastHash = BACKUP_TRACKER.lastDataHash[tokoKode];
-      
       if (currentHash === lastHash) {
         log.info('BACKUP', `${tokoKode}: data tidak berubah, skip`);
         return false;
       }
-      
-      BACKUP_TRACKER.lastDataHash[tokoKode] = currentHash;
     }
     
     const namaToko = NAMA_TOKO[tokoKode] || tokoKode;
@@ -2618,9 +2983,36 @@ async function kirimBackupKeAdmin(tokoKode, type = 'auto', forceKirim = false) {
       return false;
     }
     
-    // Hapus file temp
-    try { fs.unlinkSync(excelPath); } catch(e) {}
-    
+    // SIMPAN-PERMANEN-BACKUP-SO: salin ke storage/backup_so SEBELUM temp
+    // dihapus, supaya file bisa dikirim ulang kapan pun (tidak hilang).
+    let tersimpanPermanen = false;
+    try {
+      const dirSimpan = path.join(CONFIG.paths.storage, 'backup_so');
+      fs.mkdirSync(dirSimpan, { recursive: true });
+      const simpanPath = path.join(dirSimpan, filename);
+      fs.copyFileSync(excelPath, simpanPath);
+      tersimpanPermanen = true;
+      // simpan maksimal 12 file terbaru per toko (hemat disk)
+      const semua = fs.readdirSync(dirSimpan)
+        .filter((f) => f.startsWith(`SO_`) && f.includes(`_${tokoKode.toUpperCase()}_`) && f.endsWith('.xlsx'))
+        .map((f) => ({ f, t: fs.statSync(path.join(dirSimpan, f)).mtimeMs }))
+        .sort((a, b) => b.t - a.t);
+      for (const lama of semua.slice(12)) {
+        try { fs.unlinkSync(path.join(dirSimpan, lama.f)); } catch (e) {}
+      }
+      log.info('BACKUP', `${tokoKode}: file disimpan permanen → storage/backup_so/${filename}`);
+    } catch (simpanErr) {
+      log.warn('BACKUP', `${tokoKode}: gagal simpan permanen: ${simpanErr.message}; file temp dipertahankan: ${excelPath}`);
+    }
+
+    // Hash baru dicatat setelah file benar-benar aman. Jika generate/kirim/simpan
+    // gagal, hash tetap lama sehingga periode berikutnya otomatis retry.
+    if (tersimpanPermanen) {
+      BACKUP_TRACKER.lastDataHash[tokoKode] = currentHash;
+      // Hapus file temp hanya setelah salinan permanen ada.
+      try { fs.unlinkSync(excelPath); } catch(e) {}
+    }
+
     BACKUP_TRACKER.lastBackup[tokoKode] = Date.now();
     log.info('BACKUP', `✅ Sent ${tokoKode} [${type}] ke admin (${(fileStats.size / 1024).toFixed(1)} KB)`);
     return true;
@@ -2806,7 +3198,7 @@ async function visionGemini(imageBuffer, prompt) {
   
   const imageBase64 = imageBuffer.toString('base64');
   const keys = [CONFIG.geminiKey, CONFIG.geminiKey2, CONFIG.geminiKey3].filter(Boolean);
-  const MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+  const MODELS = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
   
   for (const model of MODELS) {
     try {
@@ -2836,7 +3228,7 @@ async function visionGemini(imageBuffer, prompt) {
 
 async function visionGroq(imageBuffer, prompt) {
   if (!CONFIG.groqKey || !Buffer.isBuffer(imageBuffer)) return null;
-  const MODELS = ['qwen/qwen3.6-27b'];
+  const MODELS = ['qwen/qwen3.8-27b', 'qwen/qwen3.6-27b'];
   const imageBase64 = imageBuffer.toString('base64');
   
   for (const model of MODELS) {
@@ -3038,7 +3430,7 @@ async function searchDuckDuckGo(query) {
     
     return result.trim() || null;
   } catch(err) {
-    log.warn('WEB-DDG', err.message);
+    log.warn('WEB-DDG', (err.code || '') + ' ' + err.message + ' — lanjut Wikipedia/AI');
     return null;
   }
 }
@@ -3251,7 +3643,17 @@ const CHAT_MEMORY = {};
 const MAX_MEMORY = 10;
 
 function getChatMemory(userId) {
-  if (!CHAT_MEMORY[userId]) CHAT_MEMORY[userId] = [];
+  if (!CHAT_MEMORY[userId]) {
+    CHAT_MEMORY[userId] = [];
+    try {
+      const rows = botDb.loadChatMemory(userId, MAX_MEMORY);
+      CHAT_MEMORY[userId] = rows.map(r => ({
+        role: r.role,
+        content: r.content,
+        timestamp: r.created_at,
+      }));
+    } catch(e) {}
+  }
   return CHAT_MEMORY[userId];
 }
 
@@ -3259,10 +3661,12 @@ function addToMemory(userId, role, content) {
   const mem = getChatMemory(userId);
   mem.push({ role, content, timestamp: Date.now() });
   if (mem.length > MAX_MEMORY) mem.shift(); // Hapus yang paling lama
+  try { botDb.recordChatMemory(userId, role, content); } catch(e) {}
 }
 
 function clearMemory(userId) {
   delete CHAT_MEMORY[userId];
+  try { botDb.clearChatMemory(userId); } catch(e) {}
 }
 
 // Deteksi mood/intent dari pesan user
@@ -3310,6 +3714,18 @@ function buildSystemPrompt(userId, userName, webContext = null) {
   const waktu = getWaktu().toLowerCase();
   const jam = getJamSekarang();
   const tanggal = getTanggalIndonesia();
+
+  // Konteks lintas-restart: 8 pesan terakhir user ini dari database lokal.
+  let riwayatDb = '';
+  try {
+    const rows = botDb.recentMessagesForUser(userId, 8);
+    if (rows && rows.length) {
+      riwayatDb = '\nRIWAYAT TERAKHIR (database lokal, sudah terjadi):\n' + rows.map(r => {
+        const isi = String(r.text || r.caption || '').replace(/\s+/g, ' ').slice(0, 220);
+        return `- ${r.direction === 'out' ? 'Bot' : 'User'} [${new Date(Number(r.created_at)).toLocaleString('id-ID', { timeZone: 'Asia/Makassar' })}]: ${isi}`;
+      }).join('\n') + '\n';
+    }
+  } catch(e) {}
   
   let webInfo = '';
   if (webContext) {
@@ -3469,7 +3885,7 @@ KONTEKS USER:
 - Nama: ${nama}
 - Waktu: ${jam} (${waktu})
 - Tanggal: ${tanggal}
-${webInfo}
+${riwayatDb}${webInfo}
 ═══════════════════════════════════════════
 CONTOH BENAR vs SALAH:
 ═══════════════════════════════════════════
@@ -3537,7 +3953,7 @@ async function chatGeminiNatural(userId, userMessage, userName) {
   
   for (const key of keys) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`;
       const resp = await axios.post(url, {
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: contents,
@@ -3585,10 +4001,10 @@ async function chatGroqNatural(userId, userMessage, userName) {
   
   // Tambah pesan terbaru
   messages.push({ role: 'user', content: userMessage });
-  
+
   try {
     const resp = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       messages: messages,
       temperature: 0.9,
       max_tokens: 500,
@@ -3697,7 +4113,7 @@ async function chatGroqNaturalWithContext(userId, userMessage, userName, webCont
   
   try {
     const resp = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       messages: messages,
       temperature: 0.9,
       max_tokens: 500,
@@ -3731,7 +4147,7 @@ async function chatGeminiNaturalWithContext(userId, userMessage, userName, webCo
   
   for (const key of keys) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`;
       const resp = await axios.post(url, {
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: contents,
@@ -3806,7 +4222,7 @@ async function chatGemini(prompt) {
   const keys = [CONFIG.geminiKey, CONFIG.geminiKey2, CONFIG.geminiKey3].filter(Boolean);
   for (const key of keys) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`;
       const resp = await axios.post(url, { contents: [{ parts: [{ text: prompt }] }] }, { timeout: 30000 });
       const text = resp.data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (text) return text.trim();
@@ -3819,7 +4235,7 @@ async function chatGroq(prompt) {
   if (!CONFIG.groqKey) return null;
   try {
     const resp = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.7, max_tokens: 1500,
     }, {
@@ -4035,151 +4451,135 @@ let DATA_BARANG = [];
  * - Harga Jual → HARGA AMBIL/GROSIR (6+ pcs)
  * - HPP (optional) → Harga Pokok/Modal
  */
+function cacheExcelPath(tokoKode) {
+  return path.join(CONFIG.paths.storage, 'cache_excel', `${tokoKode}.json`);
+}
+
+function bacaCacheExcel(tokoKode, filePath) {
+  try {
+    const st = fs.statSync(filePath);
+    const cachePath = cacheExcelPath(tokoKode);
+    if (!fs.existsSync(cachePath)) return null;
+    const c = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    if (c && c.mtime === st.mtimeMs && c.size === st.size && Array.isArray(c.items)) {
+      log.info('EXCEL', `File ${tokoKode}: cache ${c.items.length} item`);
+      return c.items;
+    }
+  } catch(e) { /* cache rusak -> parsing ulang */ }
+  return null;
+}
+
+function simpanCacheExcel(tokoKode, filePath, items) {
+  try {
+    const st = fs.statSync(filePath);
+    const cachePath = cacheExcelPath(tokoKode);
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    const tmp = cachePath + '.tmp-' + process.pid;
+    fs.writeFileSync(tmp, JSON.stringify({ mtime: st.mtimeMs, size: st.size, items }));
+    try { fs.renameSync(tmp, cachePath); }
+    catch(e) { fs.copyFileSync(tmp, cachePath); try { fs.unlinkSync(tmp); } catch(e2) {} }
+  } catch(e) { log.warn('EXCEL', `Gagal simpan cache ${tokoKode}: ${e.message}`); }
+}
+
 function loadExcelPerToko(tokoKode) {
   const filePath = CONFIG.paths.excelPerToko[tokoKode];
   if (!filePath || !fs.existsSync(filePath)) {
     log.warn('EXCEL', `File ${tokoKode}: tidak ditemukan (${filePath})`);
     return [];
   }
-  
-  try {
-    const wb = xlsx.readFile(filePath);
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const allRows = xlsx.utils.sheet_to_json(ws, { header: 1, defval: 0, blankrows: false });
-    
-    if (allRows.length < 3) {
-      log.warn('EXCEL', `File ${tokoKode}: kurang data (< 3 baris)`);
-      return [];
-    }
-    
-    // ═══ AUTO-DETECT HEADER ═══
-    // Header biasanya di baris 1-15 (karena ada logo/info toko di atas)
-    let headerRowIdx = -1;
-    let headers = [];
-    
-    for (let i = 0; i < Math.min(15, allRows.length); i++) {
-      const row = allRows[i];
-      if (!row) continue;
-      
-      const rowStr = row.map(c => String(c || '').toLowerCase()).join('|');
-      
-      // Header terdeteksi kalau mengandung "kode" dan "nama"
-      if ((rowStr.includes('kode item') || rowStr.includes('kode')) && 
-          (rowStr.includes('nama item') || rowStr.includes('nama'))) {
-        headerRowIdx = i;
-        headers = row.map(h => String(h || '').trim());
-        break;
-      }
-    }
-    
-    if (headerRowIdx === -1) {
-      log.error('EXCEL', `File ${tokoKode}: Header tidak ditemukan (cari "Kode Item" dan "Nama Item")`);
-      return [];
-    }
-    
-    log.info('EXCEL', `File ${tokoKode}: Header di baris ${headerRowIdx + 1}`);
-    
-    // ═══ FLEXIBLE COLUMN MATCHING ═══
-    const findCol = (...names) => {
-      // Exact match dulu
-      for (const name of names) {
-        const idx = headers.findIndex(h => 
-          h.toLowerCase().replace(/\s+/g, ' ').trim() === name.toLowerCase()
-        );
-        if (idx !== -1) return idx;
-      }
-      // Partial match sebagai fallback
-      for (const name of names) {
-        const idx = headers.findIndex(h => 
-          h.toLowerCase().includes(name.toLowerCase())
-        );
-        if (idx !== -1) return idx;
-      }
-      return -1;
-    };
-    
-    const colMap = {
-      no: findCol('No', 'no.', 'nomor'),
-      kode: findCol('Kode Item', 'Kode', 'Code'),
-      nama: findCol('Nama Item', 'Nama', 'Name', 'Item'),
-      jenis: findCol('Jenis', 'Type', 'Category'),
-      stok: findCol('Stok', 'Stock', 'Qty Stok'),
-      satuan: findCol('Satuan', 'Unit', 'Sat'),
-      qtyPaket: findCol('Qty / Paket', 'Qty/Paket', 'Paket'),
-      // ★ Harga Price = ECER (retail 1-5 pcs) - harga lebih mahal
-      hargaEcer: findCol('Harga Price', 'Price', 'Ecer', 'Retail', 'Harga Ecer'),
-      // ★ Harga Jual = AMBIL/GROSIR (6+ pcs) - harga lebih murah
-      hargaAmbil: findCol('Harga Jual', 'Jual', 'Ambil', 'Grosir', 'Wholesale'),
-      // ★ HPP = Harga Pokok/Modal (opsional)
-      hargaHPP: findCol('HPP', 'Harga Beli', 'Harga Pokok', 'Harga Modal', 'Modal'),
-      merek: findCol('Merek', 'Merk', 'Brand'),
-    };
-    
-    // Validasi kolom wajib
-    if (colMap.kode === -1 || colMap.nama === -1) {
-      log.error('EXCEL', `File ${tokoKode}: Kolom "Kode Item" atau "Nama Item" tidak ada`);
-      log.error('EXCEL', `Headers ditemukan: ${headers.join(', ')}`);
-      return [];
-    }
-    
-    log.info('EXCEL', `${tokoKode} mapping: kode=${colMap.kode}, nama=${colMap.nama}, stok=${colMap.stok}, satuan=${colMap.satuan}, ecer=${colMap.hargaEcer}, ambil=${colMap.hargaAmbil}, hpp=${colMap.hargaHPP}`);
-    
-    // ═══ PARSER ANGKA FORMAT INDONESIA ═══
-    const parseNum = (val) => {
-      if (!val && val !== 0) return 0;
-      if (typeof val === 'number') return Math.floor(val);
-      
-      let str = String(val).trim();
-      // Hapus "Rp", spasi, dll
-      str = str.replace(/[^0-9,.-]/g, '');
-      if (!str) return 0;
-      
-      // Handle format Indonesia:
-      // "25.000" → 25000 (titik = ribuan)
-      // "25,000" → 25000 (koma = ribuan)
-      // Hapus semua titik & koma (asumsi = pemisah ribuan)
-      const cleaned = str.replace(/[.,]/g, '');
-      return parseInt(cleaned) || 0;
-    };
-    
-    // ═══ PARSE DATA (baris setelah header) ═══
-    const items = [];
-    for (let i = headerRowIdx + 1; i < allRows.length; i++) {
-      const row = allRows[i];
-      if (!row || row.length === 0) continue;
-      
-      const kode = String(row[colMap.kode] || '').trim().toUpperCase();
-      if (!kode || kode === '0' || kode === 'NO' || kode === 'KODE') continue;
-      
-      const nama = String(row[colMap.nama] || '').trim().toUpperCase();
-      if (!nama || nama.length < 2) continue;
-      
-      // ★ Harga Price = ECER (mahal, untuk 1-5 pcs)
-      // ★ Harga Jual = AMBIL/GROSIR (murah, untuk 6+ pcs)
-      const hargaEcer = colMap.hargaEcer >= 0 ? parseNum(row[colMap.hargaEcer]) : 0;
-      const hargaAmbil = colMap.hargaAmbil >= 0 ? parseNum(row[colMap.hargaAmbil]) : 0;
-      const hargaHPP = colMap.hargaHPP >= 0 ? parseNum(row[colMap.hargaHPP]) : 0;
-      
-      items.push({
-        kode,
-        nama,
-        jenis: colMap.jenis >= 0 ? String(row[colMap.jenis] || '').trim() : '',
-        merek: colMap.merek >= 0 ? String(row[colMap.merek] || '').trim() : '',
-        satuan: colMap.satuan >= 0 ? String(row[colMap.satuan] || 'PCS').trim().toUpperCase() : 'PCS',
-        toko: tokoKode,
-        hpp: hargaHPP,
-        ecer: hargaEcer,                                    // ← Harga Price (retail)
-        ambil: hargaAmbil > 0 ? hargaAmbil : hargaEcer,    // ← Harga Jual (grosir), fallback ke ecer
-        stok: colMap.stok >= 0 ? parseNum(row[colMap.stok]) : 0,
-      });
-    }
-    
-    log.info('EXCEL', `File ${tokoKode}: ${items.length} item loaded`);
-    return items;
-  } catch(e) {
-    log.error('EXCEL', `File ${tokoKode} gagal load: ${e.message}`);
-    return [];
+
+  const cached = bacaCacheExcel(tokoKode, filePath);
+  if (cached) return cached;
+
+  // Jalur sinkron (dipakai saat startup / BUILD_EXCEL_CACHE / reload admin).
+  // Parsing berat dijalankan lewat worker thread pada loadExcelAsync().
+  const hasil = excelParse.parseExcelFile(filePath, tokoKode);
+  for (const m of hasil.messages || []) {
+    const [lvl, ...rest] = m.split('|');
+    const teks = rest.join('|');
+    if (lvl === 'ERROR') log.error('EXCEL', teks);
+    else if (lvl === 'WARN') log.warn('EXCEL', teks);
+    else log.info('EXCEL', teks);
   }
+  if (!hasil.ok) return [];
+  simpanCacheExcel(tokoKode, filePath, hasil.items);
+  return hasil.items;
+}
+
+/**
+ * Versi NON-BLOCKING dari loadExcelPerToko.
+ * xlsx.readFile sinkron memblokir event loop 0,5-5,3 detik per file
+ * (terukur 8,4 dtk untuk 5 toko) sehingga poller Telegram macet.
+ * Di sini parsing dijalankan di worker thread; cache tetap dipakai lebih dulu.
+ * @returns {Promise<Array>}
+ */
+function loadExcelPerTokoAsync(tokoKode) {
+  return new Promise((resolve) => {
+    const filePath = CONFIG.paths.excelPerToko[tokoKode];
+    if (!filePath || !fs.existsSync(filePath)) {
+      log.warn('EXCEL', `File ${tokoKode}: tidak ditemukan (${filePath})`);
+      return resolve([]);
+    }
+
+    const cached = bacaCacheExcel(tokoKode, filePath);
+    if (cached) return resolve(cached);
+
+    let selesai = false;
+    let worker = null;
+    const finish = (items) => {
+      if (selesai) return;
+      selesai = true;
+      try { if (worker) worker.terminate(); } catch (e) {}
+      resolve(items);
+    };
+
+    // Jaring pengaman: worker tidak boleh menggantung reload selamanya.
+    const timer = setTimeout(() => {
+      log.warn('EXCEL', `File ${tokoKode}: worker parse melewati 120 dtk, dilewati`);
+      finish([]);
+    }, 120000);
+    if (timer.unref) timer.unref();
+
+    try {
+      const { Worker } = require('worker_threads');
+      worker = new Worker(path.join(__dirname, 'excel-worker.js'), {
+        workerData: { filePath, tokoKode },
+        resourceLimits: { maxOldGenerationSizeMb: 256 },
+      });
+      worker.once('message', (hasil) => {
+        clearTimeout(timer);
+        for (const m of (hasil && hasil.messages) || []) {
+          const [lvl, ...rest] = m.split('|');
+          const teks = rest.join('|');
+          if (lvl === 'ERROR') log.error('EXCEL', teks);
+          else if (lvl === 'WARN') log.warn('EXCEL', teks);
+          else log.info('EXCEL', teks);
+        }
+        if (hasil && hasil.ok && Array.isArray(hasil.items)) {
+          simpanCacheExcel(tokoKode, filePath, hasil.items);
+          finish(hasil.items);
+        } else {
+          finish([]);
+        }
+      });
+      worker.once('error', (e) => {
+        clearTimeout(timer);
+        log.error('EXCEL', `Worker ${tokoKode} error: ${e.message}`);
+        finish([]);
+      });
+      worker.once('exit', (code) => {
+        if (!selesai && code !== 0) {
+          clearTimeout(timer);
+          log.warn('EXCEL', `Worker ${tokoKode} keluar kode ${code}`);
+          finish([]);
+        }
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      log.error('EXCEL', `Gagal start worker ${tokoKode}: ${e.message}`);
+      finish([]);
+    }
+  });
 }
 
 /**
@@ -4278,7 +4678,94 @@ function loadExcel({ syncIpos = true } = {}) {
   return DATA_BARANG.length > 0;
 }
 
-// ═══ SYNC LAST UPDATED DATES FROM GITHUB COMMITS ═══
+/**
+ * Versi NON-BLOCKING dari loadExcel().
+ * Parsing tiap toko berjalan di worker thread, satu per satu (bukan serentak)
+ * agar RAM host yang kecil tidak ditekan. Dipakai oleh /reload, tombol admin,
+ * dan reload setelah upload harga — jalur yang dulu memblokir event loop
+ * sampai 8 detik sehingga bot berhenti menjawab Telegram.
+ */
+async function loadExcelAsync({ syncIpos = true } = {}) {
+  const perTokoItems = {};
+  const totalPerToko = {};
+  const daftarToko = Object.keys(CONFIG.paths.excelPerToko);
+
+  for (const tokoKode of daftarToko) {
+    // Berurutan: hindari 5 worker + 5 xlsx parse sekaligus di host 3,8 GB.
+    const items = await loadExcelPerTokoAsync(tokoKode);
+    perTokoItems[tokoKode] = items;
+    totalPerToko[tokoKode] = items.length;
+    await new Promise((r) => { const t = setTimeout(r, 50); if (t.unref) t.unref(); });
+  }
+
+  const mergedMap = new Map();
+  Object.entries(perTokoItems).forEach(([tokoKode, items]) => {
+    items.forEach((item) => {
+      const key = item.kode;
+      if (!mergedMap.has(key)) {
+        mergedMap.set(key, {
+          kode: item.kode,
+          nama: item.nama,
+          jenis: item.jenis,
+          merek: item.merek,
+          satuan: item.satuan,
+          satuanPerToko: { [tokoKode]: item.satuan },
+          namaPerToko: { [tokoKode]: item.nama },
+          tokoList: [tokoKode],
+          lastUpdated: '',
+          lastUpdatedPerToko: {},
+          harga: {
+            nk: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
+            tdm: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
+            oesapa: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
+            kefa: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
+            cp: { ecer: 0, ambil: 0, stok: 0, hpp: 0 },
+          },
+        });
+      }
+      const existing = mergedMap.get(key);
+      existing.harga[tokoKode] = {
+        ecer: item.ecer,
+        ambil: item.ambil,
+        stok: item.stok,
+        hpp: item.hpp || 0,
+      };
+      existing.satuanPerToko[tokoKode] = item.satuan;
+      existing.namaPerToko[tokoKode] = item.nama;
+      if (!existing.tokoList.includes(tokoKode)) existing.tokoList.push(tokoKode);
+    });
+  });
+
+  // Jangan timpa data lama dengan hasil kosong (mis. semua worker gagal):
+  // lebih baik tetap pakai data sebelumnya daripada bot "kehilangan" barang.
+  const adaData = mergedMap.size > 0;
+  if (adaData) {
+    DATA_BARANG = Array.from(mergedMap.values());
+    if (typeof resetDBIndex === 'function') {
+      try { resetDBIndex(); } catch (e) {}
+    }
+  } else {
+    log.warn('EXCEL', 'loadExcelAsync: semua sumber kosong, data lama dipertahankan');
+  }
+
+  const ringkas = daftarToko.map((tk) => `${NAMA_TOKO[tk] || tk}:${totalPerToko[tk]}`).join(', ');
+  log.info('EXCEL', `Reload async selesai (${ringkas}) total ${DATA_BARANG.length} barang`);
+
+  if (syncIpos) {
+    iposBridge.syncStok(DATA_BARANG, { verbose: false })
+      .catch((e) => console.warn('⚠️ [iPos] sync setelah loadExcelAsync gagal:', e.message));
+    if (iposNk) {
+      iposNk.syncStok(DATA_BARANG, { verbose: false })
+        .catch((e) => console.warn('⚠️ [iPos NK] sync setelah loadExcelAsync gagal:', e.message));
+    }
+    if (iposKefa) {
+      iposKefa.syncStok(DATA_BARANG, { verbose: false })
+        .catch((e) => console.warn('⚠️ [iPos KEFA] sync setelah loadExcelAsync gagal:', e.message));
+    }
+  }
+
+  return DATA_BARANG.length > 0;
+}
 async function syncLastUpdatedFromGitHub() {
   if (!isGitHubEnabled || !githubClient) {
     console.log('⚠️ [LASTUPDATED] Skip: GitHub tidak aktif atau client belum ready');
@@ -4339,6 +4826,14 @@ async function syncLastUpdatedFromGitHub() {
   console.log(`✅ [LASTUPDATED] ${updatedCount}/${DATA_BARANG.length} barang punya tanggal update`);
 }
 
+// Mode khusus untuk membangun cache Excel tanpa menyalakan bot/web server.
+// Dipakai setelah perubahan kode agar startup berikutnya tidak menunggu 3 menit.
+if (process.env.BUILD_EXCEL_CACHE === '1') {
+  loadExcel({ syncIpos: false });
+  console.log('EXCEL_CACHE_BUILT');
+  process.exit(0);
+}
+
 // Load saat startup; mulaiAutoSync memulai satu sync iPos per cabang.
 loadExcel({ syncIpos: false });
 syncLastUpdatedFromGitHub();
@@ -4350,19 +4845,197 @@ setInterval(() => syncExcelFromGitHub(false), SYNC_XLSX_INTERVAL_MENIT * 60 * 10
 // SSE: perubahan diterapkan ≤ ~1 dtk. Sync penuh tiap IPOS_SYNC_MS = jaring pengaman.
 // Kalau API mati, bot tetap jalan pakai data Excel terakhir.
 // IPOS_SYNC_MS default 60 dtk: SSE jalur utama; full sync hanya jaring pengaman.
-iposBridge.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 60000));
+iposBridge.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 300000), 0);
 
 // [IPOS-NK] idem untuk Nasional Kitchen (iPos 5.0 i5_INPRES2025, API di mesin NK).
 // Jalan hanya kalau IPOS_NK_URL diisi di .env — kalau kosong, bot persis seperti sebelumnya.
 if (iposNk) {
-  iposNk.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 60000));
+  iposNk.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 300000), 20000);
 }
 
 // [IPOS-KEFA] idem untuk Perabot Mamaku Kefamenanu (API di mesin KEFA).
 // Jalan hanya kalau IPOS_KEFA_URL diisi di .env — kalau kosong, fitur KEFA mati.
 if (iposKefa) {
-  iposKefa.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 60000));
+  iposKefa.mulaiAutoSync(() => DATA_BARANG, Number(process.env.IPOS_SYNC_MS || 300000), 40000);
 }
+
+// PENJAGA-BACKUP PER TOKO (tiap 30 dtk): tiap API berdiri sendiri
+// (URL/KEY/DB beda, bisa mati duluan/terpisah). Untuk tiap toko yang
+// ONLINE: refresh backup laporan hari ini (kasir + merek + marketplace)
+// + snapshot harga dari DATA_BARANG. Saat fetch GAGAL: tandai toko OFFLINE
+// (independen per toko) dan JANGAN timpa backup — backup terakhir tetap
+// yang paling fresh (±1 menit sebelum mati).
+// Data fresh TIDAK PERNAH ditimpa backup: timer ini hanya MENULIS saat
+// sukses, tampilan backup hanya DIBACA saat fetch gagal di handler laporan.
+const STATUS_TOKO = { cp: { online: null }, nk: { online: null }, kefa: { online: null } };
+async function jagaBackupSatuToko(tk, bridge, hanyaKasir) {
+  if (!bridge || !bridge.ambilLaporanKasir) return;
+  const st = STATUS_TOKO[tk] || (STATUS_TOKO[tk] = {});
+  try {
+    const ymd = ymdLokal(0);
+    // panggil TANPA fresh agar ringan (pakai cache API 1 dtk); tetap data
+    // terbaru karena SSE clear cache tiap ada nota baru.
+    const r = await bridge.ambilLaporanKasir(ymd, ymd, { ...(hanyaKasir ? { hanyaKasir: true } : {}) });
+    if (r && r.siap) {
+      simpanBackupLaporan(tk, 'kasir', ymd, r);
+      if (!st.online) log.info('BACKUP-JAGA', `${tk}: kembali ONLINE — backup dilanjutkan`);
+      st.online = true; st.terakhirOk = Date.now(); st.err = null;
+      WAKTU_SUKSES_IPOS[tk] = Date.now();
+    }
+    // Backup merek & marketplace untuk SEMUA toko, bukan hanya CP.
+    // Dulu dibatasi `tk === 'cp'`, sehingga saat API NK/KEFA mati, laporan
+    // merek/marketplace mereka TIDAK punya salinan lokal dan user hanya
+    // mendapat pesan gagal — padahal laporan kasir mereka sudah dibackup.
+    // Bridge tiap toko memang menyediakan kedua endpoint ini (terbukti:
+    // ketiga toko membalas siap=true untuk merek & marketplace).
+    if (bridge.ambilLaporanMerek && bridge.ambilLaporanMarketplace) {
+      try {
+        const m = await bridge.ambilLaporanMerek(ymd, ymd);
+        if (m && m.siap) simpanBackupLaporan(tk, 'merek', `${ymd}_${ymd}`, m);
+      } catch (e) { /* next cycle */ }
+      try {
+        const mp = await bridge.ambilLaporanMarketplace(ymd, ymd);
+        if (mp && mp.siap) simpanBackupLaporan(tk, 'marketplace', `${ymd}_${ymd}`, mp);
+      } catch (e) { /* next cycle */ }
+    }
+    // snapshot harga dari DATA_BARANG (sudah realtime via sync/SSE)
+    try {
+      const potret = [];
+      for (const d of DATA_BARANG) {
+        const h = d.harga && d.harga[tk];
+        if (!h) continue;
+        potret.push({ kode: d.kode, nama: d.nama, satuan: d.satuan, ecer: h.ecer, ambil: h.ambil, stok: h.stok });
+      }
+      if (potret.length) simpanBackupHarga(tk, potret);
+    } catch (e) { /* abaikan */ }
+  } catch (e) {
+    // GAGAL = API atau DB toko ini mati → tandai offline, backup DISENTUH.
+    if (st.online !== false) log.warn('BACKUP-JAGA', `${tk}: OFFLINE (${String(e.message || e).slice(0, 80)}) — backup terakhir dipertahankan`);
+    st.online = false; st.terakhirGagal = Date.now(); st.err = String(e.message || e).slice(0, 120);
+  }
+}
+async function jagaBackupSemuaToko() {
+  // Tiap toko API-nya BERDIRI SENDIRI (host/DB berbeda). Dulu dijalankan
+  // berurutan, sehingga satu host yang mati (connect timeout puluhan detik)
+  // ikut menahan toko lain dan membuat NK/KEFA tampak offline juga. Sekarang
+  // paralel: yang sehat tidak pernah menunggu yang mati.
+  const tugas = [
+    jagaBackupSatuToko('cp', iposBridge, false),
+    iposNk ? jagaBackupSatuToko('nk', iposNk, true) : null,
+    iposKefa ? jagaBackupSatuToko('kefa', iposKefa, true) : null,
+  ].filter(Boolean);
+  await Promise.allSettled(tugas);
+}
+// jalan berurutan per toko (hindari 3 fetch berat bersamaan); unref agar
+// tidak menahan proses saat shutdown.
+// SKEMA-BACKUP-30DTK: laporan kecil (28KB) aman di-fetch tiap 30 dtk;
+// snapshot harga diambil dari DATA_BARANG memori (sudah realtime via
+// SSE+sync) agar tidak membebani API/DB dengan katalog 11rb item.
+// Alur baca: request → cek STATUS_TOKO (hasil penjaga ini) → online =
+// fetch API realtime; offline = langsung file backup lokal + header stempel.
+setTimeout(() => { jagaBackupSemuaToko(); }, 15000); // seed pertama 15 dtk setelah start
+const __timerJagaBackup = setInterval(() => { jagaBackupSemuaToko(); }, 30 * 1000);
+if (__timerJagaBackup.unref) __timerJagaBackup.unref();
+if (typeof global !== 'undefined') global.__jagaBackupTimer = true;
+
+// ════════════════════════════════════════════════════════════════
+//   PEMBERITAHUAN TOKO OFFLINE (anti "data basi diam-diam")
+// ════════════════════════════════════════════════════════════════
+// Dulu toko bisa OFFLINE berjam-jam tanpa ada yang tahu: /ipos hanya
+// menampilkan angka "update: 25320 dtk lalu" kalau kebetulan dibuka. Sekarang
+// admin diberi tahu saat toko turun dan saat pulih, dengan jeda minimum agar
+// tidak spam. Ini bukan perbaikan jaringan — ini supaya kondisi jaringan yang
+// bermasalah langsung terlihat, bukan tersembunyi.
+const NAMA_TOKO_TAMPIL = { cp: 'CP', nk: 'NK', kefa: 'KEFA' };
+const __offlineSejak = { cp: 0, nk: 0, kefa: 0 };
+const __terakhirNotif = { cp: 0, nk: 0, kefa: 0 };
+const NOTIF_JEDA_MS = 30 * 60 * 1000;      // ingatkan ulang maks 1x/30 mnt
+const NOTIF_MULAI_MS = 5 * 60 * 1000;      // baru lapor setelah offline 5 mnt
+// Pesan dinamis disisipkan ke Markdown. Karakter '_' '*' '[' '`' di dalamnya
+// membuat Telegram menolak dengan "can't parse entities", sehingga peringatan
+// penting justru TIDAK terkirim. Contoh nyata: "UND_ERR_CONNECT_TIMEOUT".
+// Karena itu teks dinamis di-escape, dan pengiriman memakai fallback teks
+// polos bila Markdown tetap ditolak.
+const __escMd = (s) => String(s == null ? '' : s).replace(/[_*[\]`]/g, (m) => '\\' + m);
+const __kirimAman = async (chatId, teksMarkdown, teksPolos) => {
+  try {
+    const r = await kirim(chatId, teksMarkdown, { parse_mode: 'Markdown' });
+    if (r) return r;
+  } catch (e) { /* jatuh ke teks polos */ }
+  try { return await kirim(chatId, teksPolos, {}); } catch (e) { return null; }
+};
+setInterval(() => {
+  try {
+    const adminId = CONFIG.adminId;
+    if (!adminId) return;
+    const peta = { cp: iposBridge, nk: iposNk, kefa: iposKefa };
+    const sekarang = Date.now();
+    for (const [tk, bridge] of Object.entries(peta)) {
+      if (!bridge || !bridge.status) continue;
+      let st = null;
+      try { st = bridge.status(); } catch (e) { continue; }
+      if (!st) continue;
+
+      if (!st.online) {
+        if (!__offlineSejak[tk]) __offlineSejak[tk] = sekarang;
+        const lama = sekarang - __offlineSejak[tk];
+        if (lama >= NOTIF_MULAI_MS && sekarang - __terakhirNotif[tk] >= NOTIF_JEDA_MS) {
+          __terakhirNotif[tk] = sekarang;
+          const menit = Math.round(lama / 60000);
+          const nama = NAMA_TOKO_TAMPIL[tk] || tk;
+          const sebabMentah = st.lastError ? String(st.lastError).slice(0, 200) : '';
+          const sebab = sebabMentah ? `\nPenyebab: ${__escMd(sebabMentah)}` : '';
+          const polos =
+            `iPos ${nama} OFFLINE ${menit} menit\n` +
+            `Data ${nama} TIDAK ter-update dan bot memakai backup terakhir.` +
+            (sebabMentah ? `\nPenyebab: ${sebabMentah}` : '') +
+            `\n\nCek jaringan/host ${st.url || ''}.`;
+          __kirimAman(adminId,
+            `⚠️ *iPos ${nama} OFFLINE ${menit} menit*\n` +
+            `Data ${nama} TIDAK ter-update dan bot memakai backup terakhir.` +
+            sebab +
+            `\n\nCek jaringan/host ${__escMd(st.url || '')}.`,
+            polos);
+        }
+      } else if (__offlineSejak[tk]) {
+        const lama = sekarang - __offlineSejak[tk];
+        __offlineSejak[tk] = 0;
+        __terakhirNotif[tk] = 0;
+        const nama = NAMA_TOKO_TAMPIL[tk] || tk;
+        const menit = Math.round(lama / 60000);
+        __kirimAman(adminId,
+          `✅ *iPos ${nama} ONLINE lagi* setelah ${menit} menit.\n` +
+          `Data kembali ter-update otomatis.`,
+          `iPos ${nama} ONLINE lagi setelah ${menit} menit.\nData kembali ter-update otomatis.`);
+      }
+    }
+  } catch (e) { /* jangan ganggu loop utama */ }
+}, 60 * 1000);
+
+// BACKUP-HARGA OTOMATIS: tiap 10 menit, untuk tiap toko yang API-nya ONLINE,
+// simpan snapshot harga+stok dari DATA_BARANG (maks 1 file per toko).
+// Hanya jalan saat online → TIDAK PERNAH menimpa backup dengan data basi.
+// Data dipakai headerBackup saat API/DB toko mati.
+setInterval(() => {
+  try {
+    const peta = { cp: iposBridge, nk: iposNk, kefa: iposKefa };
+    for (const [tk, bridge] of Object.entries(peta)) {
+      if (!bridge || !bridge.status) continue;
+      let st = null;
+      try { st = bridge.status(); } catch (e) { continue; }
+      if (!st || !st.online) continue; // offline → JANGAN timpa backup
+      WAKTU_SUKSES_IPOS[tk] = Date.now();
+      const potret = [];
+      for (const d of DATA_BARANG) {
+        const h = d.harga && d.harga[tk];
+        if (!h) continue;
+        potret.push({ kode: d.kode, nama: d.nama, satuan: d.satuan, ecer: h.ecer, ambil: h.ambil, stok: h.stok });
+      }
+      if (potret.length) simpanBackupHarga(tk, potret);
+    }
+  } catch (e) { /* jangan ganggu loop utama */ }
+}, 10 * 60 * 1000);
+if (typeof global !== 'undefined') global.__backupHargaTimer = true;
 
 // ════════════════════════════════════════════════════════════════
 //   14. SEARCH ENGINE
@@ -5558,10 +6231,249 @@ async function generateExcelBA(baData, tokoKode, namaToko) {
 // ════════════════════════════════════════════════════════════════
 
 const bot = new TelegramBot(CONFIG.botToken, {
-  polling: { autoStart: true, interval: 0, params: { timeout: 25, limit: 100 } },
-  request: { timeout: 35000, forever: true, agentOptions: { keepAlive: true, maxSockets: 25, maxFreeSockets: 10 } },
+  polling: { autoStart: false, interval: 1000, params: { timeout: 15, limit: 100 } },
+  request: { timeout: 35000, forever: true, agentOptions: { keepAlive: true, keepAliveMsecs: 10000, maxSockets: 25, maxFreeSockets: 10, family: 4 } },
 });
 
+// Heartbeat polling: dicatat dari getUpdates agar watchdog tahu koneksi Telegram
+// benar-benar hidup, bukan hanya flag isPolling().
+let telegramLastPollOkAt = 0;
+let telegramLastPollErrorAt = 0;
+let telegramPollErrorStreak = 0;
+// Bukti klik tombol benar-benar diterima (bukan hanya diasumsikan).
+let _callbackCount = 0;
+let telegramLastCallbackAt = 0;
+// true saat kita sengaja membatalkan long-poll (recovery/shutdown). Error yang
+// muncul karena pembatalan ini bukan kegagalan jaringan.
+let pollingStopping = false;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POLLER MANDIRI (native https, hard-timeout)
+// ─────────────────────────────────────────────────────────────────────────────
+// Library memakai @cypress/request + forever:true. Di jaringan flaky, socket
+// half-open membuat promise getUpdates MENGGANTUNG SELAMANYA: request.timeout
+// tidak pernah menyala, bot tidak pernah menerima update, dan watchdog cuma
+// melihat "polling=true" (padahal tidak ada long-poll aktif). Probe getUpdates
+// dari proses lain mengembalikan 200 (bukan 409) = bukti tidak ada long-poll.
+//
+// Poller ini memakai https.get dengan timeout keras pada socket + timer
+// keseluruhan, jadi kegagalan SELALU terdeteksi dan di-retry dengan backoff.
+const https = require('https');
+const TELEGRAM_HOST = 'api.telegram.org';
+const POLL_TIMEOUT_SEC = 25;           // long-poll Telegram (detik)
+// Batas keras satu request HARUS lebih besar dari long-poll + margin jaringan.
+// Dulu 40 dtk (margin hanya 15 dtk). Jaringan di sini butuh 350-1100 ms per
+// request, dan saat host sibuk/paging margin itu habis -> "timeout keras"
+// padahal Telegram sehat, lalu poller dianggap macet dan bot di-restart.
+// Dengan 55 dtk, long-poll 25 dtk tetap punya margin 30 dtk.
+const POLL_REQUEST_TIMEOUT_MS = 55000;
+// Jaring pengaman terakhir di atas batas request (bukan hanya +5 dtk).
+const POLL_HARD_GUARD_MS = POLL_REQUEST_TIMEOUT_MS + 15000;
+let _pollerActive = null;              // { req }
+let _pollerRunning = false;
+let _pollerLoop = null;
+let _pollOffset = 0;
+let _pollOffsetLoaded = false;
+const POLL_OFFSET_FILE = path.join(__dirname, 'storage', 'polling_offset.json');
+
+// Agent keep-alive khusus getUpdates.
+// Dulu setiap request memakai header `Connection: close`, sehingga tiap poll
+// (~140x/jam) harus membuka TCP + handshake TLS baru. Di jaringan yang tidak
+// stabil itu memunculkan ETIMEDOUT/ECONNRESET berulang dan membuang CPU.
+// Dengan agent keep-alive, socket dipakai ulang. `maxSockets: 1` memastikan
+// hanya SATU long-poll berjalan pada satu waktu (dua getUpdates paralel akan
+// saling membatalkan dan memicu 409).
+const _pollAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30000,
+  maxSockets: 1,
+  maxFreeSockets: 1,
+  timeout: POLL_REQUEST_TIMEOUT_MS + 15000,
+});
+
+function muatPollOffset() {
+  if (_pollOffsetLoaded) return;
+  _pollOffsetLoaded = true;
+  try {
+    if (fs.existsSync(POLL_OFFSET_FILE)) {
+      const j = JSON.parse(fs.readFileSync(POLL_OFFSET_FILE, 'utf8'));
+      if (j && Number.isFinite(Number(j.offset))) _pollOffset = Number(j.offset);
+    }
+  } catch (e) { /* abaikan, mulai dari 0 */ }
+}
+function simpanPollOffset() {
+  try {
+    fs.writeFileSync(POLL_OFFSET_FILE, JSON.stringify({ offset: _pollOffset, at: Date.now() }));
+  } catch (e) { /* abaikan */ }
+}
+
+// ════════════════════════════════════════════════════════════════
+//   BUG NYATA (2026-11-14): TOMBOL INLINE TIDAK MERESPON
+//   getUpdates dipanggil TANPA allowed_updates. Menurut dokumentasi resmi
+//   Telegram: "If not specified, the previous setting will be used."
+//   Server menyimpan setelan lama dari suatu saat, dan di bot ini isinya
+//   HANYA ["message"]. Akibatnya SEMUA callback_query (klik tombol menu)
+//   difilter di sisi Telegram dan tidak pernah sampai ke bot, sementara
+//   pesan teks tetap masuk. Bukti: getWebhookInfo -> allowed_updates
+//   ["message"]; tabel messages berisi 0 callback baru selama 15+ jam
+//   padahal teks terus masuk.
+//   Perbaikan: kirim allowed_updates EKSPLISIT setiap poll agar setelan
+//   basi di server ditimpa permanen. Daftar ini harus mencakup semua
+//   handler yang didaftarkan bot (message/photo/voice/document/
+//   callback_query); tipe lain (chat_member, message_reaction) sengaja
+//   tidak diminta agar antrean tidak dipenuhi update yang tidak dipakai.
+// ════════════════════════════════════════════════════════════════
+const POLL_ALLOWED_UPDATES = ['message', 'edited_message', 'callback_query'];
+const POLL_ALLOWED_QS = '&allowed_updates=' + encodeURIComponent(JSON.stringify(POLL_ALLOWED_UPDATES));
+
+// Satu getUpdates dengan batas waktu keras. Selalu resolve (tidak menggantung):
+// { ok, updates } atau { error }.
+function telegramGetUpdates() {
+  return new Promise((resolve) => {
+    const qs = `?offset=${_pollOffset}&timeout=${POLL_TIMEOUT_SEC}&limit=100${POLL_ALLOWED_QS}`;
+    let selesai = false;
+    let timer = null;
+    let req = null;
+    const finish = (hasil) => {
+      if (selesai) return;
+      selesai = true;
+      if (timer) clearTimeout(timer);
+      if (_pollerActive && _pollerActive.req === req) _pollerActive = null;
+      resolve(hasil);
+    };
+    req = https.get({
+      host: TELEGRAM_HOST,
+      path: `/bot${CONFIG.botToken}/getUpdates${qs}`,
+      family: 4,
+      agent: _pollAgent,
+      timeout: POLL_REQUEST_TIMEOUT_MS,
+      // JANGAN set `Connection: close`: dengan agent keep-alive, header itu
+      // mematikan reuse socket dan memaksa handshake TLS baru setiap poll.
+    }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (d) => { body += d; });
+      res.on('end', () => {
+        let j = null;
+        try { j = JSON.parse(body); } catch (e) {
+          return finish({ error: { message: 'Respons getUpdates bukan JSON', code: 'EPARSE' } });
+        }
+        if (j && j.ok) return finish({ ok: true, updates: Array.isArray(j.result) ? j.result : [] });
+        const err = new Error((j && j.description) || 'getUpdates gagal');
+        err.code = (j && j.error_code === 409) ? 'ECONFLICT' : 'EAPI';
+        err.statusCode = (j && j.error_code) || res.statusCode;
+        err.retryAfter = j && j.parameters && j.parameters.retry_after;
+        finish({ error: err });
+      });
+      res.on('error', (e) => finish({ error: e }));
+    });
+    _pollerActive = { req };
+    req.on('timeout', () => {
+      const e = new Error('getUpdates timeout keras');
+      e.code = 'ETIMEDOUT';
+      try { req.destroy(e); } catch (e2) {}
+      finish({ error: e });
+    });
+    req.on('error', (e) => finish({ error: e }));
+    // Jaring pengaman terakhir: loop tidak boleh macet walau event apa pun hilang.
+    timer = setTimeout(() => {
+      const e = new Error('getUpdates melewati batas waktu total');
+      e.code = 'ETIMEDOUT';
+      try { req.destroy(e); } catch (e2) {}
+      finish({ error: e });
+    }, POLL_HARD_GUARD_MS);
+    if (timer.unref) timer.unref();
+  });
+}
+
+function tidur(ms) {
+  return new Promise((r) => {
+    const t = setTimeout(r, ms);
+    if (t.unref) t.unref();
+  });
+}
+
+async function pollerLoop() {
+  muatPollOffset();
+  let conflictStreak = 0;
+  while (_pollerRunning && !isShuttingDown) {
+    const hasil = await telegramGetUpdates();
+    if (!_pollerRunning || isShuttingDown) break;
+
+    if (hasil.ok) {
+      conflictStreak = 0;
+      telegramLastPollOkAt = Date.now();
+      telegramPollErrorStreak = 0;
+      let adaUpdate = false;
+      for (const u of (hasil.updates || [])) {
+        if (!u || typeof u.update_id !== 'number') continue;
+        adaUpdate = true;
+        _pollOffset = u.update_id + 1;
+        try { bot.processUpdate(u); }
+        catch (e) { log.error('BOT', 'processUpdate: ' + (e && e.message ? e.message : String(e))); }
+      }
+      if (adaUpdate) simpanPollOffset();
+      continue; // sukses: langsung long-poll berikutnya
+    }
+
+    const err = hasil.error || {};
+    const msg = err.message || String(err);
+    if (pollingStopping || !_pollerRunning) break;
+
+    if (err.code === 'ECONFLICT') {
+      // 409: poller lain masih memegang long-poll; beri waktu melepas.
+      conflictStreak += 1;
+      telegramLastPollErrorAt = Date.now();
+      telegramPollErrorStreak += 1;
+      if (conflictStreak === 1 || conflictStreak % 5 === 0) {
+        log.warn('POLLING', `409 Conflict (${conflictStreak}x) - tunggu 30 dtk agar poller lama lepas`);
+      }
+      await tidur(30000);
+      continue;
+    }
+
+    telegramLastPollErrorAt = Date.now();
+    telegramPollErrorStreak += 1;
+    const wait = Math.min(30000, 2000 * Math.max(1, telegramPollErrorStreak));
+    const line = `Network error (${telegramPollErrorStreak}x): ${msg.slice(0, 100)} - retry ${wait}ms`;
+    if (telegramPollErrorStreak >= 3) log.warn('POLLING', line);
+    else log.info('POLLING', line);
+    await tidur(wait);
+  }
+  _pollerRunning = false;
+}
+
+async function mulaiPollingMandiri() {
+  if (_pollerRunning) return;
+  // Jaring pengaman kedua: poller hanya boleh hidup pada proses yang benar-
+  // benar memegang port dashboard. Tanpa ini, instance bayangan yang gagal
+  // bind port tetap memanggil getUpdates dan memicu 409 Conflict.
+  if (!webServerListening) {
+    log.warn('POLLING', 'Poller tidak dimulai: web server belum memegang port ' + PORT + ' (bukan instance utama)');
+    return;
+  }
+  _pollerRunning = true;
+  telegramPollingStartedAt = Date.now();
+  _pollerLoop = pollerLoop();
+}
+
+async function hentikanPollingMandiri(reason = 'Polling stop') {
+  pollingStopping = true;
+  _pollerRunning = false;
+  const aktif = _pollerActive;
+  if (aktif && aktif.req) {
+    try { aktif.req.destroy(new Error(reason)); } catch (e) {}
+  }
+  _pollerActive = null;
+  try { if (_pollerLoop) await _pollerLoop; } catch (e) {}
+  _pollerLoop = null;
+  pollingStopping = false;
+}
+
+// Kompatibilitas: bot.isPolling()/bot.stopPolling() dipakai watchdog & shutdown.
+bot.isPolling = () => _pollerRunning;
+bot.stopPolling = hentikanPollingMandiri;
+bot.startPolling = mulaiPollingMandiri;
 console.log(`🤖 AI: ${[CONFIG.geminiKey && 'Gemini', CONFIG.groqKey && 'Groq', CONFIG.openrouterKey && 'OpenRouter'].filter(Boolean).join(', ') || 'None'}`);
 console.log('═'.repeat(60));
 console.log('✅ Bot READY!\n');
@@ -5738,7 +6650,172 @@ function splitMessage(text, maxLength = 4000) {
   return chunks;
 }
 
-const { shouldRetryTelegramSend, sendTelegramMessage } = require('./telegram-send-error');
+const { sendTelegramMessage, sendTelegramWithRetry } = require('./telegram-send-error');
+
+function safeFileName(name) {
+  const s = String(name || 'file')
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+    .replace(/^\.+/, '')
+    .replace(/\.+$/, '')
+    .slice(0, 150);
+  return s || 'file';
+}
+
+function sha256File(filePath) {
+  try {
+    return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+  } catch(e) { return null; }
+}
+
+function tanggalFolder(ts) {
+  return new Date(ts || Date.now()).toISOString().slice(0, 10);
+}
+
+async function arsipkanFileKeluar(chatId, file, kind, result, fileOptions = {}) {
+  try {
+    let localPath = null;
+    let fileName = fileOptions.filename || fileOptions.fileName || null;
+    if (typeof file === 'string' && fs.existsSync(file)) {
+      localPath = file;
+      if (!fileName) fileName = path.basename(file);
+    } else if (Buffer.isBuffer(file)) {
+      fileName = fileName || `${kind}_${Date.now()}.bin`;
+    }
+    if (!localPath && !Buffer.isBuffer(file)) {
+      // file_id/stream: simpan metadata saja, tidak bisa disalin tanpa mengonsumsi stream.
+      const sent = kind === 'photo'
+        ? (Array.isArray(result && result.photo) ? result.photo[result.photo.length - 1] : null)
+        : (result && result.document);
+      botDb.recordFile({
+        chat_id: chatId, direction: 'out', kind,
+        file_id: sent && sent.file_id,
+        file_unique_id: sent && sent.file_unique_id,
+        file_name: fileName || (sent && sent.file_name),
+        mime_type: sent && sent.mime_type,
+        size: sent && sent.file_size,
+        status: 'metadata-only',
+      });
+      return null;
+    }
+    const dir = path.join(botDb.FILES_DIR, 'out', String(chatId), tanggalFolder());
+    fs.mkdirSync(dir, { recursive: true });
+    const target = path.join(dir, `${Date.now()}_${safeFileName(fileName || `${kind}.bin`)}`);
+    if (localPath) fs.copyFileSync(localPath, target);
+    else fs.writeFileSync(target, file);
+    const hash = sha256File(target);
+    const stat = fs.statSync(target);
+    const sent = kind === 'photo'
+      ? (Array.isArray(result && result.photo) ? result.photo[result.photo.length - 1] : null)
+      : (result && result.document);
+    botDb.recordFile({
+      chat_id: chatId, direction: 'out', kind,
+      file_id: sent && sent.file_id,
+      file_unique_id: sent && sent.file_unique_id,
+      file_name: fileName || path.basename(target),
+      mime_type: sent && sent.mime_type,
+      size: stat.size,
+      local_path: target,
+      sha256: hash,
+      status: 'saved',
+    });
+    return target;
+  } catch(e) {
+    log.warn('ARSIP', 'Gagal arsip file keluar: ' + e.message);
+    return null;
+  }
+}
+
+function extractAttachment(msg) {
+  if (!msg) return null;
+  if (msg.document) return { kind: 'document', file: msg.document, name: msg.document.file_name || `document_${msg.message_id}` };
+  if (msg.photo && msg.photo.length) {
+    const p = msg.photo[msg.photo.length - 1];
+    return { kind: 'photo', file: p, name: `photo_${msg.message_id}.jpg` };
+  }
+  if (msg.voice) return { kind: 'voice', file: msg.voice, name: `voice_${msg.message_id}.ogg` };
+  if (msg.audio) return { kind: 'audio', file: msg.audio, name: msg.audio.file_name || `audio_${msg.message_id}.mp3` };
+  if (msg.video) return { kind: 'video', file: msg.video, name: msg.video.file_name || `video_${msg.message_id}.mp4` };
+  if (msg.video_note) return { kind: 'video_note', file: msg.video_note, name: `video_note_${msg.message_id}.mp4` };
+  if (msg.animation) return { kind: 'animation', file: msg.animation, name: msg.animation.file_name || `animation_${msg.message_id}.mp4` };
+  if (msg.sticker) return { kind: 'sticker', file: msg.sticker, name: `sticker_${msg.message_id}.webp` };
+  return null;
+}
+
+async function arsipkanLampiranMasuk(msg) {
+  const att = extractAttachment(msg);
+  if (!att || !att.file || !att.file.file_id || !msg.chat) return;
+  const unique = att.file.file_unique_id || null;
+  if (unique && botDb.fileExistsByUniqueId(unique)) return;
+  if (Number(att.file.file_size || 0) > 20 * 1024 * 1024) {
+    botDb.recordFile({
+      chat_id: msg.chat.id, user_id: msg.from && msg.from.id,
+      direction: 'in', kind: att.kind,
+      file_id: att.file.file_id, file_unique_id: unique,
+      file_name: att.name, mime_type: att.file.mime_type,
+      size: att.file.file_size, status: 'too-large',
+    });
+    return;
+  }
+  const dir = path.join(botDb.FILES_DIR, 'in', String(msg.chat.id), tanggalFolder((msg.date || Date.now() / 1000) * 1000));
+  fs.mkdirSync(dir, { recursive: true });
+  const target = path.join(dir, `${msg.message_id}_${safeFileName(att.name)}`);
+  try {
+    if (fs.existsSync(target)) return;
+    const downloaded = await bot.downloadFile(att.file.file_id, dir);
+    if (!downloaded || !fs.existsSync(downloaded)) throw new Error('downloadFile tidak menghasilkan file');
+    if (path.resolve(downloaded) !== path.resolve(target)) {
+      try { fs.renameSync(downloaded, target); }
+      catch(e) { fs.copyFileSync(downloaded, target); try { fs.unlinkSync(downloaded); } catch(e2) {} }
+    }
+    const hash = sha256File(target);
+    const stat = fs.statSync(target);
+    botDb.recordFile({
+      chat_id: msg.chat.id, user_id: msg.from && msg.from.id,
+      direction: 'in', kind: att.kind,
+      file_id: att.file.file_id, file_unique_id: unique,
+      file_name: att.name, mime_type: att.file.mime_type,
+      size: stat.size, local_path: target, sha256: hash, status: 'saved',
+    });
+  } catch(e) {
+    log.warn('ARSIP', `Gagal simpan lampiran ${att.kind}: ${e.message}`);
+    botDb.recordFile({
+      chat_id: msg.chat.id, user_id: msg.from && msg.from.id,
+      direction: 'in', kind: att.kind,
+      file_id: att.file.file_id, file_unique_id: unique,
+      file_name: att.name, mime_type: att.file.mime_type,
+      size: att.file.file_size, status: 'error', meta: { error: e.message },
+    });
+  }
+}
+
+// Arsipkan semua lampiran masuk (foto, dokumen, voice, video, sticker).
+// Listener ini didaftarkan lebih dulu agar tetap jalan walau handler utama return.
+bot.on('message', (msg) => {
+  arsipkanLampiranMasuk(msg).catch((e) => log.warn('ARSIP', e.message));
+});
+
+// Semua pengiriman teks dicatat; wrapper tidak mengubah hasil/retry.
+const _rawSendMessage = bot.sendMessage.bind(bot);
+bot.sendMessage = async (...args) => {
+  const result = await _rawSendMessage(...args);
+  try { botDb.recordOutgoingMessage(args[0], args[1], args[2], result); } catch(e) {}
+  return result;
+};
+
+// Semua pengiriman file (backup/laporan/foto) ikut retry saat jaringan putus.
+// Buffer/path/file_id aman dikirim ulang; tidak ada stream sekali-pakai di sini.
+const _rawSendDocument = bot.sendDocument.bind(bot);
+bot.sendDocument = async (...args) => {
+  const result = await sendTelegramWithRetry(_rawSendDocument, ...args);
+  try { await arsipkanFileKeluar(args[0], args[1], 'document', result, args[3] || {}); } catch(e) {}
+  return result;
+};
+const _rawSendPhoto = bot.sendPhoto.bind(bot);
+bot.sendPhoto = async (...args) => {
+  const result = await sendTelegramWithRetry(_rawSendPhoto, ...args);
+  try { await arsipkanFileKeluar(args[0], args[1], 'photo', result, args[3] || {}); } catch(e) {}
+  return result;
+};
 
 async function kirim(chatId, text, opts = {}) {
   const MAX_LENGTH = 4000;
@@ -5746,9 +6823,13 @@ async function kirim(chatId, text, opts = {}) {
   try {
     if (!text || text.length <= MAX_LENGTH) {
       const options = { parse_mode: 'Markdown', ...opts };
+      const outboxId = botDb.enqueueOutbox(chatId, 'text', { text, options });
       try {
-        return await sendTelegramMessage(bot.sendMessage.bind(bot), chatId, text, options);
+        const result = await sendTelegramMessage(bot.sendMessage.bind(bot), chatId, text, options);
+        botDb.markOutbox(outboxId, 'sent');
+        return result;
       } catch(err) {
+        botDb.markOutbox(outboxId, 'failed', err.message);
         log.error('SEND', err.message);
         return null;
       }
@@ -5771,21 +6852,15 @@ async function kirim(chatId, text, opts = {}) {
         ? { parse_mode: 'Markdown', ...opts }
         : { parse_mode: 'Markdown' };
       
+      const outboxId = botDb.enqueueOutbox(chatId, 'text', { text: chunkText, options: chunkOpts });
       try {
-        lastResult = await bot.sendMessage(chatId, chunkText, chunkOpts);
+        lastResult = await sendTelegramMessage(bot.sendMessage.bind(bot), chatId, chunkText, chunkOpts);
+        botDb.markOutbox(outboxId, 'sent');
         if (!isLast) await tunggu(400);
       } catch(err) {
+        botDb.markOutbox(outboxId, 'failed', err.message);
         log.error('SEND-CHUNK', `Gagal chunk ${i + 1}/${total}: ${err.message}`);
-        if (!shouldRetryTelegramSend(err)) break;
-        try {
-          const cleanText = chunkText.replace(/[*_`\[\]]/g, '');
-          lastResult = await sendTelegramMessage(bot.sendMessage.bind(bot), chatId, cleanText,
-            isLast ? { ...opts, parse_mode: undefined } : {});
-          if (!isLast) await tunggu(400);
-        } catch(e) {
-          log.error('SEND-CHUNK-FALLBACK', `Chunk ${i + 1} gagal total: ${e.message}`);
-          break;
-        }
+        break;
       }
     }
     return lastResult;
@@ -5803,6 +6878,87 @@ async function kirimDokumen(chatId, filePath, fileName) {
     log.error('SEND-DOC', err.message);
     return null;
   }
+}
+
+// Kirim ulang pesan teks yang sudah masuk outbox tetapi belum sempat
+// ditandai terkirim saat proses mati. Batasi agar tidak membanjiri chat.
+async function resumeOutbox() {
+  try {
+    const rows = botDb.pendingOutbox(20);
+    const batas = Date.now() - 6 * 60 * 60 * 1000;
+    let terkirim = 0;
+    for (const row of rows) {
+      if (Number(row.created_at) < batas) {
+        botDb.markOutbox(row.id, 'expired', 'terlalu lama, tidak dikirim ulang');
+        continue;
+      }
+      let payload;
+      try { payload = JSON.parse(row.payload); } catch(e) { botDb.markOutbox(row.id, 'failed', 'payload rusak'); continue; }
+      if (!payload || !payload.text) { botDb.markOutbox(row.id, 'failed', 'payload kosong'); continue; }
+      try {
+        await sendTelegramMessage(bot.sendMessage.bind(bot), row.chat_id, payload.text, payload.options || {});
+        botDb.markOutbox(row.id, 'sent');
+        terkirim++;
+        await tunggu(300);
+      } catch(e) {
+        botDb.markOutbox(row.id, 'retry', e.message);
+      }
+    }
+    if (terkirim > 0) log.info('OUTBOX', `Pesan tertunda dikirim ulang: ${terkirim}`);
+  } catch(e) { log.warn('OUTBOX', 'Gagal resume outbox: ' + e.message); }
+}
+
+function backupEnvSecaraAman() {
+  try {
+    const envPath = path.join(__dirname, '.env');
+    if (!fs.existsSync(envPath)) {
+      log.error('SECURE', 'File .env tidak ditemukan! Kredensial tidak bisa dipulihkan otomatis.');
+      return;
+    }
+    const target = path.join(botDb.SECURE_DIR, 'env.backup');
+    fs.mkdirSync(botDb.SECURE_DIR, { recursive: true });
+    fs.copyFileSync(envPath, target);
+    // Batasi akses: hanya user bot, SYSTEM, dan Administrators.
+    const user = process.env.USERNAME || 'rdpadmin';
+    try {
+      execFileSync('icacls', [botDb.SECURE_DIR, '/inheritance:r', '/grant:r', `${user}:(OI)(CI)F`, '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F'], { stdio: 'ignore' });
+      execFileSync('icacls', [target, '/inheritance:r', '/grant:r', `${user}:F`, '*S-1-5-18:F', '*S-1-5-32-544:F'], { stdio: 'ignore' });
+    } catch(e) { log.warn('SECURE', 'ACL backup .env gagal: ' + e.message); }
+    const st = fs.statSync(target);
+    botDb.recordCredentialMeta({
+      name: 'env',
+      source_path: envPath,
+      backup_path: target,
+      size: st.size,
+      last_write: st.mtimeMs,
+      note: 'Salinan .env dengan ACL ketat; isi mentah TIDAK dimasukkan ke SQLite.',
+    });
+    log.info('SECURE', 'Backup .env terenkripsi-ACL tersedia di data\\secure (isi tidak dibaca/ditampilkan).');
+  } catch(e) { log.warn('SECURE', 'Gagal backup .env: ' + e.message); }
+}
+
+function backupDataLokal() {
+  try {
+    const hasil = botDb.backupDatabase(30);
+    if (hasil) log.info('DB', 'Backup database: ' + hasil);
+  } catch(e) { log.warn('DB', 'Backup database gagal: ' + e.message); }
+}
+
+function imporLogLama() {
+  try {
+    const files = [
+      CONFIG.paths.logs,
+      path.join(__dirname, 'logs', 'service-out.log'),
+      path.join(__dirname, 'logs', 'boot-events.log'),
+      path.join(__dirname, 'logs', 'watchdog-boot.log'),
+    ];
+    let total = 0;
+    for (const f of files) {
+      try { total += botDb.importLogFile(f, 'log-import'); } catch(e) {}
+    }
+    const duplikat = botDb.dedupeEvents();
+    if (total > 0) log.info('DB', `Log lama diimpor ke database: ${total} baris` + (duplikat ? `, ${duplikat} duplikat dibersihkan` : ''));
+  } catch(e) { log.warn('DB', 'Impor log lama gagal: ' + e.message); }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -5851,6 +7007,23 @@ function buildGuestWelcome(userName, userId) {
     `Nanti admin yang review lu pung permintaan e.`;
 }
 
+// STEMPEL KESEGARAN — satu baris jujur tentang seberapa baru angka harga/stok
+// yang sedang ditampilkan. Dipakai di detail barang & daftar hasil pencarian.
+// Tujuannya: user TIDAK PERNAH dikelabui — kalau angkanya bukan realtime,
+// dia tahu persis berapa umurnya.
+function stempelKesegaran(tokoKode) {
+  try {
+    const b = (tokoKode === 'nk' || tokoKode === 'kefa') ? jembatanToko(tokoKode) : iposBridge;
+    if (!b || !b.status) return '';
+    const s = b.status();
+    if (s.itemSegar) return ''; // realtime → tidak perlu disclaimer
+    if (s.umurItemDetik === null || s.umurItemDetik === undefined) return '';
+    const u = s.umurItemDetik;
+    const teks = u < 120 ? `${u} dtk` : u < 3600 ? `${Math.round(u / 60)} mnt` : `${Math.round(u / 3600)} jam`;
+    return `⚠️ _Angka di atas data terakhir ${teks} lalu — sedang disegarkan dari iPos._\n`;
+  } catch (e) { return ''; }
+}
+
 function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
   let msg = `📦 *DETAIL BARANG*\n${GARIS_TEBAL}\n`;
   msg += `🔖 *Kode:* \`${item.kode}\`\n`;
@@ -5864,6 +7037,14 @@ function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
     const t = TOKO_LIST.find(x => x.kode === tokoKode);
     item.harga = item.harga || {};
     const h = item.harga[tokoKode];
+    // BACKUP-HARGA: bila API toko ini mati, tampilkan stempel data terakhir
+    // (harga di bawah = cache terakhir, BUKAN realtime — jangan disangka fresh).
+    const mati = (typeof iposMatiSejak === 'function') ? iposMatiSejak(tokoKode) : null;
+    if (mati) {
+      const b = ambilBackupHarga(tokoKode);
+      if (b) msg = headerBackup(b.diambil, String(tokoKode).toUpperCase()) + msg;
+      else msg = headerBackup(mati.sejak, String(tokoKode).toUpperCase()) + msg;
+    }
     msg += `${t.icon} *${t.nama}*\n`;
     if (!h) {
       // Toko iPos (NK/KEFA): harga nol/missing harus terlihat sebagai "-".
@@ -5883,6 +7064,10 @@ function buildDetailBarang(item, tokoKode, tipeHarga = 'semua') {
       msg += `📊 Stok: ${h.stok} ${h.stok > 0 ? '✅' : '⚠️'}`;
       const tglT = (item.lastUpdatedPerToko && item.lastUpdatedPerToko[tokoKode]) || item.lastUpdated || '';
       if (tglT) msg += ` 📅 ${tglT}`;
+      msg += `\n`;
+      // Jangan pernah tampilkan angka harga/stok tanpa keterangan umurnya
+      // ketika datanya bukan realtime.
+      msg += stempelKesegaran(tokoKode);
       msg += '\n';
     }
   } else {
@@ -5916,6 +7101,10 @@ const HASIL_PER_HALAMAN = 15; // ★ Item per halaman (bisa disesuaikan)
 
 async function segarkanHargaHasil(items, tokoKode) {
   if (!Array.isArray(items) || !tokoKode || tokoKode === 'all') return;
+  // GERBANG-HARGA-CARI: toko offline → skip fetch massal (cache + backup
+  // yang tampil); toko online → fetch realtime seperti biasa.
+  const jaga = (typeof STATUS_TOKO !== 'undefined' && STATUS_TOKO[tokoKode]) ? STATUS_TOKO[tokoKode] : null;
+  if (jaga && jaga.online === false) return;
   await Promise.all(items.map((item) => segarkanItemRealtime(tokoKode, item.kode)));
 }
 
@@ -6418,14 +7607,48 @@ function tampilkanBarangPilihan(item, tokoKode, userId, rakAktif) {
 
 // SO realtime: fetch 1 item dari API iPos toko tsb (cp/nk/kefa) → terapkan ke DATA_BARANG.
 // null = API mati/tidak ada → caller pakai stok cache terakhir. CP dibungkus {data}, lain telanjang (ditangani bridge).
+// BACKUP-HARGA: tiap sukses catat waktu + snapshot harga toko tsb (dipakai
+// sebagai "data terakhir" saat API mati — TIDAK menimpa data fresh).
+const WAKTU_SUKSES_IPOS = { cp: 0, nk: 0, kefa: 0 };
+// GERBANG-HARGA: cek STATUS_TOKO (hasil penjaga 30-detik) dulu.
+// Offline = SKIP fetch (pasti gagal & lambat) → langsung null agar caller
+// pakai cache + backup lokal. Online/null = fetch API realtime instant.
+// Backup offline TIDAK PERNAH mengganggu toko yang sedang online: gerbang
+// ini per-tokoKode, tidak menyentuh toko lain.
 async function segarkanItemRealtime(tokoKode, kode) {
   const bridge = (tokoKode === 'nk' || tokoKode === 'kefa') ? jembatanToko(tokoKode) : iposBridge;
   if (!bridge?.ambilItem) return null;
   try {
+    const jaga = (typeof STATUS_TOKO !== 'undefined' && STATUS_TOKO[tokoKode]) ? STATUS_TOKO[tokoKode] : null;
+    if (jaga && jaga.online === false) return null; // toko mati → cache + backup
     const live = await bridge.ambilItem(kode);
     if (!live) return null;
     bridge.terapkan(DATA_BARANG, live);
+    // catat momen sukses (murah, tanpa I/O) — snapshot file dilakukan timer
+    // 10-menit agar tidak membebani request user.
+    WAKTU_SUKSES_IPOS[tokoKode] = Date.now();
     return DATA_BARANG.find((d) => String(d.kode).toUpperCase() === String(kode).toUpperCase()) || null;
+  } catch (e) { return null; }
+}
+// API toko dianggap MATI bila penjaga 30-detik menandainya offline
+// (= fetch laporan gagal = API atau DB-nya mati), atau tidak ada fetch
+// sukses > 3 menit (atau bridge offline).
+function iposMatiSejak(tokoKode) {
+  const bridge = (tokoKode === 'nk' || tokoKode === 'kefa') ? jembatanToko(tokoKode) : iposBridge;
+  try {
+    const jaga = (typeof STATUS_TOKO !== 'undefined' && STATUS_TOKO[tokoKode]) ? STATUS_TOKO[tokoKode] : null;
+    const st = bridge && bridge.status ? bridge.status() : null;
+    const suksesTerakhir = WAKTU_SUKSES_IPOS[tokoKode] || 0;
+    const sinkronTerakhir = (st && st.lastSync) || 0;
+    const terakhir = Math.max(suksesTerakhir, sinkronTerakhir, (jaga && jaga.terakhirOk) || 0);
+    if (jaga && jaga.online === false && terakhir) {
+      return { sejak: terakhir, diamMs: Date.now() - terakhir, err: jaga.err || (st && st.lastError) };
+    }
+    if (!terakhir) return null; // belum pernah sukses — belum bisa vonis mati
+    const diam = Date.now() - terakhir;
+    if (diam > 3 * 60 * 1000) return { sejak: terakhir, diamMs: diam, err: st && st.lastError };
+    if (st && st.online === false && diam > 60 * 1000) return { sejak: terakhir, diamMs: diam, err: st && st.lastError };
+    return null;
   } catch (e) { return null; }
 }
 
@@ -9319,7 +10542,8 @@ bot.onText(/\/hapuskontak (\d+)/, (msg, match) => {
 
 bot.onText(/\/reload/, async (msg) => {
   if (!isAdmin(msg.from.id)) return;
-  loadExcel({ syncIpos: false });
+  // Non-blocking: parsing Excel di worker thread agar bot tetap menjawab Telegram.
+  await loadExcelAsync({ syncIpos: false });
   const r = await iposBridge.syncStok(DATA_BARANG, { verbose: true });
   const rn = iposNk ? await iposNk.syncStok(DATA_BARANG, { verbose: true }) : null;
   const rk = iposKefa ? await iposKefa.syncStok(DATA_BARANG, { verbose: true }) : null;
@@ -9346,23 +10570,50 @@ bot.onText(/\/ipos/, async (msg) => {
   const s = iposBridge.status();
   const sn = iposNk ? iposNk.status() : null;
   const sk = iposKefa ? iposKefa.status() : null;
+  // PENJAGA-BACKUP: info backup terakhir per toko (umur = jarak ke data
+  // terakhir sebelum API/DB mati; "baru saja" = fresh ≤1 mnt).
+  const infoBackup = (tk) => {
+    try {
+      const ymd = ymdLokal(0);
+      const lap = ambilBackupLaporan(tk, 'kasir', ymd);
+      const har = ambilBackupHarga(tk);
+      const umur = (ts) => {
+        const m = Math.round((Date.now() - ts) / 60000);
+        return m < 1 ? 'baru saja' : m < 60 ? `${m} mnt lalu` : `${Math.floor(m / 60)} jam ${m % 60} mnt lalu`;
+      };
+      const jaga = (typeof STATUS_TOKO !== 'undefined' && STATUS_TOKO[tk]) ? STATUS_TOKO[tk] : {};
+      const flag = jaga.online === false ? '🔴' : jaga.online === true ? '🟢' : '⚪';
+      let t = `\n💾 backup ${flag}`;
+      t += lap ? ` lap ${umur(lap.diambil)}` : ' lap −';
+      t += har ? ` | hrg ${umur(har.diambil)}` : ' | hrg −';
+      return t;
+    } catch (e) { return ''; }
+  };
+  // Tampilkan DUA umur agar tidak menyesatkan: "ubah" = kapan item terakhir
+  // berubah (besar itu normal bila memang tidak ada perubahan), "koneksi" =
+  // kapan terakhir terbukti terhubung ke iPos (ini indikator kesehatan).
+  const umurTeks = (st) => {
+    const u = st.umurDetik === null ? '-' : st.umurDetik + ' dtk';
+    const k = st.umurKoneksiDetik === null || st.umurKoneksiDetik === undefined ? '-' : st.umurKoneksiDetik + ' dtk';
+    return `⏱️ koneksi ${k} | ubah ${u}`;
+  };
   kirim(msg.chat.id,
     `🔌 *iPos Bridge*\n` +
     `*CP* — ${s.online ? '🟢 online' : '🔴 offline'} | ${s.sse}\n` +
     `📦 ${s.total} item | 🏪 ${s.toko.join(', ')}\n` +
-    `⏱️ update: ${s.umurDetik === null ? '-' : s.umurDetik + ' dtk lalu'} | 🌐 ${s.url}` +
-    (s.lastError ? `\n⚠️ ${s.lastError}` : '') +
+    `${umurTeks(s)} | 🌐 ${s.url}` +
+    (s.lastError ? `\n⚠️ ${s.lastError}` : '') + infoBackup('cp') +
     (sn
       ? `\n\n*NK* — ${sn.online ? '🟢 online' : '🔴 offline'} | ${sn.sse}\n` +
         `📦 ${sn.total} item | 🏪 ${sn.toko.join(', ')}\n` +
-        `⏱️ update: ${sn.umurDetik === null ? '-' : sn.umurDetik + ' dtk lalu'} | 🌐 ${sn.url}` +
-        (sn.lastError ? `\n⚠️ ${sn.lastError}` : '')
+        `${umurTeks(sn)} | 🌐 ${sn.url}` +
+        (sn.lastError ? `\n⚠️ ${sn.lastError}` : '') + infoBackup('nk')
       : `\n\n*NK* — ⚪ belum dikonfigurasi (IPOS_NK_URL kosong)`) +
     (sk
       ? `\n\n*KEFA* — ${sk.online ? '🟢 online' : '🔴 offline'} | ${sk.sse}\n` +
         `📦 ${sk.total} item | 🏪 ${sk.toko.join(', ')}\n` +
-        `⏱️ update: ${sk.umurDetik === null ? '-' : sk.umurDetik + ' dtk lalu'} | 🌐 ${sk.url}` +
-        (sk.lastError ? `\n⚠️ ${sk.lastError}` : '')
+        `${umurTeks(sk)} | 🌐 ${sk.url}` +
+        (sk.lastError ? `\n⚠️ ${sk.lastError}` : '') + infoBackup('kefa')
       : `\n\n*KEFA* — ⚪ belum dikonfigurasi (IPOS_KEFA_URL kosong)`),
     { parse_mode: 'Markdown' });
 });
@@ -9905,7 +11156,10 @@ bot.on('voice', async (msg) => {
     }
     
     // ★ PRIORITY 7: Non-produk → AI Chat
-    return await prosesAI(chatId, userId, corrected);
+    return await prosesAI(chatId, userId, corrected).catch(async (err) => {
+      log.error('AI', err.message || String(err));
+      return kirim(chatId, 'Maaf kak, lagi ada gangguan saat memproses. Coba kirim ulang ya.');
+    });
     
   } catch(err) {
     log.error('VOICE', err.message);
@@ -10106,7 +11360,7 @@ async function notaOCRRace(imageBuffer) {
   const keys = [CONFIG.geminiKey, CONFIG.geminiKey2, CONFIG.geminiKey3].filter(Boolean);
   if (!keys.length || !Buffer.isBuffer(imageBuffer)) throw new Error('Tidak ada AI provider');
   const imageBase64 = imageBuffer.toString('base64');
-  const MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+  const MODELS = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
   const urut = notaModelFavorit ? [notaModelFavorit, ...MODELS.filter(m => m !== notaModelFavorit)] : MODELS;
   const now = Date.now();
   for (const model of urut) {
@@ -10133,7 +11387,12 @@ async function notaOCRRace(imageBuffer) {
             return info;
           } catch(err) {
             const status = err.response?.status;
-            if (status === 404) notaModelSkipSampai[model] = Number.MAX_SAFE_INTEGER;
+            if (status === 404) {
+              // 404 permanen (model pensiun utk key ini) -> jangan coba lagi selamanya.
+              // Error lain (429/503/503-overload) -> skip 60 detik saja.
+              const permanen = /no longer available|not found for API version|is not found/i.test(err.response?.data?.error?.message || '');
+              notaModelSkipSampai[model] = permanen ? Number.MAX_SAFE_INTEGER : Date.now() + 60000;
+            }
             else if (status === 429 || status === 503) notaModelSkipSampai[model] = Date.now() + 60000;
             if (attempt < 2 && (status === 429 || status === 503)) {
               await new Promise(r => setTimeout(r, 2500));
@@ -10184,10 +11443,18 @@ async function simpanFileNota(chatId, userId, imageBuffer, info) {
     return kirim(chatId, `🚫 Kode *${escapeMd(info.kode)}* belum punya folder tujuan.`);
   }
   const bulan = BULAN_NOTA[info.bulanIdx];
-  const folder = path.join(cfg.base, buildFolderNota(info, cfg));
+  // Simpan HANYA ke share ADMIN_DIMAS — tanpa fallback. Folder bulan dibuat
+  // otomatis bila belum ada (mkdir recursive + verifikasi tulis).
+  const namaFolderBulan = buildFolderNota(info, cfg);
+  const folder = path.join(cfg.base, namaFolderBulan);
   const fullPath = path.join(folder, buildNamaFileNota(info));
   try {
     fs.mkdirSync(folder, { recursive: true });
+    if (!fs.existsSync(folder)) throw new Error('folder bulan tidak terbentuk: ' + folder);
+    const uji = path.join(folder, '.tulis-uji');
+    fs.writeFileSync(uji, 'ok');
+    fs.unlinkSync(uji);
+    log.info('NOTA', `Folder bulan siap: ${folder}`);
     fs.writeFileSync(fullPath, imageBuffer);
     log.info('NOTA', `Disimpan: ${fullPath}`);
     await kirim(chatId,
@@ -10942,11 +12209,11 @@ async function prosesUpdateExcelToko(chatId, userId, tokoKode, fileId, fileName)
     const targetPath = CONFIG.paths.excelPerToko[tokoKode];
     fs.writeFileSync(targetPath, fileBuffer);
     
-    // Reload data Excel di memori bot
-    if (typeof loadExcelPerToko === 'function') {
-      loadExcelPerToko(tokoKode);
-    } else if (typeof loadExcel === 'function') {
-      loadExcel();
+    // Reload data Excel di memori bot (non-blocking: parse di worker thread)
+    try {
+      await loadExcelAsync({ syncIpos: false });
+    } catch (e) {
+      log.warn('EXCEL', 'Reload setelah upload gagal: ' + e.message);
     }
     
     let resultMsg = `✅ *SUKSES UPDATE HARGA TOKO ${namaToko.toUpperCase()}*\n${GARIS_TEBAL}\n\n` +
@@ -10986,6 +12253,21 @@ async function prosesUpdateExcelToko(chatId, userId, tokoKode, fileId, fileName)
 // ════════════════════════════════════════════════════════════════
 
 bot.on('message', async (msg) => {
+  // Catat SEMUA pesan masuk lebih dulu, termasuk command/media yang akan
+  // ditangani handler lain. Ini yang membuat riwayat tidak hilang saat restart.
+  try { botDb.recordIncoming(msg); } catch(e) {}
+  if (msg.from && msg.chat) {
+    try {
+      const s0 = getSesi(msg.from.id);
+      s0._chatId = msg.chat.id;
+      if (msg.text) { s0._lastMessage = msg.text.slice(0, 1000); s0._lastIntent = msg.text.slice(0, 200); }
+      else if (msg.caption) { s0._lastMessage = msg.caption.slice(0, 1000); s0._lastIntent = 'media'; }
+      botDb.saveSession(msg.from.id, msg.chat.id, s0, {
+        last_message: s0._lastMessage, last_intent: s0._lastIntent, last_seen_at: Date.now(),
+      });
+    } catch(e) {}
+  }
+
   // HANDLER DOCUMENT/EXCEL
   if (msg.document) return; // dokumen ditangani khusus oleh handler 'document' di atas
   
@@ -11340,7 +12622,10 @@ bot.on('message', async (msg) => {
   
     // ★ PRIORITY 11: Smart routing via prosesAI
   // prosesAI sudah include router pintar (cari barang vs ngobrol)
-  return prosesAI(chatId, userId, text);
+  return prosesAI(chatId, userId, text).catch(async (err) => {
+    log.error('AI', err.message || String(err));
+    return kirim(chatId, 'Maaf kak, lagi ada gangguan saat memproses. Coba kirim ulang ya.');
+  });
 });
 // ════════════════════════════════════════════════════════════════
 //   37. CALLBACK QUERY HANDLER (LENGKAP - Semua Callback + Barang Baru)
@@ -11352,8 +12637,22 @@ bot.on('callback_query', async (query) => {
   const data = query.data || '';
   const msgId = query.message?.message_id;
   if (!chatId || !userId) return;
+  _callbackCount++;
+  telegramLastCallbackAt = Date.now();
+  try { botDb.recordCallback(query); } catch(e) {}
+  try {
+    const s0 = getSesi(userId);
+    s0._chatId = chatId;
+    s0._lastMessage = 'callback: ' + data;
+    s0._lastIntent = data.slice(0, 200);
+    botDb.saveSession(userId, chatId, s0, { last_message: s0._lastMessage, last_intent: s0._lastIntent, last_seen_at: Date.now() });
+  } catch(e) {}
   
-  bot.answerCallbackQuery(query.id).catch((e) => log.warn('CALLBACK_ACK', e.message));
+  bot.answerCallbackQuery(query.id).catch((e) => {
+    // Query terlalu tua adalah efek putus jaringan; bukan error aplikasi.
+    if (/query is too old|query ID is invalid/i.test(String(e.message))) return;
+    log.warn('CALLBACK_ACK', e.message);
+  });
   
   // ════════════ UPLOAD EXCEL HANDLER ════════════
   
@@ -12552,7 +13851,9 @@ bot.on('callback_query', async (query) => {
   }
   
   if (data === 'admin:reload' && isAdmin(userId)) {
-    loadExcel();
+    // Non-blocking: beri tahu dulu, lalu parse di worker thread.
+    try { await bot.answerCallbackQuery(query.id, { text: 'Reload Excel...' }); } catch(e) {}
+    await loadExcelAsync({ syncIpos: false });
     try { await bot.editMessageText(`✅ *Reloaded!*\n📦 ${DATA_BARANG.length} barang`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 Admin', callback_data: 'menu:9' }]] } }); }
     catch(e) { await kirim(chatId, `✅ Reloaded! ${DATA_BARANG.length} barang`); }
     return;
@@ -12602,14 +13903,56 @@ webApp.get('/health', (req, res) => {
   if (req.method !== 'GET') return res.sendStatus(405);
   let polling = false;
   try { polling = bot.isPolling(); } catch (e) {}
+  // Status iPos per toko. Hanya metadata (online/SSE/umur data), TIDAK pernah
+  // memuat key. Tanpa ini, "data terakhir N menit lalu" tidak bisa dibuktikan
+  // dari luar proses dan diagnosa realtime selalu menebak.
+  const iposRingkas = (b) => {
+    if (!b || typeof b.status !== 'function') return null;
+    try {
+      const s = b.status();
+      return {
+        online: !!s.online,
+        sse: !!String(s.sse || '').includes('realtime'),
+        total: s.total,
+        umurDetik: s.umurDetik,
+        umurKoneksiDetik: s.umurKoneksiDetik,
+        // Kesegaran DATA ITEM (harga/stok) — beda dari kesegaran koneksi.
+        // `itemSegar:false` berarti angka harga/stok yang ditampilkan mungkin
+        // sudah tidak sama dengan iPos, meski koneksi masih "hidup".
+        umurItemDetik: s.umurItemDetik,
+        itemSegar: s.itemSegar,
+        notaTanpaItemDetik: s.notaTanpaItemDetik,
+        lastError: s.lastError || null,
+        toko: s.toko,
+        url: s.url,
+      };
+    } catch (e) { return null; }
+  };
   res.json({
     status: 'OK', uptime: process.uptime(),
     barang: DATA_BARANG.length, members: MEMBERS.length,
     pid: process.pid,
     rssMB: Math.round(process.memoryUsage().rss / 1048576),
     polling,
+    telegramLastPollOkAt,
+    telegramLastPollErrorAt,
+    telegramPollErrorStreak,
+    telegramLastPollAgoSec: telegramLastPollOkAt
+      ? Math.max(0, Math.round((Date.now() - telegramLastPollOkAt) / 1000))
+      : (process.uptime() > 120 ? Math.round(process.uptime()) : null),
+    // Diagnosa: tanpa allowed_updates yang benar, klik tombol tidak pernah
+    // sampai ke bot padahal pesan teks normal. Tampilkan agar tidak buta lagi.
+    telegramAllowedUpdates: POLL_ALLOWED_UPDATES,
+    telegramCallbackCount: _callbackCount,
+    telegramLastCallbackAt,
+    db: botDb.stats(),
     loopLagMs,
     loopLagMax60s: _lagHist.length ? Math.max(..._lagHist) : 0,
+    ipos: {
+      cp: iposRingkas(typeof iposBridge !== 'undefined' ? iposBridge : null),
+      nk: iposRingkas(typeof iposNk !== 'undefined' ? iposNk : null),
+      kefa: iposRingkas(typeof iposKefa !== 'undefined' ? iposKefa : null),
+    },
   });
 });
 
@@ -12846,7 +14189,7 @@ webApp.get('/dashboard', requireLogin, (req, res) => {
 <div class="navbar">
   <h1>📊 ${escapeHtml(CONFIG.appName)}</h1>
   <div class="nav-links">
-    <a href="/dashboard">📊 Stats</a>
+    <a href="/database">Database</a><a href="/dashboard">📊 Stats</a>
     <a href="/dashboard/chats">💬 Chat Log</a>
     <a href="/dashboard/members">👥 Members</a>
     <a href="/dashboard/searches">🔍 Searches</a>
@@ -12975,7 +14318,7 @@ webApp.get('/dashboard/chats', requireLogin, (req, res) => {
 <div class="navbar">
   <h1>💬 Chat Log</h1>
   <div class="nav-links">
-    <a href="/dashboard">📊 Stats</a>
+    <a href="/database">Database</a><a href="/dashboard">📊 Stats</a>
     <a href="/dashboard/chats" style="background:rgba(255,255,255,0.3)">💬 Chats</a>
     <a href="/dashboard/members">👥 Members</a>
     <a href="/logout">🚪</a>
@@ -13066,7 +14409,7 @@ webApp.get('/dashboard/members', requireLogin, (req, res) => {
 <div class="navbar">
   <h1>👥 Members</h1>
   <div class="nav-links">
-    <a href="/dashboard">📊 Stats</a>
+    <a href="/database">Database</a><a href="/dashboard">📊 Stats</a>
     <a href="/dashboard/chats">💬 Chats</a>
     <a href="/dashboard/members" style="background:rgba(255,255,255,0.3)">👥 Members</a>
     <a href="/logout">🚪</a>
@@ -13132,7 +14475,7 @@ webApp.get('/dashboard/searches', requireLogin, (req, res) => {
 <div class="navbar">
   <h1>🔍 Search Analytics</h1>
   <div class="nav-links">
-    <a href="/dashboard">📊 Stats</a>
+    <a href="/database">Database</a><a href="/dashboard">📊 Stats</a>
     <a href="/dashboard/chats">💬 Chats</a>
     <a href="/dashboard/searches" style="background:rgba(255,255,255,0.3)">🔍 Searches</a>
     <a href="/logout">🚪</a>
@@ -13197,6 +14540,301 @@ const _lagHist = [];
   if (t.unref) t.unref();
 }
 
+// ── Database lokal: riwayat pesan, event, file, sesi, backup, kredensial ──
+webApp.get('/database', requireLogin, (req, res) => {
+  const tabs = ['messages', 'events', 'files', 'sessions', 'backups', 'outbox', 'tasks', 'credentials'];
+  const tab = tabs.includes(String(req.query.tab || '')) ? String(req.query.tab) : 'messages';
+  const limit = Math.max(1, Math.min(500, parseInt(req.query.limit || '100', 10) || 100));
+  const fmt = (ts) => ts ? new Date(Number(ts)).toLocaleString('id-ID', { timeZone: 'Asia/Makassar' }) : '-';
+  const esc = (s) => String(s === undefined || s === null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const st = botDb.stats();
+  let rows = '';
+  let headers = '';
+
+  if (tab === 'messages') {
+    headers = '<th>Waktu</th><th>Arah</th><th>Chat/User</th><th>Tipe</th><th>Isi</th>';
+    rows = botDb.recentMessages(limit).map(r => `<tr>
+      <td class="time-info">${esc(fmt(r.created_at))}</td>
+      <td>${esc(r.direction)}</td>
+      <td>${esc(r.chat_id)}${r.user_id ? ' / ' + esc(r.user_id) : ''}</td>
+      <td>${esc(r.type)}</td>
+      <td class="msg-text">${esc(String(r.text || r.caption || '').slice(0, 500))}</td>
+    </tr>`).join('');
+  } else if (tab === 'events') {
+    headers = '<th>Waktu</th><th>Level</th><th>Kategori</th><th>Pesan</th>';
+    rows = botDb.recentEvents(limit).map(r => `<tr>
+      <td class="time-info">${esc(fmt(r.ts))}</td>
+      <td><span class="badge">${esc(r.level)}</span></td>
+      <td>${esc(r.category)}</td>
+      <td class="msg-text">${esc(String(r.message || '').slice(0, 700))}</td>
+    </tr>`).join('');
+  } else if (tab === 'files') {
+    headers = '<th>Waktu</th><th>Arah</th><th>Chat</th><th>Nama</th><th>Ukuran</th><th>Status</th><th>Path</th>';
+    rows = botDb.recentFiles(limit).map(r => `<tr>
+      <td class="time-info">${esc(fmt(r.created_at))}</td>
+      <td>${esc(r.direction)}</td>
+      <td>${esc(r.chat_id)}</td>
+      <td>${esc(r.file_name)}</td>
+      <td>${r.size ? (Number(r.size) / 1024).toFixed(1) + ' KB' : '-'}</td>
+      <td>${esc(r.status)}</td>
+      <td>${r.local_path ? `<a href="/database/file/${r.id}">buka</a>` : '-'}</td>
+    </tr>`).join('');
+  } else if (tab === 'sessions') {
+    headers = '<th>User</th><th>Chat</th><th>Pesan terakhir</th><th>Intent</th><th>Diperbarui</th><th>State</th>';
+    rows = botDb.recentSessions(limit).map(r => `<tr>
+      <td>${esc(r.user_id)}</td><td>${esc(r.chat_id)}</td>
+      <td class="msg-text">${esc(String(r.last_message || '').slice(0, 250))}</td>
+      <td>${esc(r.last_intent)}</td><td class="time-info">${esc(fmt(r.updated_at))}</td>
+      <td class="msg-text">${esc(String(r.state || '').slice(0, 400))}</td>
+    </tr>`).join('');
+  } else if (tab === 'backups') {
+    headers = '<th>Waktu</th><th>Jenis</th><th>File</th><th>Ukuran</th><th>SHA256</th><th>Status</th>';
+    rows = botDb.recentBackups(limit).map(r => `<tr>
+      <td class="time-info">${esc(fmt(r.created_at))}</td><td>${esc(r.kind)}</td>
+      <td class="msg-text">${esc(r.backup_path)}</td>
+      <td>${r.size ? (Number(r.size) / 1048576).toFixed(2) + ' MB' : '-'}</td>
+      <td class="msg-text">${esc(String(r.sha256 || '').slice(0, 16))}</td><td>${esc(r.status)}</td>
+    </tr>`).join('');
+  } else if (tab === 'outbox') {
+    headers = '<th>Waktu</th><th>Chat</th><th>Jenis</th><th>Status</th><th>Percobaan</th><th>Error</th><th>Payload</th>';
+    rows = botDb.recentOutbox(limit).map(r => `<tr>
+      <td class="time-info">${esc(fmt(r.created_at))}</td><td>${esc(r.chat_id)}</td>
+      <td>${esc(r.kind)}</td><td>${esc(r.status)}</td><td>${esc(r.attempts)}</td>
+      <td class="msg-text">${esc(r.last_error)}</td><td class="msg-text">${esc(String(r.payload || '').slice(0, 350))}</td>
+    </tr>`).join('');
+  } else if (tab === 'tasks') {
+    headers = '<th>Waktu</th><th>User</th><th>Chat</th><th>Aksi</th><th>Status</th><th>Payload</th>';
+    rows = botDb.recentTasks(limit).map(r => `<tr>
+      <td class="time-info">${esc(fmt(r.created_at))}</td><td>${esc(r.user_id)}</td><td>${esc(r.chat_id)}</td>
+      <td>${esc(r.action)}</td><td>${esc(r.status)}</td><td class="msg-text">${esc(String(r.payload || '').slice(0, 350))}</td>
+    </tr>`).join('');
+  } else if (tab === 'credentials') {
+
+    rows = botDb.recentCredentials(limit).map(r => `<tr>
+      <td>${esc(r.name)}</td><td class="msg-text">${esc(r.source_path)}</td>
+      <td class="msg-text">${esc(r.backup_path)}</td><td>${esc(r.size)}</td>
+      <td class="time-info">${esc(fmt(r.updated_at))}</td><td>${esc(r.note)}</td>
+    </tr>`).join('');
+  }
+
+  const tabLinks = tabs.map(t => `<a href="/database?tab=${t}" style="${t === tab ? 'background:rgba(255,255,255,0.3)' : ''}">${t}</a>`).join('');
+  res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Database Bot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>${DASHBOARD_CSS}
+  table{width:100%;border-collapse:collapse} th,td{padding:8px;border-bottom:1px solid #333;text-align:left;vertical-align:top}
+  .msg-text{max-width:520px;word-break:break-word;white-space:pre-wrap}</style></head><body>
+  <div class="navbar"><h1>🗄️ Database Lokal</h1><div class="nav-links">
+    <a href="/database">Database</a><a href="/dashboard">📊 Stats</a><a href="/dashboard/chats">💬 Chats</a>
+    <a href="/database" style="background:rgba(255,255,255,0.3)">🗄️ Database</a>
+    <a href="/logout">🚪</a></div></div>
+  <div class="container"><div class="section">
+    <h2>Ringkasan</h2>
+    <p>Pesan: <b>${st.messages || 0}</b> · Sesi: <b>${st.sessions || 0}</b> · Event: <b>${st.events || 0}</b> · File: <b>${st.files || 0}</b> · Outbox: <b>${st.outbox || 0}</b> · Backup: <b>${st.backups || 0}</b></p>
+    <p style="color:#888">Database: ${esc(botDb.DB_PATH)} · File: ${esc(botDb.FILES_DIR)}</p>
+    <div class="nav-links">${tabLinks}</div>
+  </div><div class="section"><h2>${tab} (max ${limit})</h2>
+    <table><thead><tr>${headers}</tr></thead><tbody>${rows || '<tr><td colspan="7">Belum ada data</td></tr>'}</tbody></table>
+  </div></div></body></html>`);
+});
+
+webApp.get('/database/file/:id', requireLogin, (req, res) => {
+  const file = botDb.getFile(req.params.id);
+  if (!file || !file.local_path) return res.status(404).send('File tidak ditemukan');
+  const root = path.resolve(botDb.FILES_DIR) + path.sep;
+  const target = path.resolve(file.local_path);
+  if (!target.startsWith(root)) return res.status(403).send('Akses ditolak');
+  if (!fs.existsSync(target)) return res.status(404).send('File sudah tidak ada di disk');
+  // Stream manual: res.download() pernah menggantung di Windows untuk file
+  // arsip bot. Pipe + Content-Length eksplisit lebih andal.
+  try {
+    const st = fs.statSync(target);
+    const nama = path.basename(target).replace(/"/g, '');
+    res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+    res.setHeader('Content-Length', st.size);
+    res.setHeader('Content-Disposition', `attachment; filename="${nama}"`);
+    const stream = fs.createReadStream(target);
+    stream.on('error', () => { try { res.destroy(); } catch(e) {} });
+    stream.pipe(res);
+  } catch (e) {
+    res.status(500).send('Gagal membaca file: ' + e.message);
+  }
+});
+
+webApp.get('/api/db/stats', requireLogin, (req, res) => res.json(botDb.stats()));
+
+// Diagnostik iPos: menjalankan syncStok SUNGGUHAN dari dalam proses bot.
+// Dipakai untuk membuktikan apakah kegagalan CP berasal dari state proses ini
+// (bukan jaringan). Tidak mengubah data toko selain menyegarkan dari iPos.
+// Key tidak pernah dikembalikan.
+webApp.get('/api/diag/ipos', requireLogin, async (req, res) => {
+  const tk = String(req.query.toko || 'cp').toLowerCase();
+  // CP diekspor sebagai fasad modul (fungsi pembungkus), sedangkan instans
+  // sebenarnya ada di iposBridge.cp. Diagnostik butuh instans asli agar
+  // ujiAmbilItems bisa dipanggil.
+  const peta = { cp: (iposBridge && iposBridge.cp) || iposBridge, nk: iposNk, kefa: iposKefa };
+  const b = peta[tk];
+  if (!b) return res.status(404).json({ error: 'toko tidak dikenal' });
+  const hasil = { toko: tk, sebelum: null, sesudah: null, uji: {} };
+
+  const ringkas = (x) => {
+    try {
+      const s = x.status();
+      return { online: s.online, sse: s.sse, total: s.total, umurDetik: s.umurDetik, lastError: s.lastError };
+    } catch (e) { return { error: e.message }; }
+  };
+  hasil.sebelum = ringkas(b);
+
+  // Uji 1: fetch langsung dari proses ini (jalur yang sama dengan ambilItems).
+  try {
+    const t0 = Date.now();
+    const r = await b.ujiAmbilItems();
+    hasil.uji.ambilItems = { ok: true, ms: Date.now() - t0, jumlah: r };
+  } catch (e) {
+    hasil.uji.ambilItems = {
+      ok: false,
+      ms: null,
+      message: String(e && e.message),
+      cause: e && e.cause ? (e.cause.code || e.cause.message || String(e.cause)) : null,
+      subErrors: e && e.cause && e.cause.errors ? e.cause.errors.map((x) => x.code || x.message) : null,
+    };
+  }
+
+  // Uji 2: syncStok penuh (verbose agar pesan aslinya tercatat di log).
+  try {
+    const t0 = Date.now();
+    const r = await b.syncStok(DATA_BARANG, { verbose: true });
+    hasil.uji.syncStok = { ok: !!r.ok, ms: Date.now() - t0, err: r.err || null, ubah: r.ubah, baru: r.baru, hapus: r.hapus, total: r.total };
+  } catch (e) {
+    hasil.uji.syncStok = { ok: false, message: String(e && e.message) };
+  }
+
+  hasil.sesudah = ringkas(b);
+  res.json(hasil);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// AUDIT KESESUAIAN DATA (read-only)
+// Membandingkan data yang BOT PAKAI (DATA_BARANG di memori, yaitu yang
+// ditampilkan ke user) dengan /api/item-live iPos SAAT ITU JUGA.
+// Tujuan: membuktikan ada/tidaknya data basi, bukan mengasumsikannya.
+//
+// PENTING: item yang TIDAK ADA di DB toko itu (HTTP 404 dari item-live)
+// BUKAN data basi — memang barangnya tidak dijual di toko tersebut. Audit
+// lama menghitungnya sebagai "gagal" sehingga hasilnya menyesatkan.
+// ─────────────────────────────────────────────────────────────────────────
+webApp.get('/api/diag/kesesuaian', requireLogin, async (req, res) => {
+  const n = Math.max(1, Math.min(50, parseInt(req.query.n || '10', 10) || 10));
+  const hanyaToko = String(req.query.toko || '').toLowerCase();
+  const peta = { cp: (iposBridge && iposBridge.cp) || iposBridge, nk: iposNk, kefa: iposKefa };
+  const daftar = ['cp', 'nk', 'kefa'].filter((tk) => peta[tk] && (!hanyaToko || hanyaToko === tk));
+  const hasil = { waktu: Date.now(), jumlahPerToko: n, toko: {} };
+
+  for (const tk of daftar) {
+    const b = peta[tk];
+    // Sampel diambil dari item yang MEMANG ADA di iPos toko ini (via katalog
+    // bridge), bukan sembarang DATA_BARANG. Kalau sampel diambil dari
+    // DATA_BARANG, bisa terpilih item milik toko lain yang harga[tk]-nya
+    // placeholder — hasilnya "tak-ada-di-toko" padahal bukan masalah.
+    let katalogToko = [];
+    try {
+      katalogToko = await b.ujiAmbilKode ? await b.ujiAmbilKode() : [];
+    } catch (e) { katalogToko = []; }
+    const milik = DATA_BARANG.filter((d) => d && d.harga && d.harga[tk]
+      && (!katalogToko.length || katalogToko.includes(String(d.kode).toUpperCase())));
+    const contoh = [];
+    if (milik.length) {
+      const langkah = Math.max(1, Math.floor(milik.length / n));
+      for (let i = 0; i < n && i * langkah < milik.length; i++) contoh.push(milik[i * langkah]);
+    }
+    const beda = [];
+    const tidakAdaDiIpos = [];
+    let sama = 0, gagal = 0;
+    for (const d of contoh) {
+      const kode = String(d.kode);
+      try {
+        const live = await b.ambilItem(kode);
+        if (!live) {
+          // ambilItem() = null berarti iPos menjawab 404 (barang memang tidak
+          // ada di toko ini) ATAU jaringan gagal. Bedakan lewat satu panggilan
+          // langsung: kalau 404 → memang tidak ada (bukan data basi).
+          tidakAdaDiIpos.push(kode);
+          continue;
+        }
+        const h = d.harga[tk] || {};
+        const selisih = [];
+        if (Number(h.ecer) !== Number(live.harga)) selisih.push({ field: 'ecer', bot: h.ecer, ipos: live.harga });
+        if (Number(h.ambil) !== Number(live.harga2)) selisih.push({ field: 'ambil', bot: h.ambil, ipos: live.harga2 });
+        if (Number(h.stok) !== Number(live.stok)) selisih.push({ field: 'stok', bot: h.stok, ipos: live.stok });
+        if (selisih.length) beda.push({ kode, selisih });
+        else sama++;
+      } catch (e) { gagal++; }
+    }
+    hasil.toko[tk] = {
+      diuji: contoh.length, sama, beda: beda.length,
+      tidakAdaDiIpos: tidakAdaDiIpos.length, gagal,
+      rincianBeda: beda.slice(0, 20),
+      contohTidakAdaDiIpos: tidakAdaDiIpos.slice(0, 10),
+      status: b.status ? (() => { const s = b.status(); return { online: s.online, sse: s.sse, total: s.total, umurDetik: s.umurDetik, umurKoneksiDetik: s.umurKoneksiDetik, umurItemDetik: s.umurItemDetik, itemSegar: s.itemSegar, notaTanpaItemDetik: s.notaTanpaItemDetik }; })() : null,
+    };
+  }
+  hasil.ringkasan = Object.fromEntries(Object.entries(hasil.toko).map(([k, v]) => [k, `${v.sama}/${v.diuji} sama, ${v.beda} beda, ${v.tidakAdaDiIpos} tak-ada-di-toko, ${v.gagal} gagal`]));
+  // LULUS hanya kalau TIDAK ADA perbedaan nilai dan tidak ada kegagalan nyata.
+  hasil.lulus = Object.values(hasil.toko).every((v) => v.beda === 0 && v.gagal === 0);
+  res.json(hasil);
+});
+
+webApp.get('/api/db/:table', requireLogin, (req, res) => {
+  const limit = Math.max(1, Math.min(500, parseInt(req.query.limit || '100', 10) || 100));
+  const map = {
+    messages: () => botDb.recentMessages(limit),
+    events: () => botDb.recentEvents(limit),
+    files: () => botDb.recentFiles(limit),
+    sessions: () => botDb.recentSessions(limit),
+    backups: () => botDb.recentBackups(limit),
+    outbox: () => botDb.recentOutbox(limit),
+    tasks: () => botDb.recentTasks(limit),
+    credentials: () => botDb.recentCredentials(limit),
+  };
+  if (!map[req.params.table]) return res.status(404).json({ error: 'tabel tidak dikenal' });
+  res.json({ table: req.params.table, limit, data: map[req.params.table]() });
+});
+
+webApp.get('/api/selftest/ocr', requireLogin, async (req, res) => {
+  // Self-test OCR end-to-end: render gambar sintetis berisi angka yang sudah
+  // diketahui, kirim ke provider vision, lalu bandingkan hasil bacanya.
+  // Hanya membaca; tidak menulis data toko/nota.
+  const expected = '15741500';
+  const t0 = Date.now();
+  try {
+    const sharp = require('sharp');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="260">
+      <rect width="900" height="260" fill="#ffffff"/>
+      <text x="24" y="60" font-family="Arial" font-size="34" fill="#000000">LAPORAN PENJUALAN HARIAN</text>
+      <text x="24" y="120" font-family="Arial" font-size="28" fill="#000000">TOTAL TRANSAKSI</text>
+      <text x="560" y="120" font-family="Arial" font-size="40" font-weight="bold" fill="#000000">15.741.500</text>
+      <text x="24" y="200" font-family="Arial" font-size="26" fill="#333333">Tunai 12.000.000   Debit 3.741.500</text>
+    </svg>`;
+    const buf = await sharp(Buffer.from(svg)).jpeg({ quality: 92 }).toBuffer();
+    const aiText = await analisaGambarBuffer(buf, SCAN_PROMPTS.total_transaksi);
+    const digits = String(aiText || '').replace(/[^0-9]/g, '');
+    res.json({
+      ok: digits.includes(expected),
+      expected,
+      aiText: String(aiText || '').slice(0, 200),
+      digits,
+      imageBytes: buf.length,
+      ms: Date.now() - t0,
+      providers: {
+        gemini: !!(CONFIG.geminiKey || CONFIG.geminiKey2 || CONFIG.geminiKey3),
+        openrouter: !!CONFIG.openrouterKey,
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, expected, error: e.message, ms: Date.now() - t0 });
+  }
+});
+
 webApp.get('/logout', (req, res) => {
   req.session.destroy();
   res.redirect('/');
@@ -13207,7 +14845,11 @@ webApp.get('/logout', (req, res) => {
 const PORT = process.env.PORT || CONFIG.webPort || 3000;
 const HOST = '0.0.0.0';
 
+// Penanda port benar-benar dikuasai proses ini. Dipakai sebagai kunci
+// single-instance: proses kedua TIDAK boleh ikut polling Telegram.
+// Dideklarasikan di awal modul agar tidak ada risiko TDZ pada poller.
 const server = webApp.listen(PORT, HOST, () => {
+  webServerListening = true;
   console.log('═'.repeat(60));
   console.log(`🌐 Web Dashboard READY`);
   console.log(`🌐 Listening: ${HOST}:${PORT}`);
@@ -13216,8 +14858,17 @@ const server = webApp.listen(PORT, HOST, () => {
 });
 
 server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') log.error('WEB', `Port ${PORT} already in use!`);
-  else log.error('WEB', 'Server error: ' + err.message);
+  if (err.code === 'EADDRINUSE') {
+    // KUNCI SINGLE-INSTANCE. Dulu hanya di-log sehingga proses kedua tetap
+    // hidup dan ikut getUpdates dengan token yang sama -> Telegram 409
+    // Conflict berulang dan pesan user bisa hilang. Port 3001 dipegang
+    // proses lain berarti instance itu yang sah: proses ini harus keluar.
+    log.error('WEB', `Port ${PORT} sudah dipakai instance lain - proses ini keluar (cegah poller ganda/409)`);
+    try { console.error('🛑 EADDRINUSE: keluar agar tidak ada dua poller Telegram.'); } catch (e) {}
+    process.exit(2);
+    return;
+  }
+  log.error('WEB', 'Server error: ' + err.message);
 });
 // ════════════════════════════════════════════════════════════════
 //   39. ERROR HANDLERS & GRACEFUL SHUTDOWN
@@ -13227,38 +14878,71 @@ let isShuttingDown = false;
 
 // Polling error handler - jangan crash, biarkan auto-retry
 let pollingConflictTimer = null;
+let pollingRecoveryTimer = null;
+let pollingRestartInProgress = false;
+let telegramPollingStartedAt = 0;
 const pollingErrorBuckets = new Map();
+
+function schedulePollingRecovery(reason, delayOverride) {
+  if (isShuttingDown || pollingRestartInProgress || pollingRecoveryTimer || pollingConflictTimer) return;
+  if (telegramPollErrorStreak < 2) return;
+  const delay = delayOverride || Math.min(15000, 3000 * Math.max(1, telegramPollErrorStreak - 1));
+  pollingRecoveryTimer = setTimeout(async () => {
+    pollingRecoveryTimer = null;
+    if (isShuttingDown || telegramPollErrorStreak === 0) return;
+    pollingRestartInProgress = true;
+    try {
+      log.warn('POLLING', `Recovery ${reason}: ${telegramPollErrorStreak} error berturut-turut, restart polling...`);
+      // Batalkan long-poll yang sedang berjalan (hard-destroy socket).
+      await hentikanPollingMandiri('Polling recovery');
+      // Telegram butuh waktu melepas long-poll lama di sisi server. Harus
+      // lebih lama dari params.timeout (25 dtk) agar tidak 409 Conflict.
+      await new Promise(r => setTimeout(r, 20000));
+      telegramPollErrorStreak = 0;
+      await mulaiPollingMandiri();
+      log.info('POLLING', 'Polling dipulihkan setelah error jaringan');
+    } catch (e) {
+      log.error('POLLING', 'Recovery gagal: ' + e.message);
+      // Beri jeda panjang: restart beruntun hanya memperbanyak 409.
+      telegramPollErrorStreak = 0;
+      telegramPollingStartedAt = Date.now();
+    } finally {
+      // Cooldown: jangan biarkan self-heal/error berikutnya restart lagi
+      // sebelum poll pertama selesai.
+      const cooldown = setTimeout(() => { pollingRestartInProgress = false; }, 30000);
+      if (cooldown.unref) cooldown.unref();
+    }
+  }, delay);
+  if (pollingRecoveryTimer.unref) pollingRecoveryTimer.unref();
+}
+
 bot.on('polling_error', (err) => {
   const msg = err.message || err.code || String(err);
   const bucket = `${err.code || ''}:${msg.slice(0, 80)}`;
   const now = Date.now();
   const prior = pollingErrorBuckets.get(bucket) || 0;
+  const networkError = /(ETIMEDOUT|ECONNRESET|EFATAL|ESOCKETTIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up|network socket disconnected|TLS connection|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout)/i.test(msg);
+  // Error jaringan TIDAK langsung restart polling. Library sudah retry sendiri;
+  // restart manual terlalu cepat justru membuat dua long-poll (409 Conflict).
   if (now - prior < 60000) return;
   pollingErrorBuckets.set(bucket, now);
   
   // Error 409 = conflict (ada bot lain running / webhook aktif)
   if (msg.includes('409') || msg.includes('Conflict')) {
     log.error('POLLING', '⚠️ Bot conflict! Restart polling dalam 30 detik...');
-    if (!isShuttingDown && !pollingConflictTimer) {
-      pollingConflictTimer = setTimeout(async () => {
-        pollingConflictTimer = null;
-        try {
-          log.info('POLLING', 'Restart polling setelah conflict...');
-          await bot.stopPolling({ cancel: true });
-          await new Promise(r => setTimeout(r, 3000));
-          await bot.startPolling();
-          log.info('POLLING', '✅ Polling berjalan kembali');
-        } catch(e) {
-          log.error('POLLING', 'Gagal restart polling: ' + e.message);
-        }
-      }, 30000);
-    }
+    telegramPollErrorStreak = Math.max(telegramPollErrorStreak, 2);
+    schedulePollingRecovery('conflict', 30000);
     return;
   }
   
-  // Error network biasa - biarkan polling auto-retry
-  if (msg.includes('ETIMEDOUT') || msg.includes('ECONNRESET') || msg.includes('EFATAL')) {
-    log.warn('POLLING', 'Network error: ' + msg.substring(0, 100));
+  // Error network: auto-retry, tetapi setelah beberapa kegagalan berturut-turut
+  // reset koneksi polling agar tidak menggantung.
+  if (networkError) {
+    // Satu timeout jaringan bukan kegagalan bot; jangan kotori error log.
+    // WARN hanya bila sudah beruntun (butuh perhatian).
+    const line = `Network error (${telegramPollErrorStreak}x): ` + msg.substring(0, 100);
+    if (telegramPollErrorStreak >= 3) log.warn('POLLING', line);
+    else log.info('POLLING', line + ' - retry otomatis');
     return;
   }
   
@@ -13283,34 +14967,61 @@ async function fatalExit(konteks, err) {
   process.exit(1);
 }
 
+// Jangan crash hanya karena parent/console menutup pipe (mis. task restart).
+process.stdout.on('error', (err) => { if (err && err.code === 'EPIPE') return; });
+process.stderr.on('error', (err) => { if (err && err.code === 'EPIPE') return; });
+
 // Uncaught errors - log, backup singkat, lalu keluar (hindari proses zombie)
-process.on('uncaughtException', (err) => { fatalExit('Uncaught', err); });
+process.on('uncaughtException', (err) => {
+  if (err && err.code === 'EPIPE') { log.warn('SYSTEM', 'EPIPE diabaikan (console/parent tertutup)'); return; }
+  fatalExit('Uncaught', err);
+});
 
 process.on('unhandledRejection', (reason) => {
+  if (reason && reason.code === 'EPIPE') { log.warn('SYSTEM', 'EPIPE rejection diabaikan'); return; }
   log.error('SYSTEM', 'Unhandled Rejection: ' + String(reason));
 });
 
 // ── Self-heal polling: pulihkan dalam hitungan detik, tanpa menunggu watchdog 2 menit ──
 let pollingHealBusy = false;
-const pollingHealTimer = setInterval(async () => {
-  if (isShuttingDown || isFatalExiting || pollingHealBusy || pollingConflictTimer) return;
+const pollingHealTimer = setInterval(() => {
+  if (isShuttingDown || isFatalExiting || pollingHealBusy) return;
   let hidup = true;
   try { hidup = bot.isPolling(); } catch (e) { hidup = false; }
   if (hidup) return;
+  if (!telegramPollingStartedAt || Date.now() - telegramPollingStartedAt < 30000) return;
   pollingHealBusy = true;
   try {
-    log.warn('POLLING', '⚠️ Polling mati - self-heal...');
-    try { await bot.stopPolling({ cancel: true }); } catch (e) {}
-    await new Promise(r => setTimeout(r, 3000));
-    await bot.startPolling();
-    log.info('POLLING', '✅ Polling pulih otomatis');
-  } catch (e) {
-    log.error('POLLING', 'Self-heal gagal: ' + e.message);
+    log.warn('POLLING', 'Loop poller berhenti - start ulang...');
+    mulaiPollingMandiri().catch((e) => log.error('POLLING', 'Gagal start ulang poller: ' + e.message));
   } finally {
     pollingHealBusy = false;
   }
-}, 120000);
+}, 30000);
 if (pollingHealTimer.unref) pollingHealTimer.unref();
+
+// Startup 6 detik: proses baru bisa saja masih memakai token yang sama.
+// Beri jeda supaya long-poll proses lama (maks 25 dtk) lepas dulu -> hindari
+// 409 Conflict tepat setelah restart.
+setTimeout(() => {
+  if (isShuttingDown) return;
+  mulaiPollingMandiri().catch((e) => log.error('POLLING', 'Gagal start polling awal: ' + e.message));
+}, 6000);
+
+// Inisialisasi data lokal setelah polling hidup. Dibuat bertahap agar startup
+// Telegram tidak tertunda oleh VACUUM/impor log, dan tidak menumpuk dalam satu
+// detik (host RAM kecil -> hindari stall event loop).
+setTimeout(() => { try { backupEnvSecaraAman(); } catch (e) {} }, 20000);
+setTimeout(() => { try { imporLogLama(); } catch (e) {} }, 45000);
+setTimeout(() => { try { backupDataLokal(); } catch (e) {} }, 70000);
+setTimeout(() => { resumeOutbox(); }, 6000);
+const dbBackupTimer = setInterval(() => backupDataLokal(), 6 * 60 * 60 * 1000);
+if (dbBackupTimer.unref) dbBackupTimer.unref();
+
+process.on('exit', () => {
+  try { botDb.backupDatabase(30); } catch(e) {}
+  try { botDb.close(); } catch(e) {}
+});
 
 // Graceful shutdown function
 async function gracefulShutdown(signal) {
@@ -13322,7 +15033,7 @@ async function gracefulShutdown(signal) {
   try {
     // 1. Stop polling DULU agar tidak conflict saat restart
     console.log('🛑 Stopping bot polling...');
-    try { await bot.stopPolling({ cancel: true }); } catch(e) {}
+    try { await bot.stopPolling('Shutdown'); } catch(e) {}
     console.log('✅ Bot polling stopped');
     
     // 2. SIMPAN DATA LOKAL LEBIH DULU (paling penting - cepat & tidak boleh gagal)

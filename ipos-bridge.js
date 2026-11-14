@@ -43,10 +43,35 @@ function buatBridge({ url, key, toko, label }) {
   const LABEL = label || (toko && toko[0] ? toko[0].toUpperCase() : 'iPos');
 
   let lastSync = 0;
+  let lastSseAt = 0;
+  let lastSseFrameAt = 0;
+  // KAPAN data ITEM terakhir terbukti segar (frame `items` atau sync penuh).
+  // PENTING: dibedakan dari lastSseFrameAt, karena `jual-ping` juga memperbarui
+  // lastSseFrameAt. Dulu penjaga kesegaran memakai lastSseFrameAt, sehingga
+  // `jual-ping` tiap ~15 dtk membuat penjaga TIDAK PERNAH aktif — kode mati.
+  let lastItemAt = 0;
+  // Kapan terakhir ada NOTA (event `jual`). Nota PASTI mengubah stok, jadi
+  // `jual` tanpa `items` sesudahnya = kanal item SSE rusak (bukti, bukan tebakan).
+  let lastJualAt = 0;
   let lastError = null;
   let lastCount = 0;
   let online = false;
   let sseOk = false;
+
+  // Ubah error menjadi teks yang BISA DIDIAGNOSIS.
+  // "fetch failed" saja tidak memberi tahu apa pun; penyebab sebenarnya ada di
+  // e.cause (mis. UND_ERR_CONNECT_TIMEOUT = host tidak menjawab sama sekali,
+  // atau ECONNRESET = koneksi diputus). Dipakai di SEMUA jalur kegagalan agar
+  // status yang dilaporkan ke admin selalu memuat sebab yang nyata.
+  function formatError(e) {
+    const pesan = String((e && e.message) || e || 'error');
+    const c = e && e.cause;
+    if (!c) return pesan;
+    const sub = c.errors && c.errors.length
+      ? ' [' + c.errors.map((x) => (x && (x.code || x.message)) || '?').join(', ') + ']'
+      : '';
+    return `${pesan} (cause: ${c.code || c.message || String(c)}${sub})`;
+  }
 
   // kode → item iPos terakhir diketahui (untuk status & debug)
   let snapshot = new Map();
@@ -54,13 +79,24 @@ function buatBridge({ url, key, toko, label }) {
   const formatterTanggal = new Intl.DateTimeFormat('id-ID', {
     timeZone: 'Asia/Jakarta', day: '2-digit', month: '2-digit', year: 'numeric',
   });
-  const tglHariIni = () => formatterTanggal.format(new Date());
+  // Intl.DateTimeFormat.format() sangat mahal. Dulu dipanggil untuk SETIAP
+  // item (11 ribu x 3 toko) sehingga sync memblokir event loop 20-50 detik
+  // dan watchdog mengira bot hang. Cache per menit sudah cukup.
+  let _tglCache = '';
+  let _tglCacheAt = 0;
+  const tglHariIni = () => {
+    const now = Date.now();
+    if (_tglCache && now - _tglCacheAt < 60000) return _tglCache;
+    _tglCache = formatterTanggal.format(new Date(now));
+    _tglCacheAt = now;
+    return _tglCache;
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // FETCH
   // ─────────────────────────────────────────────────────────────────────────
 
-  async function ambilItems() {
+  async function ambilItems(attempt = 0) {
     if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Number(process.env.IPOS_CATALOG_TIMEOUT_MS || 60000));
@@ -71,6 +107,19 @@ function buatBridge({ url, key, toko, label }) {
       const json = await res.json();
       if (!Array.isArray(json.data)) throw new Error('bentuk respons tak dikenal');
       return json.data;
+    } catch (e) {
+      // Kegagalan sementara (fetch failed / ECONNRESET / abort) tidak boleh
+      // langsung membuat toko dianggap OFFLINE: satu gangguan jaringan dulu
+      // membuat sync penuh dilewati sampai 5 menit berikutnya, sehingga data
+      // tampak "tidak update" padahal API sehat. Ulangi 2x dengan jeda.
+      const pesan = String((e && e.message) || e);
+      const sementara = /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|aborted|socket hang up|network/i.test(pesan);
+      if (sementara && attempt < 2) {
+        clearTimeout(timer);
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        return ambilItems(attempt + 1);
+      }
+      throw e;
     } finally {
       clearTimeout(timer);
     }
@@ -131,22 +180,40 @@ function buatBridge({ url, key, toko, label }) {
   /**
    * @returns {'ubah'|'baru'|'hapus'|null} null = tak ada efek / tidak berubah
    */
-  function terapkan(dataBarang, ip) {
+  function terapkan(dataBarang, ip, opts = {}) {
     const kode = String((ip && ip.kode) || '').toUpperCase();
     if (!kode) return null;
-    const map = index(dataBarang);
+    const map = opts.map || index(dataBarang);
     let barang = map.get(kode);
 
     // item dihapus dari iPos → buang info toko ipos; kalau murni milik ipos, buang item
     if (ip.deleted) {
       if (!barang) return null;
-      const lain = (barang.tokoList || []).filter((t) => !toko.includes(t));
+      // Item baru dari iPos sengaja punya tokoList kosong (tidak ditulis balik
+      // ke Excel), jadi kepemilikan toko juga dibaca dari kunci harga.
+      const tokoListAsli = Array.isArray(barang.tokoList) ? barang.tokoList : [];
+      // PENTING: kalau tokoList terisi, itu sumber kebenaran. Jangan gabung
+      // dengan kunci harga, karena loadExcel membuat placeholder harga untuk
+      // SEMUA toko. Dulu ini membuat sync NK/KEFA menghapus ribuan item CP.
+      const daftar = tokoListAsli.length
+        ? new Set(tokoListAsli)
+        : new Set(Object.keys(barang.harga || {}));
+      if (!toko.some((t) => daftar.has(t))) return null; // bukan item toko ini
+      const lain = [...daftar].filter((t) => !toko.includes(t));
       if (!lain.length) {
-        const i = dataBarang.indexOf(barang);
-        if (i >= 0) dataBarang.splice(i, 1);
-        map.delete(kode);
+        if (opts.deferDelete) {
+          // Sync penuh menandai dulu, lalu membuang sekali di akhir agar
+          // tidak O(n^2) saat iPos menghapus ribuan item sekaligus.
+          barang.__hapus = true;
+          map.delete(kode);
+        } else {
+          const i = dataBarang.indexOf(barang);
+          if (i >= 0) dataBarang.splice(i, 1);
+          map.delete(kode);
+        }
       } else {
-        barang.tokoList = lain;
+        // Pertahankan kosong untuk item murni iPos agar tidak ditulis ke Excel.
+        barang.tokoList = tokoListAsli.length ? lain : [];
         if (barang.harga) for (const tk of toko) delete barang.harga[tk];
       }
       return 'hapus';
@@ -213,15 +280,26 @@ function buatBridge({ url, key, toko, label }) {
 
   async function syncStok(dataBarang, opts = {}) {
     const { verbose = false } = opts;
+    const startedAt = Date.now();
     if (!Array.isArray(dataBarang)) return { ok: false, total: 0, ubah: 0, baru: 0, hapus: 0, err: 'DATA_BARANG bukan array' };
 
     let items;
     try {
       items = await ambilItems();
     } catch (e) {
-      lastError = String(e.message || e);
+      lastError = formatError(e);
       online = false;
-      if (verbose) console.warn(`⚠️ [iPos ${LABEL}] sync gagal: ${lastError} — pakai data Excel`);
+      // PENTING: dulu kegagalan hanya dicatat kalau verbose=true, dan sync
+      // berkala selalu verbose=false. Akibatnya toko bisa OFFLINE berjam-jam
+      // tanpa satu baris pun di log — persis kasus "data terakhir 422 menit".
+      // Sekarang kegagalan SELALU dicatat, dan hanya di-throttle supaya tidak
+      // membanjiri log tiap 5 menit.
+      const sekarang = Date.now();
+      const menitSejakLog = (sekarang - (syncStok._gagalLogTerakhir || 0)) / 60000;
+      if (verbose || menitSejakLog >= 10) {
+        syncStok._gagalLogTerakhir = sekarang;
+        console.warn(`⚠️ [iPos ${LABEL}] sync gagal: ${lastError} — pakai data Excel`);
+      }
       return { ok: false, total: lastCount, ubah: 0, baru: 0, hapus: 0, err: lastError };
     }
 
@@ -231,26 +309,53 @@ function buatBridge({ url, key, toko, label }) {
     }
 
     let ubah = 0, baru = 0, hapus = 0;
+    const map = index(dataBarang);
+    const applyOpts = { map, deferDelete: true };
     for (const ip of snapshot.values()) {
-      const r = terapkan(dataBarang, ip);
+      const r = terapkan(dataBarang, ip, applyOpts);
       if (r === 'ubah') ubah++; else if (r === 'baru') baru++;
     }
-    // item yang hilang dari iPos saat bot offline → bersihkan sekarang
+    // item yang hilang dari iPos saat bot offline -> bersihkan sekarang.
+    // PENTING: hanya item MILIK toko ini. Tanpa cek kepemilikan, sync NK/KEFA
+    // akan menghapus ribuan item CP (dan sebaliknya) setiap putaran, membuat
+    // DATA_BARANG bolak-balik berubah dan sync jadi lambat.
+    const milikTokoIni = (barang) => {
+      if (!barang) return false;
+      // tokoList terisi = data dari Excel: pakai itu saja (placeholder harga
+      // semua toko jangan dianggap kepemilikan). tokoList kosong = item murni
+      // iPos: kepemilikan dibaca dari kunci harga.
+      if (Array.isArray(barang.tokoList) && barang.tokoList.length) {
+        return barang.tokoList.some((t) => toko.includes(t));
+      }
+      return !!(barang.harga && toko.some((t) => Object.prototype.hasOwnProperty.call(barang.harga, t)));
+    };
     for (const barang of [...dataBarang]) {
-      if (barang && barang.stokSumber === 'ipos'
+      if (barang && barang.stokSumber === 'ipos' && milikTokoIni(barang)
         && !snapshot.has(String(barang.kode || '').toUpperCase())) {
-        if (terapkan(dataBarang, { kode: barang.kode, deleted: true }) === 'hapus') hapus++;
+        if (terapkan(dataBarang, { kode: barang.kode, deleted: true }, applyOpts) === 'hapus') hapus++;
       }
     }
+    // Buang semua item yang ditandai hapus dalam satu pass O(n).
+    let tulis = 0;
+    for (let baca = 0; baca < dataBarang.length; baca++) {
+      const barang = dataBarang[baca];
+      if (barang && barang.__hapus) { delete barang.__hapus; continue; }
+      dataBarang[tulis++] = barang;
+    }
+    dataBarang.length = tulis;
 
     lastSync = Date.now();
     lastCount = snapshot.size;
     lastError = null;
     online = true;
+    lastSseAt = Date.now(); // komunikasi dengan iPos terbukti hidup
+    lastItemAt = Date.now(); // data ITEM terbukti segar (dasar penjaga kesegaran)
 
     if (ubah || baru || hapus) {
       console.log(`✅ [iPos ${LABEL}] ${lastCount} item — ubah ${ubah}, baru ${baru}, hapus ${hapus}`);
     }
+    const durasi = Date.now() - startedAt;
+    if (durasi > 1500) console.log(`[SLOW] iPos ${LABEL} sync ${durasi}ms (ubah ${ubah}, baru ${baru}, hapus ${hapus})`);
     return { ok: true, total: lastCount, ubah, baru, hapus };
   }
 
@@ -264,11 +369,23 @@ function buatBridge({ url, key, toko, label }) {
   const lapCache = new Map(); // kunci → { t, data }
   const LAP_TTL = 1000;
   let lastJualEvent = 0; // timestamp SSE jual terakhir (kasir simpan/edit/void)
+  // Backoff kegagalan laporan. Kalau host toko benar-benar mati, TCP connect
+  // menghabiskan seluruh batas waktu (terukur UND_ERR_CONNECT_TIMEOUT 35 dtk
+  // saat CP mati). Tanpa backoff, penjaga backup tiap 30 dtk akan mencoba
+  // terus dan MENAHAN toko lain karena jalannya berurutan. Ini bukan
+  // menyembunyikan kegagalan: kegagalan tetap dicatat & dilaporkan, hanya
+  // frekuensi percobaan yang dijarangkan.
+  let gagalLaporanBerturut = 0;
+  let bolehCobaLagiPada = 0;
   async function ambilLaporan(url, fresh = false, attempt = 0) {
     const kini = Date.now();
     const c = lapCache.get(url);
     if (!fresh && c && kini - c.t < LAP_TTL) return c.data;
     if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
+    if (kini < bolehCobaLagiPada) {
+      const sisa = Math.ceil((bolehCobaLagiPada - kini) / 1000);
+      throw new Error(`toko sedang tidak terjangkau (coba lagi ${sisa} dtk)`);
+    }
     const jualSaatMulai = lastJualEvent;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
@@ -277,6 +394,15 @@ function buatBridge({ url, key, toko, label }) {
       const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       data = await res.json();
+      gagalLaporanBerturut = 0;
+      bolehCobaLagiPada = 0;
+    } catch (e) {
+      gagalLaporanBerturut++;
+      // 30 dtk, 60, 120, 240, maksimal 300 dtk. Host mati tidak akan sembuh
+      // dalam hitungan detik, dan tiap percobaan memakan 15-35 dtk.
+      const jeda = Math.min(300, 30 * Math.pow(2, Math.min(4, gagalLaporanBerturut - 1)));
+      bolehCobaLagiPada = Date.now() + jeda * 1000;
+      throw e;
     } finally {
       clearTimeout(timer);
     }
@@ -332,19 +458,50 @@ function buatBridge({ url, key, toko, label }) {
   // ─────────────────────────────────────────────────────────────────────────
 
   function mulaiSSE(getDataBarang) {
+    // Batas diam SSE. iPos mengirim `jual-ping` jauh lebih sering dari ini
+    // (terukur ~1 frame / 12-18 dtk), jadi diam selama batas ini berarti
+    // koneksi sudah mati diam-diam (half-open: TCP hidup, tidak ada data,
+    // tidak ada FIN). Dulu tidak ada batas sama sekali sehingga
+    // `reader.read()` bisa menggantung SELAMANYA: sseOk tetap true dan status
+    // melaporkan "🟢 realtime" padahal data berhenti mengalir — persis gejala
+    // "tidak realtime" yang dilaporkan.
+    const IDLE_MS = Number(process.env.IPOS_SSE_IDLE_MS || 90000);
+    let sudahPernahSambung = false;
+    let gagalSambung = 0;
+
     (async () => {
       for (;;) {
+        const ac = new AbortController();
+        let idleTimer = null;
+        const resetIdle = () => {
+          if (idleTimer) clearTimeout(idleTimer);
+          idleTimer = setTimeout(() => {
+            try { ac.abort(new Error('SSE diam terlalu lama')); } catch (e) { try { ac.abort(); } catch (e2) {} }
+          }, IDLE_MS);
+        };
         try {
+          resetIdle();
           const res = await fetch(`${IPOS_URL}/api/events?key=${encodeURIComponent(IPOS_KEY)}`,
-            { headers: { accept: 'text/event-stream' } });
+            { headers: { accept: 'text/event-stream' }, signal: ac.signal });
           if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
           sseOk = true;
+          gagalSambung = 0; // tersambung lagi -> backoff direset
+          lastSseFrameAt = Date.now();
           const reader = res.body.getReader();
           const dec = new TextDecoder();
           let buf = '';
+          // Sambungan baru setelah sempat putus: perubahan selama jeda tidak
+          // pernah diterima lewat SSE. Ambil ulang katalog sekarang supaya data
+          // langsung benar, tanpa menunggu sync berkala berikutnya.
+          if (sudahPernahSambung) {
+            syncStok(getDataBarang(), { verbose: false })
+              .catch(() => {});
+          }
+          sudahPernahSambung = true;
           for (;;) {
             const { done, value } = await reader.read();
             if (done) throw new Error('koneksi SSE terputus');
+            resetIdle();
             buf += dec.decode(value, { stream: true });
             let i;
             while ((i = buf.indexOf('\n\n')) >= 0) {
@@ -355,10 +512,14 @@ function buatBridge({ url, key, toko, label }) {
                 if (line.startsWith('event:')) ev = line.slice(6).trim();
                 else if (line.startsWith('data:')) data += line.slice(5).trim();
               }
-              if (ev !== 'items' && ev !== 'jual' || !data) continue;
+              if ((ev !== 'items' && ev !== 'jual' && ev !== 'jual-ping') || !data) continue;
+              // Setiap frame yang sah = bukti koneksi SSE masih hidup.
+              lastSseFrameAt = Date.now();
               try {
-                if (ev === 'jual') {
+                if (ev === 'jual' || ev === 'jual-ping') {
                   lastJualEvent = Date.now();
+                  // `jual` (bukan jual-ping) = ada nota tersimpan → stok PASTI berubah.
+                  if (ev === 'jual') lastJualAt = Date.now();
                   lapCache.clear(); // nota baru/edit/void → laporan berikutnya fetch segar
                   continue;
                 }
@@ -368,6 +529,8 @@ function buatBridge({ url, key, toko, label }) {
                   if (r === 'ubah') ubah++; else if (r === 'baru') baru++; else if (r === 'hapus') hapus++;
                 }
                 lastSync = Date.now();
+                lastSseAt = Date.now();
+                lastItemAt = Date.now();
                 if (ubah || baru || hapus) {
                   console.log(`🔄 [iPos ${LABEL}] realtime: ubah ${ubah}, baru ${baru}, hapus ${hapus}`);
                 }
@@ -376,9 +539,27 @@ function buatBridge({ url, key, toko, label }) {
           }
         } catch (e) {
           sseOk = false;
-          lastError = String(e.message || e);
+          // JANGAN timpa lastError yang lebih kaya. Catch SSE dulu menulis
+          // "fetch failed" polos, sehingga notifikasi ke admin kehilangan
+          // penyebab sebenarnya (UND_ERR_CONNECT_TIMEOUT). Sekarang pakai
+          // formatError, dan hanya tulis bila memang lebih informatif.
+          const baru = formatError(e);
+          if (!lastError || baru.length >= String(lastError).length) lastError = baru;
+          gagalSambung++;
+        } finally {
+          if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
         }
-        await new Promise((r) => setTimeout(r, 1000)); // sambung ulang cepat (SSE retry 3s)
+        // BACKOFF SAMBUNG ULANG SSE.
+        // Dulu selalu 1000 ms TANPA BATAS. Selama host toko benar-benar mati
+        // (kasus nyata: CP & NK mati berjam-jam), ini berarti percobaan
+        // sambung tiap detik selamanya: tiap percobaan membuka TCP baru yang
+        // menunggu connect-timeout puluhan detik, sehingga puluhan socket
+        // menggantung dan CPU terbuang. Sekarang jeda naik bertahap sampai
+        // 30 dtk, dan langsung kembali cepat begitu ada frame masuk.
+        // Catatan: selama host mati, sync berkala + penjaga kesegaran tetap
+        // berjalan, jadi data tidak "diam-diam basi".
+        const jeda = Math.min(30000, 1000 * Math.pow(2, Math.min(5, gagalSambung - 1)));
+        await new Promise((r) => setTimeout(r, jeda));
       }
     })();
   }
@@ -388,10 +569,33 @@ function buatBridge({ url, key, toko, label }) {
   // ─────────────────────────────────────────────────────────────────────────
 
   function status() {
+    // DUA angka berbeda, sengaja dipisah agar tidak menyesatkan:
+    //  - umurDetik      : jarak ke PERUBAHAN data terakhir (frame SSE / sync penuh).
+    //                     Angka besar itu NORMAL kalau memang tidak ada item berubah;
+    //                     CP dan KEFA berbagi broadcast yang sama sehingga angkanya
+    //                     sering identik.
+    //  - umurKoneksiDetik: jarak ke bukti komunikasi terakhir dengan iPos.
+    //                     Inilah indikator kesehatan: kalau ini membesar, SSE
+    //                     benar-benar putus dan data berhenti mengalir.
+    const terakhirUbah = Math.max(lastSseAt, lastSync);
+    const terakhirKoneksi = Math.max(lastSseAt, lastSync, lastSseFrameAt);
+    // KESEGARAN DATA ITEM — inilah angka yang menentukan apakah harga/stok yang
+    // ditampilkan bisa dipercaya. Dibedakan dari umurKoneksiDetik (yang hanya
+    // membuktikan "masih bicara", bukan "data item masih mengalir").
+    const terakhirItem = Math.max(lastItemAt, lastSync);
+    const umurItemDetik = terakhirItem ? Math.round((Date.now() - terakhirItem) / 1000) : null;
+    const itemSegar = umurItemDetik !== null && umurItemDetik <= 150;
     return {
       online, sse: sseOk ? '🟢 realtime' : '🔴 putus',
-      total: lastCount, lastSync, lastError,
-      umurDetik: lastSync ? Math.round((Date.now() - lastSync) / 1000) : null,
+      total: lastCount, lastSync, lastSseAt, lastError,
+      umurDetik: terakhirUbah ? Math.round((Date.now() - terakhirUbah) / 1000) : null,
+      umurKoneksiDetik: terakhirKoneksi ? Math.round((Date.now() - terakhirKoneksi) / 1000) : null,
+      umurItemDetik,
+      itemSegar,
+      // Ada nota tersimpan yang belum diikuti frame `items` → kanal item diduga
+      // rusak. Dipakai /health agar masalah ini TERLIHAT, bukan tersembunyi.
+      notaTanpaItemDetik: lastJualAt > lastItemAt
+        ? Math.round((Date.now() - lastJualAt) / 1000) : 0,
       toko, url: IPOS_URL,
     };
   }
@@ -401,27 +605,105 @@ function buatBridge({ url, key, toko, label }) {
    * pengaman). Panggil SEKALI saat startup per instans.
    * @param {() => Array} getDataBarang  fungsi yg mengembalikan DATA_BARANG terkini
    */
-  function mulaiAutoSync(getDataBarang, intervalMs = Number(process.env.IPOS_SYNC_MS || 60000)) {
+  function mulaiAutoSync(getDataBarang, intervalMs = Number(process.env.IPOS_SYNC_MS || 300000), startDelayMs = 0) {
+    // SSE adalah jalur realtime utama. Full sync hanya jaring pengaman, jadi
+    // beri lantai 5 menit: host ini RAM-nya kecil, sync tiap <2 menit membuat
+    // pagefile thrash dan event loop macet (watchdog lalu restart berulang).
+    const MIN_INTERVAL_MS = 5 * 60 * 1000;
+    const requested = Number(intervalMs) || 0;
+    intervalMs = Math.max(MIN_INTERVAL_MS, requested);
+    if (requested && requested < MIN_INTERVAL_MS) {
+      console.log(`[iPos ${LABEL}] interval ${requested}ms terlalu rapat; dinaikkan ke ${intervalMs}ms (SSE tetap realtime)`);
+    }
     let syncing = false;
     const jalan = async (verbose) => {
       if (syncing) return;
       syncing = true;
       const started = Date.now();
       try { await syncStok(getDataBarang(), { verbose }); }
-      catch (e) { console.warn(`⚠️ [iPos ${LABEL}] auto-sync:`, e.message); }
+      catch (e) { console.warn(`[iPos ${LABEL}] auto-sync:`, e.message); }
       finally {
         syncing = false;
         if (verbose) console.log(`[iPos ${LABEL}] sync awal selesai ${Date.now() - started}ms`);
       }
     };
-    void jalan(true);
+    // Jangan full-sync 3 toko serentak: respons /api/items besar dan
+    // JSON.parse-nya memblokir event loop. SSE tetap langsung aktif.
+    const startTimer = setTimeout(() => void jalan(true), Math.max(0, Number(startDelayMs) || 0));
+    if (startTimer.unref) startTimer.unref();
     if (IPOS_KEY) mulaiSSE(getDataBarang);
     const t = setInterval(() => void jalan(false), intervalMs);
     if (t.unref) t.unref();
-    return () => clearInterval(t);
+
+    // PENJAGA KESEGARAN.
+    // Interval 5 menit di atas adalah jaring pengaman NORMAL. Kalau SSE diam
+    // (putus diam-diam, server berhenti broadcast, atau host membekukan proses
+    // sehingga frame terlewat), data bisa tertinggal sampai 5 menit — dan dulu
+    // bisa berjam-jam karena kegagalan tidak pernah dilaporkan. Penjaga ini
+    // memeriksa tiap 30 detik: begitu tidak ada bukti komunikasi selama
+    // STALE_MS, sync penuh dipaksa SEKARANG (dengan jeda minimum agar tidak
+    // membanjiri host yang RAM-nya kecil).
+    const STALE_MS = Number(process.env.IPOS_STALE_MS || 120000);
+    const MIN_GAP_MS = Number(process.env.IPOS_STALE_MIN_GAP_MS || 45000);
+    const CEK_MS = Number(process.env.IPOS_STALE_CHECK_MS || 30000);
+    // Tenggang setelah nota tersimpan sebelum kita anggap kanal item rusak.
+    // Nota nyata diikuti frame `items` dalam hitungan detik (terukur < 1 dtk
+    // pada CP). 20 dtk sudah sangat longgar dan tetap aman untuk host kecil.
+    const NOTA_GRACE_MS = Number(process.env.IPOS_NOTA_GRACE_MS || 20000);
+    let terakhirPaksa = 0;
+    const jaga = setInterval(() => {
+      const sekarang = Date.now();
+      // Dua pemicu, keduanya BUKTI (bukan tebakan):
+      //  (a) Tidak ada frame item sama sekali selama STALE_MS, padahal toko
+      //      online → kanal item mungkin mati diam-diam.
+      //  (b) Ada NOTA (event `jual`) tetapi TIDAK ada frame `items` sesudahnya
+      //      selama NOTA_GRACE_MS. Nota selalu mengubah stok, jadi ini bukti
+      //      kanal item rusak — tanpa perlu menebak apakah toko sepi.
+      //
+      // CATATAN PENTING: `jual-ping` SENGAJA TIDAK dipakai sebagai bukti item
+      // segar (dulu itu membuat penjaga ini tidak pernah aktif). Tapi
+      // `jual-ping` tetap dipakai sebagai bukti KONEKSI di status(), dan
+      // sengaja TIDAK memicu sync penuh — kalau tidak, toko yang sepi akan
+      // di-sync tiap 45 dtk dan menghabiskan RAM host yang kecil.
+      const buktiItem = Math.max(lastItemAt, lastSync);
+      if (!buktiItem) return;
+      const umurItem = sekarang - buktiItem;
+      const umurSetelahJual = lastJualAt > lastItemAt ? sekarang - lastJualAt : 0;
+      const alasan = (umurSetelahJual > NOTA_GRACE_MS && sekarang - terakhirPaksa >= MIN_GAP_MS)
+        ? `ada nota ${Math.round(umurSetelahJual / 1000)} dtk lalu tapi tak ada frame items`
+        : (umurItem >= STALE_MS ? `tidak ada kabar item ${Math.round(umurItem / 1000)} dtk` : null);
+      if (!alasan) return;
+      if (sekarang - terakhirPaksa < MIN_GAP_MS) return;
+      if (syncing) return;
+      terakhirPaksa = sekarang;
+      console.log(`⏳ [iPos ${LABEL}] ${alasan} — sync penuh dipaksa sekarang`);
+      void jalan(false);
+    }, CEK_MS);
+    if (jaga.unref) jaga.unref();
+
+    return () => { clearTimeout(startTimer); clearInterval(t); clearInterval(jaga); };
   }
 
-  return { url: IPOS_URL, toko, label: LABEL, syncStok, terapkan, ambilItem, status, mulaiAutoSync, ambilLaporanKasir, ambilLaporanMerek, ambilLaporanMarketplace };
+  return {
+    url: IPOS_URL, toko, label: LABEL, syncStok, terapkan, ambilItem, status, mulaiAutoSync,
+    ambilLaporanKasir, ambilLaporanMerek, ambilLaporanMarketplace,
+    // Diagnostik: mengembalikan JUMLAH item (bukan datanya) dari /api/items.
+    // Dipakai /api/diag/ipos untuk membuktikan apakah kegagalan berasal dari
+    // proses ini atau dari jaringan. Tidak membocorkan key.
+    ujiAmbilItems: async () => {
+      const items = await ambilItems();
+      return Array.isArray(items) ? items.length : 0;
+    },
+    // Diagnostik: daftar KODE yang benar-benar ada di iPos toko ini.
+    // Dipakai audit kesesuaian agar sampel diambil dari katalog toko itu
+    // sendiri — bukan dari DATA_BARANG yang berisi item semua toko.
+    ujiAmbilKode: async () => {
+      const items = await ambilItems();
+      return (Array.isArray(items) ? items : [])
+        .map((x) => String((x && x.kode) || '').toUpperCase())
+        .filter(Boolean);
+    },
+  };
 }
 
 // ── INDEX DATA_BARANG (bangun ulang otomatis kalau array diganti loadExcel) ──

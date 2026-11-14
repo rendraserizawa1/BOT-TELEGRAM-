@@ -13,7 +13,7 @@ module.exports = {
     exp_backoff_restart_delay: 2000,
     max_memory_restart: '768M',
     // Mesin hanya 3.9 GB: batasi heap agar GC lebih rajin dan RSS tidak meliar.
-    node_args: '--max-old-space-size=640',
+    node_args: '--max-old-space-size=640 --dns-result-order=ipv4first',
     kill_timeout: 30000,
   }],
 };
