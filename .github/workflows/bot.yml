@@ -1,12 +1,5 @@
 name: Run Telegram Bot
 
-# ⚠️ JANGAN DIAKTIFKAN WORKFLOW INI.
-# Saat ini statusnya `disabled_manually` dan HARUS tetap begitu.
-# Menjalankannya berarti ada poller getUpdates KEDUA dengan BOT_TOKEN yang
-# sama -> Telegram 409 Conflict -> pesan dan tombol pengguna hilang.
-# Bot yang sah: task Windows di PC (sekarang) atau 1 replika Railway (nanti).
-# Workflow ini hanya arsip historis; terakhir berjalan September 2026.
-
 on:
   schedule:
     - cron: "0 */6 * * *"

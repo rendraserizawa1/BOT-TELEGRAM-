@@ -110,6 +110,11 @@ Suite tes baru:
 
 CATATAN PENTING:
   - Workflow .github\workflows\bot.yml berstatus disabled_manually dan HARUS
-    tetap begitu. Kalau dijalankan, ia jadi poller Telegram KEDUA -> 409.
+    tetap begitu. Kalau dijalankan, ia jadi poller Telegram KEDUA -> 409
+    Conflict -> pesan & tombol pengguna hilang.
+    JANGAN menambahkan komentar peringatan ke dalam file bot.yml itu sendiri:
+    menyentuh file workflow membuat GitHub menolak push dari token yang tidak
+    punya scope `workflow` ("refusing to allow a Personal Access Token to
+    create or update workflow"). Peringatan cukup di sini.
   - Jangan isi PORT manual di Railway (Railway menyuntik sendiri).
   - Replika Railway WAJIB 1.
