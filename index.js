@@ -7066,6 +7066,12 @@ function stempelKesegaran(tokoKode) {
     if (!b || !b.status) return '';
     const s = b.status();
     if (s.itemSegar) return ''; // realtime → tidak perlu disclaimer
+    // Pakai kalimat yang sama dengan /health supaya sebabnya jelas: toko
+    // tidak terjangkau vs data berhenti mengalir. Tanpa ini pengguna tidak
+    // bisa membedakan "toko tutup" dari "angka kemarin".
+    let alasan = null;
+    try { alasan = require('./boot/status-jujur').alasanTidakSegar(s); } catch (e) {}
+    if (alasan) return '⚠️ _' + alasan + '_\n';
     if (s.umurItemDetik === null || s.umurItemDetik === undefined) return '';
     const u = s.umurItemDetik;
     const teks = u < 120 ? `${u} dtk` : u < 3600 ? `${Math.round(u / 60)} mnt` : `${Math.round(u / 3600)} jam`;
@@ -13989,6 +13995,8 @@ webApp.get('/health', (req, res) => {
     if (!b || typeof b.status !== 'function') return null;
     try {
       const s = b.status();
+      let alasan = null;
+      try { alasan = require('./boot/status-jujur').alasanTidakSegar(s); } catch (e) {}
       return {
         online: !!s.online,
         sse: !!String(s.sse || '').includes('realtime'),
@@ -14000,6 +14008,8 @@ webApp.get('/health', (req, res) => {
         // sudah tidak sama dengan iPos, meski koneksi masih "hidup".
         umurItemDetik: s.umurItemDetik,
         itemSegar: s.itemSegar,
+        // SEBAB data tidak segar, dalam bahasa manusia. null bila segar.
+        alasanTidakSegar: alasan,
         notaTanpaItemDetik: s.notaTanpaItemDetik,
         lastError: s.lastError || null,
         toko: s.toko,
