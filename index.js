@@ -23,6 +23,24 @@ const _pathGuard = require('path');
 const _lockMod = require('./bot-instance-lock');
 const _INSTANCE_PORT = _lockMod.PORT_DEFAULT;
 
+// ── PENJAGA JUMLAH REPLIKA ────────────────────────────────────────────
+// Kunci single-instance di bawah memakai `wmic` + `netstat -ano` (khusus
+// Windows). Di Linux keduanya gagal -> lock selalu boleh diambil. Karena itu
+// jumlah replika harus dijaga di level platform: >1 replika = dua poller
+// getUpdates dengan token sama = Telegram 409 Conflict = pesan & tombol
+// pengguna hilang. Lihat boot/replika-guard.js.
+try {
+  const { pastikanSatuReplika } = require('./boot/replika-guard');
+  const _repl = pastikanSatuReplika();
+  if (!_repl.ok) {
+    console.error('🛑 ' + _repl.alasan);
+    process.exit(3);
+  }
+} catch (e) {
+  // Modul gagal dimuat: jangan matikan bot karena ini.
+  console.error('[REPLIKA] pemeriksaan gagal dimuat: ' + e.message);
+}
+
 // ════════════════════════════════════════════════════════════════
 //   BUG NYATA (2026-11-14): BOT DIAM TOTAL GARA-GARA LOCK BASI
 //   Lock menyimpan PID mentah dan dipakai process.kill(pid,0) untuk
