@@ -12,10 +12,38 @@ const path = require('path');
 const crypto = require('crypto');
 
 let DatabaseSync = null;
+let galatRequire = null;
 try {
   ({ DatabaseSync } = require('node:sqlite'));
 } catch (err) {
+  galatRequire = err;
   console.error('[DB] node:sqlite tidak tersedia:', err.message);
+}
+
+// GAGAL-KERAS: tanpa node:sqlite, SEMUA fungsi di bawah jadi no-op senyap
+// (`return null`), sehingga riwayat chat, sesi, file, log proses, backup DB,
+// dan metadata kredensial hilang tanpa satu pun error yang terlihat.
+// Ini pernah tidak terdeteksi karena PC ini memakai Node 24 sementara image
+// Docker memakai Node 20. Lebih baik mati keras dan kelihatan.
+// DB_ALLOW_DEGRADED=1 hanya untuk sengaja menjalankan tanpa DB.
+const ALLOW_DEGRADED = process.env.DB_ALLOW_DEGRADED === '1';
+
+function tersedia() {
+  return !!DatabaseSync;
+}
+
+function pesanTanpaSqlite() {
+  return 'node:sqlite tidak tersedia (butuh Node 22+, Railway memakai 24.x).'
+    + (galatRequire ? ' Penyebab: ' + galatRequire.message : '')
+    + ' Tanpa ini SELURUH riwayat chat/sesi/file/log mati diam-diam.'
+    + ' Set DB_ALLOW_DEGRADED=1 hanya bila memang sengaja.';
+}
+
+function pastikanTersedia() {
+  if (DatabaseSync) return;
+  const pesan = pesanTanpaSqlite();
+  if (!ALLOW_DEGRADED) throw new Error(pesan);
+  console.error('[DB] ' + pesan);
 }
 
 const ROOT = __dirname;
@@ -53,6 +81,7 @@ function ensureDirs() {
 
 function init() {
   if (ready) return db;
+  pastikanTersedia();
   if (!DatabaseSync) return null;
   ensureDirs();
   try {
@@ -694,6 +723,7 @@ function close() {
 module.exports = {
   ROOT, DATA_DIR, DB_PATH, FILES_DIR, BACKUP_DIR, SECURE_DIR,
   init, getDb, stats,
+  tersedia, pastikanTersedia,
   recordEvent, recordMessage, recordIncoming, recordOutgoingMessage, recordCallback,
   recordFile, fileExistsByUniqueId,
   saveSession, loadSessions, repairSessions,

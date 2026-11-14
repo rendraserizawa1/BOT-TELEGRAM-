@@ -153,3 +153,6 @@ hasil_cek.txt
 push.log
 
 boot/autostart-backup.json
+
+# Workspace skill superpowers (scratch)
+.superpowers/
