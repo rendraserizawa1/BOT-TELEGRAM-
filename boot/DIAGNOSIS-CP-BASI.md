@@ -149,3 +149,73 @@ Sebagai perbandingan, mesin lain yang **bisa** diakses:
    basi. Tidak ada perbaikan perangkat lunak yang bisa menggantikannya.
 2. Setelah DB hidup, jalankan `boot/proxy-cp.js` di PC ini (atau pindahkan ke
    mesin yang selalu menyala) dan arahkan `IPOS_URL` bot ke sana.
+
+---
+
+## 7. Pemadaman menyeluruh di lokasi CP (terukur 19:0x)
+
+Bukan hanya DB sentral. **Seluruh titik di lokasi CP mati bersamaan:**
+
+| Titik | Status |
+|---|---|
+| `100.125.99.99` (server proxy CP) — ping, 8080, 445 | **MATI** |
+| `192.168.77.250` (DB sentral CP) — ping, 5444, 445 | **MATI** |
+| `100.125.88.74`, `100.117.86.101`, `100.112.42.113`, `100.64.216.53` | **MATI** |
+| `100.110.152.33` (NK) | HIDUP |
+| `100.123.166.13` (PC ini) | HIDUP |
+| `192.168.1.199` (DB KEFA) | HIDUP |
+
+Lima node tailnet lokasi CP padam bersamaan sementara NK dan PC ini tetap hidup.
+Pola ini menunjukkan **gangguan listrik / ISP di lokasi CP**, bukan kegagalan
+perangkat lunak dan bukan akibat perubahan kode apa pun.
+
+**Tidak ada yang bisa diperbaiki dari sisi kode.** Bot Railway tetap
+`status=OK polling=true streak=0`; NK dan KEFA tetap segar.
+
+---
+
+## 8. Perbaikan yang sudah dipasang & ter-deploy (commit `d29cb99`)
+
+Masalah sesungguhnya yang **bisa** diperbaiki: bot **tidak pernah melaporkan**
+kebasian data penjualan. Yang dijaga hanya kesegaran `items`. Karena katalog
+item memakai jalur DB lain, `/health` lama berbunyi `segar=true` padahal
+penjualan sudah beku berjam-jam — **menyesatkan**.
+
+1. `ipos-bridge.js` — mencatat `update` dari API; `status()` kini melaporkan
+   `laporanUmurDetik`, `laporanBasi`, `laporanUpdate`, `laporanErr`,
+   `laporanDiperiksaDetik`. Tanpa data → `null` (tidak menipu dengan `0`).
+2. `index.js` `/health` — menampilkan field kebasian laporan per toko.
+3. `boot/umur-laporan.js` — kalimat umur data tidak lagi menyesatkan:
+   - dulu `>5 mnt` → *"kasir baru saja jual, tunggu ±1 mnt lalu ketik ulang"*
+     (salah total saat sumber mati)
+   - kini `>=30 mnt` → peringatan **server sumber iPos tidak terjangkau**
+4. `boot/env-backup.js` — mematikan `[ERROR] [SECURE] File .env tidak
+   ditemukan!` palsu di Railway.
+
+### Bukti penjaga bekerja (Railway, langsung dari /health)
+
+```
+CP   : online=false itemSegar=false laporanErr="HTTP 502"   <- jujur
+NK   : online=true  itemSegar=true  laporanUmur=20s laporanBasi=false
+KEFA : online=true  itemSegar=true  laporanUmur=22s laporanBasi=false
+```
+
+Sebelum perbaikan, CP akan tampil `itemSegar=true` tanpa satu pun tanda bahwa
+penjualannya basi.
+
+### Test
+
+| Suite | Hasil |
+|---|---|
+| `test-penjaga-laporan.js` | 11/11 |
+| `test-umur-laporan.js` | 20/20 |
+| `test-penjaga-kesegaran.js` (regresi) | 17/17 |
+| `test-laporan-backoff.js` (regresi) | 5/5 |
+| `uji-railway.js` (end-to-end produksi) | 25/25 |
+| `pindai-rahasia.js` | nol kebocoran |
+
+Kegagalan pada `test-marketplace-total`, `test-dashboard-db`, `test-nota-nyata`,
+`test-ocr`, `test-poll-keepalive` **bukan regresi** — semuanya memerlukan
+server CP yang saat ini mati, atau bot lokal di port 3001 yang sengaja
+dimatikan (Railway satu-satunya poller).
+
