@@ -126,7 +126,10 @@ const CONFIG = {
   sesiTimeoutMenit: 30,
   webPort: process.env.PORT || 3000,
   notaTokoFolder: {
-    // Simpan nota ke share jaringan ADMIN_DIMAS — TANPA fallback.
+    // Tujuan UTAMA simpan nota: share jaringan ADMIN_DIMAS.
+    // Bila share tidak terjangkau (mis. bot berjalan di container Railway),
+    // nota disimpan ke storage/nota-gagal dan admin diberi tahu — lihat
+    // boot/nota-simpan.js. Tidak ada nota yang hilang tanpa jejak.
     ELT: { base: '\\\\100.125.99.99\\TOKO NASIONAL KITCHEN\\Nota Toko Nasional Kitchen', formatBulan: 'Nota bulan {bulan} {tahun}' },
     KEF: { base: '\\\\100.125.99.99\\E_Drive\\Nota Toko Perabot Mamaku Kefamenanu', formatBulan: '{BULAN} {tahun}' },
   },
@@ -11471,32 +11474,62 @@ async function simpanFileNota(chatId, userId, imageBuffer, info) {
     return kirim(chatId, `🚫 Kode *${escapeMd(info.kode)}* belum punya folder tujuan.`);
   }
   const bulan = BULAN_NOTA[info.bulanIdx];
-  // Simpan HANYA ke share ADMIN_DIMAS — tanpa fallback. Folder bulan dibuat
-  // otomatis bila belum ada (mkdir recursive + verifikasi tulis).
+  // Tujuan UTAMA tetap share ADMIN_DIMAS (perilaku lama di PC). Bila share
+  // tidak terjangkau — mis. bot berjalan di container Railway tanpa akses SMB —
+  // nota disimpan ke penyimpanan bot dan admin diberi tahu, supaya tidak ada
+  // nota pengguna yang hilang tanpa jejak.
   const namaFolderBulan = buildFolderNota(info, cfg);
-  const folder = path.join(cfg.base, namaFolderBulan);
-  const fullPath = path.join(folder, buildNamaFileNota(info));
-  try {
-    fs.mkdirSync(folder, { recursive: true });
-    if (!fs.existsSync(folder)) throw new Error('folder bulan tidak terbentuk: ' + folder);
-    const uji = path.join(folder, '.tulis-uji');
-    fs.writeFileSync(uji, 'ok');
-    fs.unlinkSync(uji);
-    log.info('NOTA', `Folder bulan siap: ${folder}`);
-    fs.writeFileSync(fullPath, imageBuffer);
-    log.info('NOTA', `Disimpan: ${fullPath}`);
+  const folderShare = path.join(cfg.base, namaFolderBulan);
+  const namaFile = buildNamaFileNota(info);
+  const folderFallback = path.join(CONFIG.paths.storage, 'nota-gagal');
+
+  const { simpanDenganFallback } = require('./boot/nota-simpan');
+  const hasil = simpanDenganFallback({
+    folderShare,
+    namaFile,
+    buffer: imageBuffer,
+    folderFallback,
+  });
+
+  if (!hasil.ok) {
+    log.error('NOTA', hasil.error || 'gagal simpan');
+    return kirim(chatId, '❌ Gagal simpan: ' + (hasil.error || 'tidak diketahui'));
+  }
+
+  if (!hasil.fallback) {
+    log.info('NOTA', `Folder bulan siap: ${folderShare}`);
+    log.info('NOTA', `Disimpan: ${hasil.path}`);
     await kirim(chatId,
       '✅ *NOTA TERSIMPAN!*\n' + GARIS_TEBAL +
-      `\n🔖 ${escapeMd(buildNamaFileNota(info))}` +
+      `\n🔖 ${escapeMd(namaFile)}` +
       `\n📅 ${info.tanggal} ${bulan} ${info.tahun}` +
-      `\n📁 \`${escapeMd(fullPath)}\`` +
+      `\n📁 \`${escapeMd(hasil.path)}\`` +
       '\n\n📸 Kirim foto nota lain, atau ketik *batal*.',
       { reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]] } }
     );
-  } catch(err) {
-    log.error('NOTA', err.message);
-    await kirim(chatId, '❌ Gagal simpan: ' + err.message);
+    return;
   }
+
+  // Fallback: nota SELAMAT, tapi belum masuk share. Katakan terus terang.
+  log.warn('NOTA', `Share tidak terjangkau (${hasil.alasanShare}) - disimpan lokal: ${hasil.path}`);
+  if (CONFIG.adminId) {
+    bot.sendMessage(CONFIG.adminId,
+      '⚠️ *NOTA TERSIMPAN LOKAL* (share tidak terjangkau)\n\n'
+      + `🔖 ${escapeMd(namaFile)}\n`
+      + `📅 ${info.tanggal} ${bulan} ${info.tahun}\n`
+      + `📁 \`${escapeMd(hasil.path)}\`\n\n`
+      + `❗ ${escapeMd(hasil.alasanShare || 'tidak diketahui')}`,
+      { parse_mode: 'Markdown' }).catch(() => {});
+  }
+  await kirim(chatId,
+    '✅ *NOTA TERSIMPAN!*\n' + GARIS_TEBAL +
+    `\n🔖 ${escapeMd(namaFile)}` +
+    `\n📅 ${info.tanggal} ${bulan} ${info.tahun}` +
+    '\n\n📦 Tersimpan di penyimpanan bot. Folder share sedang tidak terjangkau,'
+    + ' jadi nota akan disalin ke sana saat tersedia. Admin sudah diberi tahu.'
+    + '\n\n📸 Kirim foto nota lain, atau ketik *batal*.',
+    { reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]] } }
+  );
 }
 
 // ════════════════════════════════════════════════════════════════
