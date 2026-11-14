@@ -47,11 +47,17 @@ function pastikanTersedia() {
 }
 
 const ROOT = __dirname;
-const DATA_DIR = path.join(ROOT, 'data');
+// Data bisa diarahkan ke volume (Railway: DATA_DIR=/data). Tanpa env,
+// perilaku tetap PERSIS seperti sebelumnya (<root>/data).
+const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DB_PATH = path.join(DATA_DIR, 'bot.db');
 const FILES_DIR = path.join(DATA_DIR, 'files');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const SECURE_DIR = path.join(DATA_DIR, 'secure');
+
+function paths() {
+  return { root: DATA_DIR, db: DB_PATH, files: FILES_DIR, backups: BACKUP_DIR, secure: SECURE_DIR };
+}
 
 let db = null;
 let ready = false;
@@ -722,6 +728,7 @@ function close() {
 
 module.exports = {
   ROOT, DATA_DIR, DB_PATH, FILES_DIR, BACKUP_DIR, SECURE_DIR,
+  paths,
   init, getDb, stats,
   tersedia, pastikanTersedia,
   recordEvent, recordMessage, recordIncoming, recordOutgoingMessage, recordCallback,

@@ -72,6 +72,13 @@ const iposKefa = iposBridge.kefa;
 //   1. KONFIGURASI
 // ════════════════════════════════════════════════════════════════
 
+// Folder kerja bisa diarahkan ke volume (Railway: /data). Bila env tidak
+// diisi, nilainya PERSIS sama seperti sebelumnya (di samping index.js),
+// sehingga menjalankan kode ini di PC tidak mengubah perilaku apa pun.
+const STORAGE_DIR = process.env.STORAGE_DIR || path.join(__dirname, 'storage');
+const LOGS_DIR = process.env.LOGS_DIR || path.join(__dirname, 'logs');
+const HARGA_DIR = process.env.HARGA_DIR || path.join(__dirname, 'harga_toko');
+
 const CONFIG = {
   appName: 'Bot Telegram Toko Perabot v4.0',
   botToken: process.env.BOT_TOKEN,
@@ -89,29 +96,29 @@ const CONFIG = {
   botUsername: process.env.BOT_USERNAME || 'Aivirtual_Robot',
   
     paths: {
-    storage: path.join(__dirname, 'storage'),
-    members: path.join(__dirname, 'storage', 'members.json'),
-    kontak: path.join(__dirname, 'storage', 'kontak.json'),
-    sesi: path.join(__dirname, 'storage', 'sesi.json'),
-    disapa: path.join(__dirname, 'storage', 'disapa.json'),
-    pending: path.join(__dirname, 'storage', 'pending.json'),
-    stockopname: path.join(__dirname, 'storage', 'stockopname.json'),
-    beritaacara: path.join(__dirname, 'storage', 'berita_acara.json'),
-    soShared: path.join(__dirname, 'storage', 'so_shared.json'),
-    roleLaporan: path.join(__dirname, 'storage', 'role_laporan.json'),
-    excelFolder: path.join(__dirname, 'harga_toko'),
+    storage: STORAGE_DIR,
+    members: path.join(STORAGE_DIR, 'members.json'),
+    kontak: path.join(STORAGE_DIR, 'kontak.json'),
+    sesi: path.join(STORAGE_DIR, 'sesi.json'),
+    disapa: path.join(STORAGE_DIR, 'disapa.json'),
+    pending: path.join(STORAGE_DIR, 'pending.json'),
+    stockopname: path.join(STORAGE_DIR, 'stockopname.json'),
+    beritaacara: path.join(STORAGE_DIR, 'berita_acara.json'),
+    soShared: path.join(STORAGE_DIR, 'so_shared.json'),
+    roleLaporan: path.join(STORAGE_DIR, 'role_laporan.json'),
+    excelFolder: HARGA_DIR,
     excelPerToko: {
-      nk: path.join(__dirname, 'harga_toko', 'nk.xlsx'),
-      tdm: path.join(__dirname, 'harga_toko', 'tdm.xlsx'),
-      oesapa: path.join(__dirname, 'harga_toko', 'oesapa.xlsx'),
-      kefa: path.join(__dirname, 'harga_toko', 'kefa.xlsx'),
-      cp: path.join(__dirname, 'harga_toko', 'cp.xlsx'),
+      nk: path.join(HARGA_DIR, 'nk.xlsx'),
+      tdm: path.join(HARGA_DIR, 'tdm.xlsx'),
+      oesapa: path.join(HARGA_DIR, 'oesapa.xlsx'),
+      kefa: path.join(HARGA_DIR, 'kefa.xlsx'),
+      cp: path.join(HARGA_DIR, 'cp.xlsx'),
     },
-    logs: path.join(__dirname, 'logs', 'error.log'),
+    logs: path.join(LOGS_DIR, 'error.log'),
     // BACKUP-DATA-TERAKHIR: snapshot laporan + harga per toko (dipakai saat
     // API/DB toko mati — tampil dengan stempel waktu, TIDAK menimpa data fresh).
-    backupLaporan: path.join(__dirname, 'storage', 'backup_laporan.json'),
-    backupHarga: path.join(__dirname, 'storage', 'backup_harga.json'),
+    backupLaporan: path.join(STORAGE_DIR, 'backup_laporan.json'),
+    backupHarga: path.join(STORAGE_DIR, 'backup_harga.json'),
   },
   
   maxMember: parseInt(process.env.MAX_MEMBER || '50'),
@@ -6274,7 +6281,9 @@ let _pollerRunning = false;
 let _pollerLoop = null;
 let _pollOffset = 0;
 let _pollOffsetLoaded = false;
-const POLL_OFFSET_FILE = path.join(__dirname, 'storage', 'polling_offset.json');
+// Ikut CONFIG.paths.storage agar tidak mengabaikan STORAGE_DIR saat dipindah
+// ke volume. Nilai default tetap <root>/storage.
+const POLL_OFFSET_FILE = path.join(CONFIG.paths.storage, 'polling_offset.json');
 
 // Agent keep-alive khusus getUpdates.
 // Dulu setiap request memakai header `Connection: close`, sehingga tiap poll
@@ -6948,9 +6957,9 @@ function imporLogLama() {
   try {
     const files = [
       CONFIG.paths.logs,
-      path.join(__dirname, 'logs', 'service-out.log'),
-      path.join(__dirname, 'logs', 'boot-events.log'),
-      path.join(__dirname, 'logs', 'watchdog-boot.log'),
+      path.join(LOGS_DIR, 'service-out.log'),
+      path.join(LOGS_DIR, 'boot-events.log'),
+      path.join(LOGS_DIR, 'watchdog-boot.log'),
     ];
     let total = 0;
     for (const f of files) {
