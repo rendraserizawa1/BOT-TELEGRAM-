@@ -68,6 +68,18 @@ backup/
 boot/_*.txt
 boot/_*.log
 boot/_*.json
+# Skrip probe & diagnostik sekali-pakai (tidak dipakai produksi).
+# Test suite resmi (boot/test-*.js, boot/verify-all.js) TETAP di-commit.
+boot/_*.js
+boot/probe-*.js
+boot/uji-*.js
+boot/diag-*.js
+boot/monitor-*.js
+boot/profile-*.js
+boot/koreksi-cek.js
+boot/lihat-db.js
+boot/tunggu-notif.js
+boot/cek-notif-lengkap.js
 
 # Skrip uji sekali-pakai di root
 tmp-*.js
@@ -139,3 +151,5 @@ coverage/
 out_*.txt
 hasil_cek.txt
 push.log
+
+boot/autostart-backup.json
