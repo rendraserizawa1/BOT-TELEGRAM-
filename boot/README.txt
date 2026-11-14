@@ -77,3 +77,39 @@ Catatan penting:
   fallback simpan ke drive C (sesuai aturan).
 - API CP remote 100.125.99.99:8080 timeout saat pemeriksaan; NK 401 karena
   tanpa key. Jangan menganggap data CP realtime sebelum koneksi diuji ulang.
+
+════════════════════════════════════════════════════════════════
+MIGRASI KE RAILWAY (14 Nov 2026)
+════════════════════════════════════════════════════════════════
+
+Dokumen terkait:
+  boot\DESIGN-MIGRASI-RAILWAY.md   - desain + analisis penghalang
+  boot\PANDUAN-DEPLOY-RAILWAY.md   - langkah deploy + verifikasi
+  boot\PANDUAN-PROXY-KEFA.md       - agar KEFA hidup 24/7 (Opsi D)
+  boot\CARA-PINDAH-REPO.md         - pindah repo ke akun baru
+  docs\superpowers\plans\2026-11-14-migrasi-railway.md - rencana kerja
+
+Perubahan kode yang SUDAH selesai (semua punya fallback, bot lokal tidak berubah):
+  - Node 24 (Dockerfile + package.json). WAJIB: node:sqlite hanya ada di 22+.
+  - bot-db.js gagal keras bila node:sqlite tidak ada (dulu mati senyap).
+  - Path data/storage/logs/harga dari env (DATA_DIR/STORAGE_DIR/LOGS_DIR/HARGA_DIR).
+  - boot\volume-check.js  - deteksi volume tidak persisten, lapor ke /health + admin.
+  - boot\replika-guard.js - tolak replika >1 (cegah 409 Conflict).
+  - boot\nota-simpan.js   - simpan nota dengan fallback lokal + notif admin.
+  - boot\status-jujur.js  - alasan eksplisit saat data iPos tidak segar.
+  - Perbaikan BUG PRA-ADA: path share nota ELT/KEF menunjuk share yang tidak ada.
+
+Suite tes baru:
+  node boot\test-db-require.js      (fail-fast node:sqlite)
+  node boot\test-path-env.js        (path dari env + fallback)
+  node boot\test-volume-check.js    (deteksi volume)
+  node boot\test-nota-fallback.js   (fallback nota)
+  node boot\test-path-nota.js       (path share nota benar)
+  node boot\test-replika-guard.js   (tolak replika >1)
+  node boot\test-status-jujur.js    (alasan data tidak segar)
+
+CATATAN PENTING:
+  - Workflow .github\workflows\bot.yml berstatus disabled_manually dan HARUS
+    tetap begitu. Kalau dijalankan, ia jadi poller Telegram KEDUA -> 409.
+  - Jangan isi PORT manual di Railway (Railway menyuntik sendiri).
+  - Replika Railway WAJIB 1.
