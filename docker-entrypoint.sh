@@ -279,19 +279,24 @@ else
       fi
     fi
   fi
-fi        # Probe presisi (opsional): memisahkan "header tak datang" dari
-        # "body ditahan". Diaktifkan dengan UJI_PROBE=1 supaya startup normal
-        # tidak diperlambat.
-        if [ "${UJI_PROBE:-0}" = "1" ]; then
-          echo "[TAILSCALE] --- probe presisi ---"
-          UJI_TARGET="${UJI_TARGET:-${IPOS_KEFA_URL:-}}" \
-          UJI_KEY="${UJI_KEY:-${IPOS_KEFA_KEY:-}}" \
-          IPOS_TAILSCALE_PROXY="${IPOS_TAILSCALE_PROXY:-http://$TS_PROXY}" \
-            node /app/boot/probe-tailnet.js --detik=25 2>&1 | while read -r L; do
-              echo "[PROBE] $L"
-            done
-        fi
+fi
 
+# ── PROBE PRESISI (OPSIONAL, DI LATAR) ────────────────────────────────
+# Memisahkan "header tidak pernah datang" dari "body ditahan" — dua masalah
+# yang butuh tindakan berbeda. Dijalankan DI LATAR supaya tidak menahan
+# startup: dulu probe ini membuat bot terlambat melayani /health selama ~80
+# detik, dan Railway melaporkannya sebagai 502.
+if [ "${UJI_PROBE:-0}" = "1" ]; then
+  (
+    echo "[TAILSCALE] --- probe presisi (latar) ---"
+    UJI_TARGET="${UJI_TARGET:-${IPOS_KEFA_URL:-}}" \
+    UJI_KEY="${UJI_KEY:-${IPOS_KEFA_KEY:-}}" \
+    IPOS_TAILSCALE_PROXY="${IPOS_TAILSCALE_PROXY:-http://$TS_PROXY}" \
+      node /app/boot/probe-tailnet.js --detik=25 2>&1 | while read -r L; do
+        echo "[PROBE] $L"
+      done
+  ) &
+fi
 
 echo "[ENTRY] Selesai. Menjalankan bot..."
 exec "$@"
