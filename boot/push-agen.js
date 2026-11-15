@@ -44,8 +44,10 @@ const http = require('http');
 const https = require('https');
 
 const ROOT = path.join(__dirname, '..');
-const STATUS = path.join(__dirname, 'push-status.json');
-const LOCK = path.join(__dirname, '.push-agen.lock');
+const STATUS = process.env.PUSH_STATUS_FILE || path.join(__dirname, 'push-status.json');
+// Kunci bisa diarahkan lewat env supaya uji tidak berebut kunci dengan agen
+// produksi yang sedang berjalan. Default tetap sama -> perilaku PC tidak berubah.
+const LOCK = process.env.PUSH_LOCK_FILE || path.join(__dirname, '.push-agen.lock');
 
 // ── KONFIGURASI ──────────────────────────────────────────────────────────
 const PUSH_URL = String(process.env.PUSH_URL || '').replace(/\/+$/, '');
@@ -543,6 +545,24 @@ function buatToko(t) {
   }, Number(process.env.PUSH_JEDA_DENYUT_MS || 30000));
   if (denyut.unref) denyut.unref();
 
+  // ── PEMANTAU STOK (loop cepat) ──────────────────────────────────────
+  //
+  // DIPISAH dari `pengawas` 30 detik, dan itu penting: perubahan stok akibat
+  // penjualan harus terlihat dalam hitungan detik. Menumpangkannya pada loop
+  // 30 detik membuat "realtime" hanya nama — pembeli bisa melihat stok lama
+  // sampai setengah menit.
+  //
+  // Beban satu putaran = satu GET /api/items ke proxy lokal (localhost,
+  // ~0,7 detik untuk 780 KB). Dengan jeda 3 detik itu ~23% waktu satu inti,
+  // masih wajar untuk PC kasir. Bisa diatur lewat PUSH_JEDA_STOK_MS.
+  const pemantauStok = setInterval(async () => {
+    for (const a of agen) {
+      try { await a.kirimSelisihStok(); }
+      catch (e) { catatGagal(a.keadaan.toko, 'items-ubah', e.message); }
+    }
+  }, Number(process.env.PUSH_JEDA_STOK_MS || 3000));
+  if (pemantauStok.unref) pemantauStok.unref();
+
   // Jaring pengaman: katalog penuh berkala + laporan berkala.
   const pengawas = setInterval(async () => {
     status.siklus++;
@@ -555,10 +575,6 @@ function buatToko(t) {
       } catch (e) {
         catatGagal(a.keadaan.toko, 'items', e.message);
       }
-      // Perubahan STOK tidak pernah muncul sebagai frame `items` dari proxy
-      // (proxy tidak membandingkan stok). Jadi di sinilah stok menjadi
-      // realtime: dibandingkan sendiri, didorong sebagai delta.
-      await a.kirimSelisihStok();
       await a.kirimLaporan(false);
     }
     tulisStatus();
