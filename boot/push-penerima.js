@@ -102,6 +102,11 @@ function buatPenerima({ token, batasSegarDetik, batasSegarLaporanDetik, batasSeg
 
     // 2. Bentuk data.
     const data = p.data;
+    // Slot per toko dideklarasikan SEBELUM cabang denyut, karena denyut perlu
+    // memeriksa apakah katalog sudah ada (untuk meminta kiriman ulang setelah
+    // redeploy). Mendeklarasikannya di bawah membuat cabang denyut memakai
+    // variabel yang belum ada -> "Cannot access before initialization".
+    const perToko = slot(toko, jenis);
     if (jenis === 'denyut') {
       // DENYUT: bukti PC masih hidup, TANPA membawa data.
       //
@@ -120,7 +125,24 @@ function buatPenerima({ token, batasSegarDetik, batasSegarLaporanDetik, batasSeg
         diterimaPada: Date.now(),
         jumlahPush: (sebelumD && sebelumD.jumlahPush ? sebelumD.jumlahPush : 0) + 1,
       });
-      return { status: 200, body: { ok: true, toko, jenis, denyut: true, diterimaPada: perTokoD.get('denyut').diterimaPada } };
+      // PENTING: beri tahu PC kalau server BELUM punya katalog.
+      //
+      // Penyimpanan ini hanya di memori, jadi setiap redeploy/restart Railway
+      // mengosongkannya. Tanpa pemberitahuan ini, PC akan menunggu sampai jeda
+      // katalog penuh berikutnya (15 menit) sebelum mengirim ulang — dan selama
+      // itu bot melayani toko tanpa data, persis keluhan "data tidak update".
+      //
+      // Denyut datang tiap 30 dtk, jadi jalur ini memulihkan katalog dalam
+      // hitungan detik setelah deploy, bukan belasan menit.
+      const katalogAda = !!perToko.get('items');
+      return {
+        status: 200,
+        body: {
+          ok: true, toko, jenis, denyut: true,
+          perluPenuh: !katalogAda,
+          diterimaPada: perTokoD.get('denyut').diterimaPada,
+        },
+      };
     }
 
     if (jenis === 'items' || jenis === 'items-ubah') {
@@ -131,7 +153,6 @@ function buatPenerima({ token, batasSegarDetik, batasSegarLaporanDetik, batasSeg
       return { status: 400, body: { ok: false, err: 'data harus objek' } };
     }
 
-    const perToko = slot(toko, jenis);
     const sebelum = perToko.get(jenis);
 
     // DELTA: gabungkan ke katalog penuh yang sudah ada, jangan menimpanya.

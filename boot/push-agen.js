@@ -211,7 +211,16 @@ async function dorong(toko, jenis, data) {
   if (r.status === 200) {
     status.kiriman[jenis] = (status.kiriman[jenis] || 0) + 1;
     status.terakhirKirim = { waktu: new Date().toISOString(), toko, jenis, jumlah: Array.isArray(data) ? data.length : null };
-    return { ok: true };
+    // Server bisa meminta katalog penuh lewat respons 200 (denyut). Ini cara
+    // pemulihan cepat setelah redeploy: penyimpanan server hanya di memori,
+    // jadi setiap restart mengosongkannya. Tanpa jalur ini, PC baru mengirim
+    // ulang saat jeda 15 menit tiba dan bot melayani toko tanpa data.
+    let perluPenuh = false;
+    try {
+      const j = JSON.parse(r.body);
+      perluPenuh = !!(j && j.perluPenuh);
+    } catch (_) { /* bukan JSON -> abaikan */ }
+    return { ok: true, perluPenuh };
   }
 
   if (r.status === 401 || r.status === 503) {
@@ -422,7 +431,21 @@ function buatToko(t) {
   const denyut = setInterval(async () => {
     for (const a of agen) {
       try {
-        await dorong(a.keadaan.toko, 'denyut', { hidup: true });
+        const r = await dorong(a.keadaan.toko, 'denyut', { hidup: true });
+        // Server baru saja restart / redeploy: penyimpanannya kosong. Kirim
+        // katalog penuh SEKARANG, jangan tunggu jeda 15 menit — selama itu bot
+        // akan melayani toko tanpa data.
+        if (r && r.perluPenuh) {
+          console.log('[PUSH] ' + a.keadaan.toko + ': server kosong (redeploy?) - kirim katalog penuh segera');
+          try {
+            const n = await a.kirimPenuh();
+            console.log('[PUSH] ' + a.keadaan.toko + ': katalog dipulihkan ' + n + ' item');
+          } catch (e2) {
+            catatGagal(a.keadaan.toko, 'items', e2.message);
+          }
+          // Laporan juga hilang bersama memori server.
+          await a.kirimLaporan(true);
+        }
       } catch (e) {
         catatGagal(a.keadaan.toko, 'denyut', e.message);
       }

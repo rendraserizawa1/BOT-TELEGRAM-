@@ -174,3 +174,13 @@ boot/_railway-login*.txt
 
 # Konfigurasi agen dorong (berisi token) - JANGAN pernah di-commit.
 boot/push-agen.env
+
+# -- Berkas RUNTIME (dibuat proses saat berjalan, bukan kode) -------------
+# Lock berisi PID yang berubah tiap start; meng-commit-nya membuat konflik
+# palsu setiap kali dan bisa menyesatkan pembaca tentang siapa pemilik lock.
+boot/*.lock
+boot/.jaga-*.lock
+boot/.push-agen.lock
+boot/*-status.json
+boot/push-agen.log
+boot/*.log

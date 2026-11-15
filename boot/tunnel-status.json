@@ -1,7 +1,7 @@
 {
   "mulai": "2026-11-15T06:20:04.494Z",
   "pid": 12048,
-  "siklus": 55,
+  "siklus": 58,
   "sasaran": {
     "CP": {
       "nama": "IPOS_URL",
@@ -16,10 +16,10 @@
       "nama": "IPOS_NK_URL",
       "sumber": "http://100.110.152.33:8080",
       "sumberHidup": false,
-      "sumberAlasan": "ETIMEDOUT",
+      "sumberAlasan": "HTTP 401",
       "url": null,
       "keadaan": "sumber-mati",
-      "alasan": "ETIMEDOUT"
+      "alasan": "HTTP 401"
     },
     "KEFA": {
       "nama": "IPOS_KEFA_URL",
@@ -29,11 +29,11 @@
       "url": "https://scales-lil-accurate-beneath.trycloudflare.com",
       "pidTunnel": 11416,
       "logFile": "C:\\Users\\rdpadmin\\AppData\\Local\\Temp\\cf-jaga-KEFA-1794727451688.log",
-      "keadaan": "url-beda",
+      "keadaan": "sehat",
       "alasan": null,
       "terakhirPasang": "2026-11-15T07:24:31.072Z",
-      "terakhirSehat": "2026-11-15T08:12:13.861Z"
+      "terakhirSehat": "2026-11-15T08:36:56.835Z"
     }
   },
-  "diperbarui": "2026-11-15T08:33:29.298Z"
+  "diperbarui": "2026-11-15T08:36:56.836Z"
 }
