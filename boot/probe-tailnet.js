@@ -79,9 +79,9 @@ async function ukur(url, alamatProxy, streaming) {
         if (hasil.msByte === null) hasil.msByte = Date.now() - t0;
         hasil.byte += value.length;
         hasil.potongan++;
-        // Untuk permintaan biasa, satu potongan sudah cukup.
+        // Untuk permintaan biasa, baca SAMPAI HABIS supaya ukuran sebenarnya terlihat.
         // Untuk streaming, berhenti setelah 3 potongan (bukti mengalir).
-        if (!streaming) break;
+        if (!streaming) { continue; }
         if (hasil.potongan >= 3) break;
       }
       hasil.tahap = 'selesai';
@@ -141,9 +141,11 @@ const baris = (nama, h) => {
     baris('/health', h1);
     hasil.push(['/health ' + label, h1]);
 
-    const h2 = await ukur(urlItems, alamat, false);
-    baris('/api/items', h2);
-    hasil.push(['/api/items ' + label, h2]);
+    for (let ulang = 1; ulang <= 3; ulang++) {
+      const h2 = await ukur(urlItems, alamat, false);
+      baris('/api/items #' + ulang, h2);
+      hasil.push(['/api/items ' + label + ' #' + ulang, h2]);
+    }
 
     const h3 = await ukur(urlEvents, alamat, true);
     baris('/api/events (SSE)', h3);
