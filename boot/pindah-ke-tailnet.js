@@ -197,14 +197,14 @@ const tunggu = (ms) => new Promise((r) => setTimeout(r, ms));
   } else {
     console.log('\n  GAGAL — sambungan terputus ' + reset + ' kali.');
   }
-  console.log('  Mengembalikan ke URL tunnel sebelumnya.');
-  if (k0 && k0.url) {
-    try {
-      railway(['variables', '--service', SERVICE, '--set', 'IPOS_KEFA_URL=' + k0.url]);
-      console.log('  IPOS_KEFA_URL dikembalikan ke: ' + k0.url);
-    } catch (e) {
-      console.log('  PERINGATAN: rollback gagal, lakukan manual: ' + String(e.message).slice(0, 150));
-    }
-  }
+
+  // JANGAN me-rollback otomatis. Percobaan pertama saya membuktikan bahayanya:
+  // skrip menilai "GAGAL" hanya karena container masih pemanasan, lalu
+  // mengembalikan URL — padahal jalurnya belum sempat diuji sama sekali.
+  // Rollback harus keputusan manusia yang melihat bukti, bukan efek samping
+  // dari pengamatan yang belum lengkap.
+  console.log('\n  URL DIBIARKAN di jalur tailnet (' + TAILNET_KEFA + ').');
+  console.log('  Untuk mengembalikan ke tunnel:');
+  console.log('    railway variables --service kefa-bot --set IPOS_KEFA_URL=' + ((k0 && k0.url) || '<url-tunnel>'));
   process.exit(1);
 })().catch((e) => { console.log('FATAL: ' + e.message); process.exit(1); });
