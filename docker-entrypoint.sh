@@ -179,14 +179,23 @@ else
         echo "[TAILSCALE] siap hostname=bcode-railway"
         export TS_PROXY
 
-        # Laporkan berapa peer yang terlihat. Ini bukti node benar-benar sudah
-        # masuk tailnet dan melihat perangkat lain — bukan sekadar "daemon hidup".
-        PEER=$(tailscale --socket="$TS_SOCK" status --json 2>/dev/null | node -e '
-          let s=""; process.stdin.on("data",(d)=>s+=d).on("end",()=>{
-            try { const j=JSON.parse(s); console.log(Object.keys(j.Peer||{}).length); }
-            catch(_) { console.log("?"); }
-          });' 2>/dev/null)
-        echo "[TAILSCALE] peer terlihat = ${PEER:-?}"
+        # BackendState=Running BELUM berarti netmap siap. Tepat setelah join,
+        # daftar peer masih kosong selama beberapa detik, dan percobaan HTTP
+        # pada saat itu GAGAL padahal jalurnya sehat. Itu pernah menghasilkan
+        # laporan "timeout" yang menyesatkan. Jadi tunggu sampai peer terlihat.
+        i=0
+        PEER=0
+        while [ $i -lt 60 ]; do
+          PEER=$(tailscale --socket="$TS_SOCK" status --json 2>/dev/null | node -e '
+            let s=""; process.stdin.on("data",(d)=>s+=d).on("end",()=>{
+              try { const j=JSON.parse(s); console.log(Object.keys(j.Peer||{}).length); }
+              catch(_) { console.log("0"); }
+            });' 2>/dev/null)
+          [ "${PEER:-0}" -gt 0 ] 2>/dev/null && break
+          i=$((i + 1))
+          sleep 1
+        done
+        echo "[TAILSCALE] peer terlihat = ${PEER:-0} (tunggu ${i} dtk)"
 
         # Probe opsional: TS_PROBE_URL berisi satu/lebih URL tailnet yang HARUS
         # terjangkau, dipisah koma. Contoh:

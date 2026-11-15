@@ -1,7 +1,7 @@
 {
   "mulai": "2026-11-15T06:20:04.494Z",
   "pid": 12048,
-  "siklus": 43,
+  "siklus": 44,
   "sasaran": {
     "CP": {
       "nama": "IPOS_URL",
@@ -32,8 +32,8 @@
       "keadaan": "sehat",
       "alasan": null,
       "terakhirPasang": "2026-11-15T06:23:00.077Z",
-      "terakhirSehat": "2026-11-15T07:20:09.421Z"
+      "terakhirSehat": "2026-11-15T07:21:25.423Z"
     }
   },
-  "diperbarui": "2026-11-15T07:20:09.421Z"
+  "diperbarui": "2026-11-15T07:21:25.424Z"
 }
