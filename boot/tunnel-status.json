@@ -1,0 +1,39 @@
+{
+  "mulai": "2026-11-15T06:20:04.494Z",
+  "pid": 12048,
+  "siklus": 34,
+  "sasaran": {
+    "CP": {
+      "nama": "IPOS_URL",
+      "sumber": "http://100.125.99.99:8080",
+      "sumberHidup": false,
+      "sumberAlasan": "ETIMEDOUT",
+      "url": null,
+      "keadaan": "sumber-mati",
+      "alasan": "ETIMEDOUT"
+    },
+    "NK": {
+      "nama": "IPOS_NK_URL",
+      "sumber": "http://100.110.152.33:8080",
+      "sumberHidup": false,
+      "sumberAlasan": "ETIMEDOUT",
+      "url": null,
+      "keadaan": "sumber-mati",
+      "alasan": "ETIMEDOUT"
+    },
+    "KEFA": {
+      "nama": "IPOS_KEFA_URL",
+      "sumber": "http://127.0.0.1:8080",
+      "sumberHidup": true,
+      "sumberAlasan": null,
+      "url": "https://old-distance-owns-workshops.trycloudflare.com",
+      "pidTunnel": 1080,
+      "logFile": "C:\\Users\\rdpadmin\\AppData\\Local\\Temp\\cf-jaga-KEFA-1794723766420.log",
+      "keadaan": "sehat",
+      "alasan": null,
+      "terakhirPasang": "2026-11-15T06:23:00.077Z",
+      "terakhirSehat": "2026-11-15T07:07:23.124Z"
+    }
+  },
+  "diperbarui": "2026-11-15T07:07:23.124Z"
+}

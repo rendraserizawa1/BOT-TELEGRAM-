@@ -115,6 +115,15 @@ else
   TS_PROXY="127.0.0.1:1056"
   mkdir -p "$TS_DIR" 2>/dev/null || true
 
+  # Folder log bisa tidak bisa ditulis (volume read-only). Kalau begitu pakai
+  # /tmp, karena kalau redirect gagal `tailscaled` tidak akan pernah start dan
+  # kegagalannya tidak terlihat sama sekali.
+  TS_LOG="$DATA_ROOT/logs/tailscaled.log"
+  if ! ( : >>"$TS_LOG" ) 2>/dev/null; then
+    TS_LOG="/tmp/tailscaled.log"
+    echo "[TAILSCALE] PERINGATAN: $DATA_ROOT/logs tidak bisa ditulis, log pindah ke $TS_LOG"
+  fi
+
   if ! command -v tailscaled >/dev/null 2>&1; then
     echo "[TAILSCALE] PERINGATAN: biner tailscaled tidak ada di image - dilewati"
   else
@@ -124,7 +133,7 @@ else
       --outbound-http-proxy-listen="$TS_PROXY" \
       --state="$TS_DIR/tailscaled.state" \
       --socket="$TS_SOCK" \
-      >>"$DATA_ROOT/logs/tailscaled.log" 2>&1 &
+      >>"$TS_LOG" 2>&1 &
     TS_PID=$!
 
     # Tunggu socket siap (maks 20 dtk). Jangan menggantung selamanya.
@@ -143,7 +152,7 @@ else
            --authkey="$TS_AUTHKEY" \
            --hostname=bcode-railway \
            --accept-routes \
-           --timeout=60s >>"$DATA_ROOT/logs/tailscaled.log" 2>&1; then
+           --timeout=60s >>"$TS_LOG" 2>&1; then
         echo "[TAILSCALE] up berhasil"
       else
         echo "[TAILSCALE] PERINGATAN: 'tailscale up' gagal - lanjut tanpa tailnet"
@@ -163,19 +172,41 @@ else
 
       if [ "$SIAP" = "1" ]; then
         echo "[TAILSCALE] siap hostname=bcode-railway"
-        # Bukti nyata: satu percobaan HTTP ke tiap iPos, dicatat ke log.
-        # Ini membuat kegagalan ACL/ firewall terlihat TANPA perlu SSH.
-        for U in "${IPOS_URL:-}" "${IPOS_NK_URL:-}" "${IPOS_KEFA_URL:-}"; do
-          [ -z "$U" ] && continue
-          if node -e '
-            const u = process.argv[1] + "/health";
-            fetch(u, { signal: AbortSignal.timeout(8000) })
-              .then((r) => { console.log("HTTP " + r.status); process.exit(r.ok ? 0 : 1); })
-              .catch((e) => { console.log((e.cause && e.cause.code) || e.message); process.exit(1); });
-          ' "$U" 2>&1 | { read -r HASIL; echo "[TAILSCALE]   $U -> $HASIL"; }; then
-            :
-          fi
-        done
+        export TS_PROXY
+
+        # Laporkan berapa peer yang terlihat. Ini bukti node benar-benar sudah
+        # masuk tailnet dan melihat perangkat lain — bukan sekadar "daemon hidup".
+        PEER=$(tailscale --socket="$TS_SOCK" status --json 2>/dev/null | node -e '
+          let s=""; process.stdin.on("data",(d)=>s+=d).on("end",()=>{
+            try { const j=JSON.parse(s); console.log(Object.keys(j.Peer||{}).length); }
+            catch(_) { console.log("?"); }
+          });' 2>/dev/null)
+        echo "[TAILSCALE] peer terlihat = ${PEER:-?}"
+
+        # Probe opsional: TS_PROBE_URL berisi satu/lebih URL tailnet yang HARUS
+        # terjangkau, dipisah koma. Contoh:
+        #   TS_PROBE_URL=http://100.123.166.13:8080/ipos/health
+        #
+        # Kenapa TIDAK memakai IPOS_*_URL: saat blok ini berjalan, URL itu
+        # masih menunjuk tunnel publik. Mengujinya lewat tailnet hanya
+        # menghasilkan kegagalan yang membingungkan dan tidak membuktikan apa pun.
+        #
+        # PENTING: probe WAJIB lewat proxy. Kalau memakai fetch langsung,
+        # hasilnya bisa "HTTP 200" dari jalur internet biasa padahal tailnet
+        # tidak berfungsi sama sekali — laporan yang menyesatkan.
+        if [ -n "${TS_PROBE_URL:-}" ]; then
+          echo "$TS_PROBE_URL" | tr ',' '\n' | while read -r U; do
+            [ -z "$U" ] && continue
+            HASIL=$(node -e '
+              const undici = require("undici");
+              const d = new undici.ProxyAgent("http://" + process.env.TS_PROXY);
+              fetch(process.argv[1], { dispatcher: d, signal: AbortSignal.timeout(10000) })
+                .then((r) => { console.log("HTTP " + r.status + " (lewat tailnet)"); process.exit(0); })
+                .catch((e) => { console.log(((e.cause && e.cause.code) || e.message) + " (lewat tailnet)"); process.exit(1); });
+            ' "$U" 2>&1 | tail -1)
+            echo "[TAILSCALE]   $U -> $HASIL"
+          done
+        fi
       else
         echo "[TAILSCALE] PERINGATAN: BackendState bukan Running dalam 60 dtk - lanjut tanpa tailnet"
       fi

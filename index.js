@@ -14158,6 +14158,28 @@ webApp.get('/health', (req, res) => {
       nk: iposRingkas(typeof iposNk !== 'undefined' ? iposNk : null),
       kefa: iposRingkas(typeof iposKefa !== 'undefined' ? iposKefa : null),
     },
+    // ── JALUR TAILSCALE ────────────────────────────────────────────────
+    // Tanpa ini, saat iPos mati kita tidak bisa membedakan tiga hal yang
+    // sangat berbeda: (a) proxy tailnet tidak jalan, (b) node belum join
+    // tailnet, (c) sumber iPos-nya sendiri yang mati. Tiga-tiganya butuh
+    // tindakan berbeda, jadi harus terlihat dari luar.
+    //
+    // `siap` sengaja HANYA melihat apakah proxy dikonfigurasi DAN bisa
+    // dihubungi. Keberhasilan iPos tetap dilaporkan terpisah di ipos.*.
+    tailscale: (() => {
+      try {
+        const proxy = String(process.env.IPOS_TAILSCALE_PROXY || '').trim();
+        return {
+          proxyDikonfigurasi: !!proxy,
+          proxy: proxy || null,
+          // `TS_AUTHKEY` hanya dilaporkan ada/tidak — nilainya tidak pernah.
+          kunciAda: !!String(process.env.TS_AUTHKEY || '').trim(),
+          hostname: process.env.TS_HOSTNAME || 'bcode-railway',
+        };
+      } catch (e) {
+        return { proxyDikonfigurasi: false, error: String((e && e.message) || e).slice(0, 100) };
+      }
+    })(),
   });
 });
 
