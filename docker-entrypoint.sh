@@ -201,14 +201,12 @@ else
         # terjangkau, dipisah koma. Contoh:
         #   TS_PROBE_URL=http://100.123.166.13:8080/ipos/health
         #
-        # Kenapa TIDAK memakai IPOS_*_URL: saat blok ini berjalan, URL itu
-        # masih menunjuk tunnel publik. Mengujinya lewat tailnet hanya
-        # menghasilkan kegagalan yang membingungkan dan tidak membuktikan apa pun.
-        #
-        # PENTING: probe WAJIB lewat proxy. Kalau memakai fetch langsung,
-        # hasilnya bisa "HTTP 200" dari jalur internet biasa padahal tailnet
-        # tidak berfungsi sama sekali — laporan yang menyesatkan.
-        if [ -n "${TS_PROBE_URL:-}" ]; then
+        # DIJALANKAN DI LATAR. Ini pernah menahan startup ~100 detik (3 HTTP
+        # 10 dtk + 2 SSE 35 dtk), dan selama itu Railway melaporkan 502 serta
+        # iPos tampak "offline" padahal hanya belum siap. Diagnosa TIDAK boleh
+        # mengorbankan layanan.
+        (
+          if [ -n "${TS_PROBE_URL:-}" ]; then
           echo "$TS_PROBE_URL" | tr ',' '\n' | while read -r U; do
             [ -z "$U" ] && continue
             HASIL=$(node -e '
@@ -273,7 +271,8 @@ else
             ' "$TS_PROBE_SSE_URL" 2>&1 | tail -1)
             echo "[TAILSCALE] SSE tailnet via $AGEN -> $HASIL_SSE"
           done
-        fi
+          fi
+        ) &
       else
         echo "[TAILSCALE] PERINGATAN: BackendState bukan Running dalam 60 dtk - lanjut tanpa tailnet"
       fi

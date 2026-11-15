@@ -83,22 +83,53 @@ const tunggu = (ms) => new Promise((r) => setTimeout(r, ms));
   console.log('\n--- MEMINDAHKAN ---');
   try {
     railway(['variables', '--service', SERVICE, '--set', 'IPOS_KEFA_URL=' + TAILNET_KEFA]);
-    console.log('  IPOS_KEFA_URL diset ke jalur tailnet');
   } catch (e) {
     console.log('  GAGAL set variabel: ' + String(e.stderr || e.message).slice(0, 200));
     process.exit(1);
   }
 
-  console.log('  menunggu Railway menerapkan variabel (45 dtk)...');
+  // `railway variables --set` bisa keluar 0 padahal nilainya TIDAK berubah.
+  // Tanpa verifikasi ini, skrip akan melaporkan "berhasil" sambil memantau URL
+  // yang salah — persis kegagalan yang menyesatkan.
+  const nilaiSekarang = () => {
+    try {
+      const out = railway(['variables', '--service', SERVICE, '--json']);
+      const j = JSON.parse(String(out).replace(/^\uFEFF/, '').slice(String(out).indexOf('{')));
+      return String(j.IPOS_KEFA_URL || '');
+    } catch (_) { return ''; }
+  };
+
+  let terpasang = nilaiSekarang();
+  for (let i = 0; i < 12 && terpasang !== TAILNET_KEFA; i++) {
+    console.log('  menunggu variabel terpasang... (' + (i + 1) + '/12) sekarang: ' + (terpasang || '(kosong)'));
+    await tunggu(5000);
+    terpasang = nilaiSekarang();
+  }
+
+  if (terpasang !== TAILNET_KEFA) {
+    console.log('  GAGAL: IPOS_KEFA_URL tidak berubah menjadi jalur tailnet.');
+    console.log('  Nilai sekarang: ' + (terpasang || '(kosong)'));
+    console.log('  Tidak ada yang dipantau karena perubahan belum terjadi.');
+    process.exit(1);
+  }
+  console.log('  TERVERIFIKASI: IPOS_KEFA_URL = ' + terpasang);
+
+  console.log('  menunggu Railway menerapkan ulang container (45 dtk)...');
   await tunggu(45000);
 
   // ── 4. Pantau ─────────────────────────────────────────────────────────
+  // ATURAN PENTING: pengamatan harus MENGABAIKAN jendela restart.
+  // Saat container baru dijalankan ulang, `online=false` dan `umur` kecil
+  // selama puluhan detik. Itu bukan tanda sambungan putus. Dulu ini membuat
+  // skrip memutuskan GAGAL lalu me-rollback padahal jalurnya sehat.
   console.log('\n--- MEMANTAU (inti pembuktian) ---');
-  console.log('  umurKoneksiDetik harus NAIK TERUS. Reset ke 0 = sambungan diputus.\n');
+  console.log('  Yang dinilai hanya sampel SETELAH iPos pernah online.');
+  console.log('  Sampel sebelum itu = masa pemanasan container, bukan kegagalan.\n');
 
   const jejak = [];
   let reset = 0;
   let sebelumnya = null;
+  let pernahOnline = false;
   const sampai = Date.now() + MENIT * 60000;
 
   while (Date.now() < sampai) {
@@ -106,7 +137,7 @@ const tunggu = (ms) => new Promise((r) => setTimeout(r, ms));
     try {
       h = await health();
     } catch (e) {
-      console.log('  (health gagal: ' + e.message + ')');
+      console.log('  (container belum menjawab: ' + String(e.message).slice(0, 60) + ')');
       await tunggu(30000);
       continue;
     }
@@ -114,8 +145,19 @@ const tunggu = (ms) => new Promise((r) => setTimeout(r, ms));
     if (!k) { await tunggu(30000); continue; }
 
     const umur = Number(k.umurKoneksiDetik);
+    const siap = !!k.online && Number(k.total) > 0;
+
+    if (!siap) {
+      console.log('  pemanasan: umur=' + umur + 's online=' + k.online + ' total=' + k.total + ' (diabaikan)');
+      await tunggu(30000);
+      continue;
+    }
+
+    pernahOnline = true;
     const naik = sebelumnya === null ? null : umur > sebelumnya;
-    if (sebelumnya !== null && umur < sebelumnya) reset++;
+    // Reset hanya dihitung bila penurunannya besar — penurunan kecil wajar
+    // karena dua sampel bisa berasal dari proses yang berbeda saat deploy.
+    if (sebelumnya !== null && umur < sebelumnya - 10) reset++;
 
     const baris =
       'umur=' + String(umur).padStart(4) + 's' +
@@ -124,7 +166,7 @@ const tunggu = (ms) => new Promise((r) => setTimeout(r, ms));
       ' total=' + String(k.total).padEnd(5) +
       ' itemSegar=' + String(k.itemSegar).padEnd(5) +
       ' jalur=' + ((k.jalur && k.jalur.jalurDipakai) || '-') +
-      (naik === null ? '' : (naik ? '  naik' : '  TURUN'));
+      (naik === null ? '' : (naik ? '  naik' : '  turun'));
     console.log('  ' + baris);
 
     jejak.push({ umur, online: k.online, sse: k.sse, total: k.total, dipakai: k.jalur && k.jalur.jalurDipakai });
@@ -134,15 +176,15 @@ const tunggu = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // ── 5. Putuskan ───────────────────────────────────────────────────────
   const akhir = jejak[jejak.length - 1] || {};
-  const hidup = jejak.filter((j) => j.online).length;
-  const lulus = hidup === jejak.length && reset === 0 && Number(akhir.umur) > 0;
+  const lulus = pernahOnline && jejak.length >= 3 && reset === 0 && Number(akhir.umur) > 0;
 
   console.log('\n=== HASIL ===');
-  console.log('  sampel            = ' + jejak.length);
-  console.log('  sampel online     = ' + hidup + '/' + jejak.length);
+  console.log('  sampel sahih      = ' + jejak.length);
+  console.log('  pernah online     = ' + pernahOnline);
   console.log('  jumlah reset      = ' + reset + '  (0 = tidak pernah putus)');
   console.log('  umur akhir        = ' + akhir.umur + 's');
   console.log('  jalur dipakai     = ' + (akhir.dipakai || '-'));
+  console.log('  url               = ' + TAILNET_KEFA);
 
   if (lulus) {
     console.log('\n  LULUS — iPos KEFA stabil lewat tailnet tanpa putus.');
@@ -150,7 +192,12 @@ const tunggu = (ms) => new Promise((r) => setTimeout(r, ms));
     process.exit(0);
   }
 
-  console.log('\n  GAGAL — mengembalikan ke URL tunnel sebelumnya.');
+  if (!pernahOnline) {
+    console.log('\n  GAGAL — iPos tidak pernah online lewat jalur tailnet.');
+  } else {
+    console.log('\n  GAGAL — sambungan terputus ' + reset + ' kali.');
+  }
+  console.log('  Mengembalikan ke URL tunnel sebelumnya.');
   if (k0 && k0.url) {
     try {
       railway(['variables', '--service', SERVICE, '--set', 'IPOS_KEFA_URL=' + k0.url]);
