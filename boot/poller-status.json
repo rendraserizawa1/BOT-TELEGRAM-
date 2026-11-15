@@ -1,10 +1,10 @@
 {
-  "mulai": "2026-11-15T06:17:19.291Z",
-  "pid": 9232,
-  "siklus": 91,
+  "mulai": "2026-11-15T08:29:01.975Z",
+  "pid": 8716,
+  "siklus": 3,
   "temuan": [],
   "tindakan": [],
-  "diperbarui": "2026-11-15T08:14:42.269Z",
+  "diperbarui": "2026-11-15T08:32:36.545Z",
   "proxyIpos": {
     "hidup": true,
     "pids": [
@@ -12,11 +12,7 @@
     ]
   },
   "railway": {
-    "ok": true,
-    "status": "OK",
-    "polling": true,
-    "streak": 0,
-    "uptime": 115.52979936,
-    "konflik": false
+    "ok": false,
+    "alasan": "UND_ERR_CONNECT_TIMEOUT"
   }
 }

@@ -171,3 +171,6 @@ boot/_cf*.txt
 boot/_log*.txt
 boot/_rw-*.txt
 boot/_railway-login*.txt
+
+# Konfigurasi agen dorong (berisi token) - JANGAN pernah di-commit.
+boot/push-agen.env

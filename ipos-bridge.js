@@ -65,10 +65,16 @@ function buatBridge({ url, key, toko, label }) {
   function pushAktif() {
     try { return pushGudang.aktif(); } catch (_) { return false; }
   }
-  // Berapa lama data dorongan masih dianggap layak dipakai. Harus lebih longgar
-  // dari jeda dorong PC (15 menit untuk katalog penuh), kalau tidak katalog
-  // akan dianggap basi terus padahal alirannya sehat.
-  const PUSH_BATAS_DETIK = Number(process.env.PUSH_BATAS_PAKAI_DETIK || 1200);
+  // Berapa lama data dorongan masih dianggap layak dipakai.
+  //
+  // DUA batas, dan pemisahan ini penting:
+  //  - KATALOG: katalog penuh dikirim tiap 15 menit dan delta hanya saat ada
+  //    item berubah. Toko sepi yang sehat pun bisa berumur belasan menit. Batas
+  //    pendek di sini akan membuat bot membuang katalog yang masih benar.
+  //  - LAPORAN: dikirim ulang tiap ~60 detik, jadi batas pendek memang tepat —
+  //    laporan yang berumur 10 menit berarti alirannya memang bermasalah.
+  const PUSH_BATAS_ITEMS_DETIK = Number(process.env.PUSH_BATAS_PAKAI_DETIK || 1200);
+  const PUSH_BATAS_LAPORAN_DETIK = Number(process.env.PUSH_BATAS_LAPORAN_DETIK || 180);
 
   let lastSync = 0;
   let lastSseAt = 0;
@@ -132,7 +138,7 @@ function buatBridge({ url, key, toko, label }) {
     // memakai angka beku seolah segar. Kita lempar error supaya status
     // melaporkan OFFLINE — kegagalan harus terlihat, bukan disembunyikan.
     if (pushAktif()) {
-      const dariDorong = pushGudang.ambilSegar(tokoUtama, 'items', PUSH_BATAS_DETIK);
+      const dariDorong = pushGudang.ambilSegar(tokoUtama, 'items', PUSH_BATAS_ITEMS_DETIK);
       if (Array.isArray(dariDorong) && dariDorong.length) return dariDorong;
       const umur = pushGudang.umurDetik(tokoUtama, 'items');
       throw new Error(umur == null
@@ -442,7 +448,7 @@ function buatBridge({ url, key, toko, label }) {
     // Bentuk objeknya SAMA PERSIS dengan yang dikembalikan /api/jual, jadi
     // seluruh pemanggil di bawah tidak perlu diubah.
     if (pushAktif()) {
-      const dariDorong = pushGudang.ambilSegar(tokoUtama, 'jual', PUSH_BATAS_DETIK);
+      const dariDorong = pushGudang.ambilSegar(tokoUtama, 'jual', PUSH_BATAS_LAPORAN_DETIK);
       if (dariDorong && typeof dariDorong === 'object') {
         lapErrTerakhir = null;
         lapDiperiksaPada = Date.now();
@@ -710,7 +716,7 @@ function buatBridge({ url, key, toko, label }) {
         // karena memang tidak ada SSE yang dijaga.
         ? (() => {
             const umur = pushGudang.umurDetik(tokoUtama, 'items');
-            return umur != null && umur <= PUSH_BATAS_DETIK ? '🟢 realtime (dorong)' : '🔴 putus (dorong)';
+            return umur != null && umur <= PUSH_BATAS_ITEMS_DETIK ? '🟢 realtime (dorong)' : '🔴 putus (dorong)';
           })()
         : (sseOk ? '🟢 realtime' : '🔴 putus'),
       total: lastCount, lastSync, lastSseAt, lastError,

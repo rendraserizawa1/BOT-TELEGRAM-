@@ -43,11 +43,28 @@ const TOKO_SAH = new Set(['cp', 'nk', 'kefa']);
  * satu nota berarti membuang bandwidth dan waktu. Delta hanya berisi item yang
  * berubah, biasanya 1-5 baris.
  */
-const JENIS_SAH = new Set(['items', 'items-ubah', 'jual', 'jual-merek', 'jual-marketplace', 'kasir']);
+const JENIS_SAH = new Set(['items', 'items-ubah', 'jual', 'jual-merek', 'jual-marketplace', 'kasir', 'denyut']);
 
-function buatPenerima({ token, batasSegarDetik } = {}) {
+function buatPenerima({ token, batasSegarDetik, batasSegarLaporanDetik, batasSegarItemsDetik } = {}) {
   const TOKEN = String(token || '');
-  const BATAS_SEGAR = Number(batasSegarDetik || 180); // detik
+  // Batas "segar" LAPORAN. Laporan dikirim ulang tiap ~60 dtk, jadi 180 dtk
+  // berarti tiga kali kiriman terlewat — baru pantas dicurigai.
+  //
+  // `batasSegarDetik` diterima sebagai nama LAMA (dipakai uji & pemanggil
+  // sebelumnya) tetapi kini HANYA mengatur laporan. Nama generik itu dulu
+  // mengatur katalog juga, dan itulah sumber alarm palsu.
+  const BATAS_SEGAR = Number(batasSegarLaporanDetik || batasSegarDetik || 180);
+  // Batas "segar" KATALOG — HARUS jauh lebih longgar, dan ini pernah salah.
+  //
+  // Katalog penuh dikirim tiap 15 menit; delta hanya terkirim kalau ADA item
+  // berubah. Jadi saat toko tutup atau sedang sepi, katalog yang benar-benar
+  // sehat bisa berumur 10-15 menit. Dengan batas 180 dtk, /health akan
+  // melaporkan "katalog basi" setiap kali toko sepi — alarm palsu yang membuat
+  // orang berhenti mempercayai alarm itu, dan justru itu yang berbahaya.
+  //
+  // Default 1200 dtk = 20 menit: sedikit di atas jeda katalog penuh (900 dtk)
+  // sehingga satu kiriman penuh yang terlewat pun masih tertutup.
+  const BATAS_SEGAR_ITEMS = Number(batasSegarItemsDetik || 1200);
 
   // toko -> jenis -> { data, jumlah, diterimaPada, jumlahPush }
   const simpanan = new Map();
@@ -85,6 +102,27 @@ function buatPenerima({ token, batasSegarDetik } = {}) {
 
     // 2. Bentuk data.
     const data = p.data;
+    if (jenis === 'denyut') {
+      // DENYUT: bukti PC masih hidup, TANPA membawa data.
+      //
+      // Kenapa perlu: tanpa ini, satu-satunya bukti PC hidup adalah umur data.
+      // Padahal toko sepi wajar tidak mengubah item selama berjam-jam, sehingga
+      // "data lama" TIDAK sama dengan "PC mati". Dua hal itu harus dibedakan,
+      // kalau tidak alarmnya jadi palsu dan orang berhenti mempercayainya.
+      //
+      // Denyut tidak menyentuh katalog sama sekali, jadi tidak ada risiko
+      // menghapus atau menimpa data.
+      const perTokoD = slot(toko, 'denyut');
+      const sebelumD = perTokoD.get('denyut');
+      perTokoD.set('denyut', {
+        data: null,
+        jumlah: null,
+        diterimaPada: Date.now(),
+        jumlahPush: (sebelumD && sebelumD.jumlahPush ? sebelumD.jumlahPush : 0) + 1,
+      });
+      return { status: 200, body: { ok: true, toko, jenis, denyut: true, diterimaPada: perTokoD.get('denyut').diterimaPada } };
+    }
+
     if (jenis === 'items' || jenis === 'items-ubah') {
       if (!Array.isArray(data) || data.length === 0) {
         return { status: 400, body: { ok: false, err: 'items harus array tidak kosong' } };
@@ -169,12 +207,12 @@ function buatPenerima({ token, batasSegarDetik } = {}) {
    * TIDAK memuat token, tidak memuat isi data (hanya jumlah).
    */
   function status(toko) {
-    const hasil = { items: null, jual: null, jualMerek: null, jualMarketplace: null, kasir: null };
+    const hasil = { items: null, jual: null, jualMerek: null, jualMarketplace: null, kasir: null, denyut: null };
     if (!simpanan.has(toko)) return hasil;
 
     const perToko = simpanan.get(toko);
     const sekarang = Date.now();
-    const ringkas = (jenis, namaKunci) => {
+    const ringkas = (jenis, namaKunci, batas) => {
       const s = perToko.get(jenis);
       if (!s) return;
       const umurDetik = Math.max(0, Math.round((sekarang - s.diterimaPada) / 1000));
@@ -183,16 +221,22 @@ function buatPenerima({ token, batasSegarDetik } = {}) {
         // /health dan iposRingkas — satu nama untuk satu hal.
         total: s.jumlah,
         umurDetik,
-        segar: umurDetik <= BATAS_SEGAR,
+        segar: umurDetik <= batas,
         jumlahPush: s.jumlahPush,
       };
     };
 
-    ringkas('items', 'items');
-    ringkas('jual', 'jual');
-    ringkas('jual-merek', 'jualMerek');
-    ringkas('jual-marketplace', 'jualMarketplace');
-    ringkas('kasir', 'kasir');
+    // Katalog memakai batas JAUH lebih longgar: katalog penuh hanya dikirim
+    // tiap 15 menit, dan delta hanya saat ada item berubah. Toko sepi yang
+    // sehat pun akan berumur belasan menit. Batas 180 dtk di sini pernah
+    // membuat /health melaporkan "basi" padahal aliran sehat — alarm palsu.
+    ringkas('items', 'items', BATAS_SEGAR_ITEMS);
+    ringkas('jual', 'jual', BATAS_SEGAR);
+    ringkas('jual-merek', 'jualMerek', BATAS_SEGAR);
+    ringkas('jual-marketplace', 'jualMarketplace', BATAS_SEGAR);
+    ringkas('kasir', 'kasir', BATAS_SEGAR);
+    // Denyut: bukti PC hidup, terpisah dari isi data.
+    ringkas('denyut', 'denyut', BATAS_SEGAR);
 
     // Laporan penjualan: sertakan angka utamanya supaya /health bisa
     // membuktikan isinya masuk, bukan hanya "ada data".

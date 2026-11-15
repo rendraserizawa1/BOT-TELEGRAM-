@@ -50,7 +50,9 @@ uji('delta bisa menambah item baru', () => {
 });
 
 uji('delta memperbarui waktu terima (data dianggap segar)', () => {
-  const p = buatPenerima({ token: 't', batasSegarDetik: 60 });
+  // Batas katalog disetel eksplisit: sejak batas dipisah, `batasSegarDetik`
+  // hanya mengatur laporan sehingga tidak lagi berpengaruh pada katalog.
+  const p = buatPenerima({ token: 't', batasSegarItemsDetik: 60 });
   p.terima({ toko: 'kefa', jenis: 'items', data: [{ kode: 'A' }] }, 't');
   p._mundurkanWaktu('kefa', 'items', 120000);
   assert.strictEqual(p.status('kefa').items.segar, false);

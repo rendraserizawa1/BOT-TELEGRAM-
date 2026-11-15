@@ -57,17 +57,45 @@ const JEDA_ULANG_MS = Number(process.env.PUSH_JEDA_ULANG_MS || 5000);
 /**
  * Toko yang didorong. Alamat proxy lokal dibaca dari env yang SAMA dengan
  * yang dipakai bot, supaya tidak ada dua sumber kebenaran.
+ *
+ * Bila IPOS_*_URL tidak diisi (kasus normal di PC ini, karena URL itu hanya
+ * berarti bagi bot di Railway), dipakai proxy lokal 127.0.0.1:8080. Kunci
+ * dibaca langsung dari `.env` milik ipos-api TANPA PERNAH DICETAK — jadi
+ * konfigurasi agen cukup PUSH_URL + PUSH_TOKEN saja.
  */
+function bacaKunciDariEnvIposApi() {
+  try {
+    const isi = fs.readFileSync('C:\\Users\\rdpadmin\\ipos-api\\.env', 'utf8');
+    for (const baris of isi.split(/\r?\n/)) {
+      const m = baris.match(/^\s*API_KEY\s*=\s*(.+?)\s*$/);
+      if (m) return m[1].replace(/^["']|["']$/g, '').trim();
+    }
+  } catch (_) { /* tidak ada -> biarkan kosong */ }
+  return '';
+}
+
 function daftarToko() {
   const hanya = String(process.env.PUSH_TOKO || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const kunciLokal = bacaKunciDariEnvIposApi();
   const calon = [
-    { toko: 'cp', url: process.env.IPOS_URL, key: process.env.IPOS_KEY },
-    { toko: 'nk', url: process.env.IPOS_NK_URL, key: process.env.IPOS_NK_KEY },
-    { toko: 'kefa', url: process.env.IPOS_KEFA_URL, key: process.env.IPOS_KEFA_KEY },
+    {
+      toko: 'cp',
+      url: process.env.IPOS_URL || 'http://127.0.0.1:8080/ipos',
+      key: process.env.IPOS_KEY || kunciLokal,
+    },
+    { toko: 'nk', url: process.env.IPOS_NK_URL, key: process.env.IPOS_NK_KEY || kunciLokal },
+    {
+      toko: 'kefa',
+      url: process.env.IPOS_KEFA_URL || 'http://127.0.0.1:8080/ipos',
+      key: process.env.IPOS_KEFA_KEY || kunciLokal,
+    },
   ];
   return calon
     .filter((t) => t.url && t.key)
     .filter((t) => !hanya.length || hanya.includes(t.toko))
+    // Jangan mendorong toko yang URL-nya menunjuk ke luar (tunnel/tailnet):
+    // itu alamat untuk bot di Railway, bukan untuk agen di PC ini.
+    .filter((t) => /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])/i.test(String(t.url)))
     .map((t) => ({ ...t, url: String(t.url).replace(/\/+$/, '') }));
 }
 
@@ -281,6 +309,7 @@ function buatToko(t) {
         }
         keadaan.sse = 'hidup';
         gagal = 0;
+        console.log('[PUSH] ' + t.toko + ': SSE proxy lokal tersambung (sumber delta)');
         let buf = '';
         res.setEncoding('utf8');
         res.on('data', (potongan) => {
@@ -299,6 +328,7 @@ function buatToko(t) {
               let arr = null;
               try { arr = JSON.parse(data); } catch (_) { arr = null; }
               if (Array.isArray(arr) && arr.length) {
+                console.log('[PUSH] ' + t.toko + ': delta ' + arr.length + ' item dari SSE');
                 dorong(t.toko, 'items-ubah', arr)
                   .then((r) => {
                     if (r && r.perluPenuh) {
@@ -380,6 +410,25 @@ function buatToko(t) {
 
   // SSE: sumber perubahan realtime.
   for (const a of agen) a.mulaiSSE();
+
+  /**
+   * DENYUT — bukti PC masih hidup, terpisah dari isi data.
+   *
+   * Kenapa perlu: tanpa denyut, satu-satunya bukti PC hidup adalah umur data.
+   * Padahal toko sepi wajar tidak mengubah item selama berjam-jam. Akibatnya
+   * "data lama" dan "PC mati" tampak sama dari sisi server — dua hal yang
+   * sangat berbeda, dan menyamakannya membuat alarm tidak bisa dipercaya.
+   */
+  const denyut = setInterval(async () => {
+    for (const a of agen) {
+      try {
+        await dorong(a.keadaan.toko, 'denyut', { hidup: true });
+      } catch (e) {
+        catatGagal(a.keadaan.toko, 'denyut', e.message);
+      }
+    }
+  }, Number(process.env.PUSH_JEDA_DENYUT_MS || 30000));
+  if (denyut.unref) denyut.unref();
 
   // Jaring pengaman: katalog penuh berkala + laporan berkala.
   const pengawas = setInterval(async () => {

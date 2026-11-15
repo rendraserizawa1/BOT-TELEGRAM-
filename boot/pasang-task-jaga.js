@@ -25,6 +25,9 @@ const VBS = path.join(ROOT, 'boot', 'run-hidden.vbs');
 const TASKS = [
   { nama: 'BCODE-JAGA-TUNNEL', ps1: path.join(ROOT, 'boot', 'jaga-tunnel.ps1'), run: 'BCODE_JAGA_TUNNEL' },
   { nama: 'BCODE-JAGA-POLLER', ps1: path.join(ROOT, 'boot', 'jaga-poller.ps1'), run: 'BCODE_JAGA_POLLER' },
+  // Penjaga agen dorong iPos. Ini yang membuat data terus mengalir ke Railway
+  // setelah reboot — tanpa ini, PC restart = data berhenti tanpa suara.
+  { nama: 'BCODE-JAGA-PUSH', ps1: path.join(ROOT, 'boot', 'jaga-push.ps1'), run: 'BCODE_JAGA_PUSH' },
 ];
 
 function ps(skrip) {

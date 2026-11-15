@@ -27,6 +27,10 @@ const TOKEN = String(process.env.PUSH_TOKEN || '');
 const penerima = buatPenerima({
   token: TOKEN,
   batasSegarDetik: Number(process.env.PUSH_BATAS_SEGAR_DETIK || 180),
+  // Katalog penuh dikirim tiap 15 menit dan delta hanya saat ada perubahan,
+  // jadi batas katalog HARUS lebih longgar dari itu. Kalau disamakan dengan
+  // batas laporan (180 dtk), toko sepi yang sehat akan selalu tampak "basi".
+  batasSegarItemsDetik: Number(process.env.PUSH_BATAS_SEGAR_ITEMS_DETIK || 1200),
 });
 
 /** Apakah mode dorong menyala sama sekali (token diisi). */

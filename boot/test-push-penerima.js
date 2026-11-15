@@ -93,7 +93,10 @@ const ujiAsync = async (nama, fn) => {
   });
 
   uji('data basi ditandai tidak segar', () => {
-    const p = buatPenerima({ token: 't', batasSegarDetik: 60 });
+    // Katalog punya batas sendiri (default 1200 dtk), jadi uji ini harus
+    // menyetelnya eksplisit. Dulu `batasSegarDetik` mengatur katalog juga;
+    // sejak batas dipisah, memakai nama itu akan menguji hal yang salah.
+    const p = buatPenerima({ token: 't', batasSegarItemsDetik: 60 });
     p.terima({ toko: 'kefa', jenis: 'items', data: [{ kode: 'A' }] }, 't');
     // Mundurkan waktu terima 120 detik.
     p._mundurkanWaktu('kefa', 'items', 120000);
