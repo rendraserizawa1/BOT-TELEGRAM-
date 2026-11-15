@@ -25,12 +25,27 @@ const tambah = (nama, status, detail) => {
   console.log('  ' + label + ' ' + nama.padEnd(46) + (detail == null ? '' : String(detail)));
 };
 
-const PROXY = String(process.env.IPOS_TAILSCALE_PROXY || '').trim();
-const URL = {
-  cp: String(process.env.IPOS_URL || '').trim(),
-  nk: String(process.env.IPOS_NK_URL || '').trim(),
-  kefa: String(process.env.IPOS_KEFA_URL || '').trim(),
+const PROXY = String(process.env.IPOS_TAILSCALE_PROXY || 'http://127.0.0.1:1056').trim();
+
+/**
+ * Alamat iPos di tailnet. Sengaja TIDAK memakai IPOS_*_URL, karena saat uji ini
+ * dijalankan URL itu masih menunjuk tunnel publik — mengujinya lewat tailnet
+ * hanya menghasilkan kegagalan yang membingungkan.
+ *
+ * Bisa ditimpa dengan UJI_TARGETS="kefa=http://...,cp=http://...".
+ */
+const TAILNET = {
+  cp: 'http://100.125.99.99:8080/ipos',
+  nk: 'http://100.110.152.33:8080/ipos',
+  kefa: 'http://100.123.166.13:8080/ipos',
 };
+if (process.env.UJI_TARGETS) {
+  for (const bagian of process.env.UJI_TARGETS.split(',')) {
+    const m = bagian.match(/^\s*([a-z]+)\s*=\s*(\S+)\s*$/i);
+    if (m) TAILNET[m[1].toLowerCase()] = m[2];
+  }
+}
+
 const KUNCI = {
   cp: process.env.IPOS_KEY || '',
   nk: process.env.IPOS_NK_KEY || '',
@@ -69,13 +84,13 @@ function statusTailscale() {
 (async () => {
   console.log('=== UJI JALUR TAILSCALE (di dalam container) ===');
   console.log('  proxy   = ' + (PROXY || '(kosong)'));
-  console.log('  CP      = ' + (URL.cp || '(kosong)'));
-  console.log('  NK      = ' + (URL.nk || '(kosong)'));
-  console.log('  KEFA    = ' + (URL.kefa || '(kosong)'));
+  console.log('  CP      = ' + (TAILNET.cp || '(kosong)'));
+  console.log('  NK      = ' + (TAILNET.nk || '(kosong)'));
+  console.log('  KEFA    = ' + (TAILNET.kefa || '(kosong)'));
   console.log('  (nilai kunci tidak ditampilkan)\n');
 
   // 1. proxy dikonfigurasi
-  tambah('proxy tailscale dikonfigurasi', PROXY ? 'LULUS' : 'GAGAL', PROXY ? PROXY : 'IPOS_TAILSCALE_PROXY kosong');
+  tambah('proxy tailscale dipakai', PROXY ? 'LULUS' : 'GAGAL', PROXY || 'tidak ada proxy');
 
   // 2. proxy menjawab (bukan ECONNREFUSED ke proxy itu sendiri)
   if (PROXY) {
@@ -105,7 +120,7 @@ function statusTailscale() {
 
   // 4-6. tiap iPos
   for (const tk of ['cp', 'nk', 'kefa']) {
-    const u = URL[tk];
+    const u = TAILNET[tk];
     if (!u) { tambah('iPos ' + tk.toUpperCase() + ' terjangkau', 'LEWAT', 'URL kosong'); continue; }
     try {
       const r = await ambil(u + '/health', { signal: AbortSignal.timeout(15000) }, true);
@@ -125,7 +140,7 @@ function statusTailscale() {
   }
 
   // 7. SSE menerima byte bertahap
-  const uKefa = URL.kefa || URL.cp;
+  const uKefa = TAILNET.kefa || TAILNET.cp;
   if (!uKefa) {
     tambah('SSE menerima >=3 potongan / 60 dtk', 'LEWAT', 'tidak ada URL');
   } else {

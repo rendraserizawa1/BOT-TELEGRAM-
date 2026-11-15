@@ -207,6 +207,51 @@ else
             echo "[TAILSCALE]   $U -> $HASIL"
           done
         fi
+
+        # Probe SSE: membuktikan byte MENGALIR BERTAHAP lewat tailnet.
+        # Ini pembeda paling penting dibanding tunnel Cloudflare, yang memberi
+        # HTTP 200 + content-type benar tetapi 0 byte selama 150 detik.
+        if [ -n "${TS_PROBE_SSE_URL:-}" ]; then
+          HASIL_SSE=$(node -e '
+            const undici = require("undici");
+            const d = new undici.ProxyAgent("http://" + process.env.TS_PROXY);
+            const ac = new AbortController();
+            const batas = setTimeout(() => ac.abort(), 25000);
+            const t0 = Date.now();
+            (async () => {
+              try {
+                const r = await fetch(process.argv[1], {
+                  dispatcher: d, signal: ac.signal,
+                  headers: { accept: "text/event-stream" },
+                });
+                if (!r.ok || !r.body) { console.log("HTTP " + r.status); process.exit(1); }
+                const reader = r.body.getReader();
+                const dec = new TextDecoder();
+                let potongan = 0, byte = 0, ping = 0, pertama = null, terakhir = null;
+                for (;;) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  const ms = Date.now() - t0;
+                  if (pertama === null) pertama = ms;
+                  terakhir = ms;
+                  byte += value.length;
+                  potongan++;
+                  ping += (dec.decode(value, { stream: true }).match(/: ping/g) || []).length;
+                  // 3 potongan sudah cukup membuktikan streaming.
+                  if (potongan >= 3) break;
+                }
+                try { reader.cancel(); } catch (_) {}
+                const rentang = (pertama !== null && terakhir !== null) ? terakhir - pertama : 0;
+                console.log("potongan=" + potongan + " byte=" + byte + " ping=" + ping + " rentang=" + rentang + "ms");
+                process.exit(potongan >= 3 ? 0 : 1);
+              } catch (e) {
+                console.log(((e.cause && e.cause.code) || e.message));
+                process.exit(1);
+              } finally { clearTimeout(batas); }
+            })();
+          ' "$TS_PROBE_SSE_URL" 2>&1 | tail -1)
+          echo "[TAILSCALE] SSE tailnet -> $HASIL_SSE"
+        fi
       else
         echo "[TAILSCALE] PERINGATAN: BackendState bukan Running dalam 60 dtk - lanjut tanpa tailnet"
       fi

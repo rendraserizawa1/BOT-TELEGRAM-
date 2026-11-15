@@ -1,10 +1,10 @@
 {
   "mulai": "2026-11-15T06:17:19.291Z",
   "pid": 9232,
-  "siklus": 52,
+  "siklus": 55,
   "temuan": [],
   "tindakan": [],
-  "diperbarui": "2026-11-15T07:11:49.616Z",
+  "diperbarui": "2026-11-15T07:16:49.272Z",
   "proxyIpos": {
     "hidup": true,
     "pids": [
@@ -12,11 +12,7 @@
     ]
   },
   "railway": {
-    "ok": true,
-    "status": "OK",
-    "polling": true,
-    "streak": 0,
-    "uptime": 103.679766376,
-    "konflik": false
+    "ok": false,
+    "alasan": "HTTP 502"
   }
 }
