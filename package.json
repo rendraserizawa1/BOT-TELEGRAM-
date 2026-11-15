@@ -12,20 +12,21 @@
     "node": "24.x"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^0.66.0",
+    "@octokit/rest": "^20.0.0",
     "axios": "^1.7.0",
     "dotenv": "^16.4.0",
     "exceljs": "^4.4.0",
     "express": "^4.19.0",
     "express-session": "^1.17.3",
     "form-data": "^4.0.0",
-    "mongodb": "^6.8.0",
-    "xlsx": "^0.18.5",
-    "jsqr": "^1.4.0",
     "jimp": "^0.22.10",
+    "jsqr": "^1.4.0",
+    "mongodb": "^6.8.0",
+    "node-telegram-bot-api": "^0.66.0",
     "qrcode-reader": "^1.0.4",
     "sharp": "^0.33.0",
-    "@octokit/rest": "^20.0.0"
+    "undici": "^7.30.2",
+    "xlsx": "^0.18.5"
   },
   "allowScripts": {
     "sharp@0.33.5": true
