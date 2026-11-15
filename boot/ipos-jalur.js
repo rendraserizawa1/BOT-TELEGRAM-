@@ -85,18 +85,42 @@ function buatJalurIpos({ urlUtama, urlCadangan, proxy, _fetch } = {}) {
   let _dispatcherDiperiksa = false;
   let jalurDipakai = null; // null | 'utama' | 'cadangan'
 
-  /** Buat ProxyAgent sekali saja. Gagal -> null (jangan pernah crash). */
+  /**
+   * Buat agen proxy sekali saja. Gagal -> null (jangan pernah crash).
+   *
+   * KENAPA DUA JENIS AGEN
+   * ---------------------
+   * Proxy HTTP Tailscale (`--outbound-http-proxy-listen`) terbukti bisa
+   * menjangkau iPos lewat tailnet untuk permintaan BIASA (/health -> HTTP 200),
+   * tetapi permintaan STREAMING tidak pernah mengirim header sama sekali
+   * (terabort 25 dtk tanpa byte). Itu pola buffering, bukan pola putus.
+   *
+   * SOCKS5 tidak punya konsep header HTTP untuk di-buffer — ia hanya
+   * menyalurkan TCP — jadi streaming lewat SOCKS5 mengalir apa adanya.
+   *
+   * Pemilihan cukup dari SKEMA URL, sehingga tidak perlu ubah kode lagi:
+   *   proxy = socks5://127.0.0.1:1056  -> Socks5ProxyAgent
+   *   proxy = http://127.0.0.1:1056    -> ProxyAgent
+   */
   function dispatcher() {
     if (_dispatcherDiperiksa) return _dispatcher;
     _dispatcherDiperiksa = true;
     if (!proxyUrl) return null;
     try {
-      const { ProxyAgent } = require('undici');
-      _dispatcher = new ProxyAgent(proxyUrl);
+      const undici = require('undici');
+      if (/^socks5h?:\/\//i.test(proxyUrl)) {
+        if (typeof undici.Socks5ProxyAgent !== 'function') {
+          console.warn('[ipos-jalur] Socks5ProxyAgent tidak ada di undici ini; proxy socks5 diabaikan');
+          return null;
+        }
+        _dispatcher = new undici.Socks5ProxyAgent(proxyUrl);
+      } else {
+        _dispatcher = new undici.ProxyAgent(proxyUrl);
+      }
     } catch (e) {
-      // `undici` tidak terpasang atau ProxyAgent tidak ada. Ini TIDAK boleh
+      // `undici` tidak terpasang atau agen tidak ada. Ini TIDAK boleh
       // menghentikan bot: tanpa proxy, iPos tetap dicoba lewat jalur langsung.
-      console.warn('[ipos-jalur] proxy diminta tetapi undici tidak tersedia: ' + String((e && e.message) || e).slice(0, 120));
+      console.warn('[ipos-jalur] proxy diminta tetapi agen gagal dibuat: ' + String((e && e.message) || e).slice(0, 120));
       _dispatcher = null;
     }
     return _dispatcher;
