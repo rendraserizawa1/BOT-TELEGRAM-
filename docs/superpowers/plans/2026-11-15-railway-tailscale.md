@@ -1,3 +1,10 @@
+﻿> ## ⚠️ RENCANA INI SUDAH DIGANTIKAN — JANGAN DIJALANKAN
+>
+> Tailscale gagal (CGNAT → DERP relay → putus pada payload 780 KB) dan sudah
+> dipensiunkan. Arsitektur yang dipakai sekarang adalah **dorong PC → Railway**.
+> Baca: `docs/superpowers/specs/2026-11-16-ipos-dorong-final.md`
+
+---
 # Railway Tailscale (Opsi A1) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -27,11 +34,11 @@
 
 ## Review Focus
 
-1. **`fetch` global mengabaikan `dispatcher`** → koneksi diam-diam tetap langsung dan Tailscale dianggap bekerja padahal tidak. Sudah diuji: **dihormati** (`_uji-undici.json`), tetapi tiap perubahan `undici` wajib mengulang uji ini.
-2. **Proxy menahan body SSE** → realtime mati lagi meski HTTP 200. Diuji oleh Task 3 dan Task 9.
-3. **`tailscaled` gagal start di Railway** → bot harus tetap hidup, bukan crash-loop. Diuji oleh Task 6 (fallback tanpa `TS_AUTHKEY`) dan Task 7 (blok tidak fatal).
-4. **Pengawas tunnel menimpa `IPOS_*_URL`** → deploy tidak pernah stabil. Ditangani Task 10 (pensiun berurutan).
-5. **`formatError()` rusak karena perubahan mekanisme fetch** → pesan error iPos salah, retry classifier salah. Dikunci oleh `boot/test-format-error.js` di Task 4.
+1. **`fetch` global mengabaikan `dispatcher`** â†’ koneksi diam-diam tetap langsung dan Tailscale dianggap bekerja padahal tidak. Sudah diuji: **dihormati** (`_uji-undici.json`), tetapi tiap perubahan `undici` wajib mengulang uji ini.
+2. **Proxy menahan body SSE** â†’ realtime mati lagi meski HTTP 200. Diuji oleh Task 3 dan Task 9.
+3. **`tailscaled` gagal start di Railway** â†’ bot harus tetap hidup, bukan crash-loop. Diuji oleh Task 6 (fallback tanpa `TS_AUTHKEY`) dan Task 7 (blok tidak fatal).
+4. **Pengawas tunnel menimpa `IPOS_*_URL`** â†’ deploy tidak pernah stabil. Ditangani Task 10 (pensiun berurutan).
+5. **`formatError()` rusak karena perubahan mekanisme fetch** â†’ pesan error iPos salah, retry classifier salah. Dikunci oleh `boot/test-format-error.js` di Task 4.
 
 ---
 
@@ -47,7 +54,7 @@
 | `package.json` (ubah) | Tambah `undici` 7.x. |
 | `index.js` (ubah) | `/health` melaporkan `tailscale.*` dan `ipos.<toko>.jalur.*`. |
 | `boot/uji-tailscale.js` (baru) | Uji di dalam container lewat `railway ssh`. |
-| `boot/uji-jaminan.js` (ubah) | Assertion tunnel → assertion Tailscale. |
+| `boot/uji-jaminan.js` (ubah) | Assertion tunnel â†’ assertion Tailscale. |
 | `boot/pensiun-tunnel.js` (baru) | Mematikan pengawas tunnel secara berurutan dan terverifikasi. |
 
 ---
@@ -62,9 +69,9 @@
 - Consumes: tidak ada (modul paling dasar).
 - Produces:
   - `buatJalurIpos({ urlUtama, urlCadangan, proxy }) -> { ambil(url, opsi), dispatcher(), status() }`
-  - `ambil(url, opsi)` → `Promise<Response>`; `opsi` diteruskan ke `fetch` (mis. `{ signal }`).
-  - `dispatcher()` → `ProxyAgent | null`.
-  - `status()` → `{ proxyAktif: boolean, urlUtama: string, urlCadangan: string|null, jalurDipakai: 'utama'|'cadangan'|null }`
+  - `ambil(url, opsi)` â†’ `Promise<Response>`; `opsi` diteruskan ke `fetch` (mis. `{ signal }`).
+  - `dispatcher()` â†’ `ProxyAgent | null`.
+  - `status()` â†’ `{ proxyAktif: boolean, urlUtama: string, urlCadangan: string|null, jalurDipakai: 'utama'|'cadangan'|null }`
 
 - [ ] **Step 1: Tulis uji yang gagal**
 
@@ -160,14 +167,14 @@ async function ujiAsync(nama, fn) {
 - [ ] **Step 2: Jalankan uji, pastikan gagal**
 
 Run: `node boot/test-ipos-jalur.js`
-Expected: FAIL — `Cannot find module './ipos-jalur'`
+Expected: FAIL â€” `Cannot find module './ipos-jalur'`
 
 - [ ] **Step 3: Implementasi `boot/ipos-jalur.js`**
 
 Aturan yang mengikat implementasi:
-- `proxy` kosong → `dispatcher()` = `null`, `ambil()` = `fetch` biasa.
-- `proxy` diisi → `require('undici').ProxyAgent`, dibuat **sekali** (lazy), disimpan.
-- `require('undici')` gagal → kembalikan `null` dan catat sekali ke `console.warn` (jangan crash).
+- `proxy` kosong â†’ `dispatcher()` = `null`, `ambil()` = `fetch` biasa.
+- `proxy` diisi â†’ `require('undici').ProxyAgent`, dibuat **sekali** (lazy), disimpan.
+- `require('undici')` gagal â†’ kembalikan `null` dan catat sekali ke `console.warn` (jangan crash).
 - Pindah ke cadangan **hanya** bila error bertipe jaringan: `TypeError` dengan pesan mengandung `fetch failed`, atau `e.code` di `ECONNRESET/ECONNREFUSED/ETIMEDOUT/ENOTFOUND/EAI_AGAIN/UND_ERR_*`, atau `e.name === 'AbortError'` **tidak** dihitung (abort bukan alasan pindah).
 - URL cadangan dibentuk dengan mengganti awalan `urlUtama` pada URL yang diminta.
 - `_fetch` hanya untuk uji (default `globalThis.fetch`).
@@ -175,7 +182,7 @@ Aturan yang mengikat implementasi:
 - [ ] **Step 4: Jalankan uji, pastikan lulus**
 
 Run: `node boot/test-ipos-jalur.js`
-Expected: PASS — `lulus 6/6`
+Expected: PASS â€” `lulus 6/6`
 
 - [ ] **Step 5: Commit**
 
@@ -208,7 +215,7 @@ Expected: `versi 7.x.x ProxyAgent function`
 - [ ] **Step 3: Verifikasi uji Task 1 masih lulus**
 
 Run: `node boot/test-ipos-jalur.js`
-Expected: PASS — `lulus 6/6`
+Expected: PASS â€” `lulus 6/6`
 
 - [ ] **Step 4: Commit**
 
@@ -241,7 +248,7 @@ Assertion yang wajib ada:
 - [ ] **Step 2: Jalankan, pastikan gagal**
 
 Run: `node boot/test-proxy-sse.js`
-Expected: FAIL — berkas belum ada
+Expected: FAIL â€” berkas belum ada
 
 - [ ] **Step 3: Tulis berkas uji sesuai assertion di atas**
 
@@ -250,7 +257,7 @@ Server asal menutup setelah 10 ping. Uji keluar `exit 0` bila semua assertion lu
 - [ ] **Step 4: Jalankan, pastikan lulus**
 
 Run: `node boot/test-proxy-sse.js`
-Expected: PASS — `potongan > 1`, `ping >= 3`
+Expected: PASS â€” `potongan > 1`, `ping >= 3`
 
 - [ ] **Step 5: Commit**
 
@@ -269,7 +276,7 @@ git commit -m "test(ipos): buktikan proxy tailscale tidak menahan body SSE"
 
 **Interfaces:**
 - Consumes: `buatJalurIpos` (Task 1).
-- Produces: `bridge.jalurStatus()` → `{ proxyAktif, urlUtama, urlCadangan, jalurDipakai }` untuk dipakai Task 8.
+- Produces: `bridge.jalurStatus()` â†’ `{ proxyAktif, urlUtama, urlCadangan, jalurDipakai }` untuk dipakai Task 8.
 
 - [ ] **Step 1: Jalankan uji yang sudah ada sebagai garis dasar**
 
@@ -289,10 +296,10 @@ const jalur = require('./boot/ipos-jalur').buatJalurIpos({
 ```
 
 Lalu ganti keempat panggilan:
-- `fetch(\`${IPOS_URL}/api/items?key=...\`, { signal: controller.signal })` → `jalur.ambil(\`${IPOS_URL}/api/items?key=...\`, { signal: controller.signal })`
-- `fetch(url, { signal: controller.signal })` (baris 147) → `jalur.ambil(url, { signal: controller.signal })`
-- `fetch(url, { signal: controller.signal })` (baris 407) → `jalur.ambil(url, { signal: controller.signal })`
-- `fetch(\`${IPOS_URL}/api/events?key=...\`, { headers: { accept: 'text/event-stream' }, signal: ac.signal })` → `jalur.ambil(\`${IPOS_URL}/api/events?key=...\`, { headers: { accept: 'text/event-stream' }, signal: ac.signal })`
+- `fetch(\`${IPOS_URL}/api/items?key=...\`, { signal: controller.signal })` â†’ `jalur.ambil(\`${IPOS_URL}/api/items?key=...\`, { signal: controller.signal })`
+- `fetch(url, { signal: controller.signal })` (baris 147) â†’ `jalur.ambil(url, { signal: controller.signal })`
+- `fetch(url, { signal: controller.signal })` (baris 407) â†’ `jalur.ambil(url, { signal: controller.signal })`
+- `fetch(\`${IPOS_URL}/api/events?key=...\`, { headers: { accept: 'text/event-stream' }, signal: ac.signal })` â†’ `jalur.ambil(\`${IPOS_URL}/api/events?key=...\`, { headers: { accept: 'text/event-stream' }, signal: ac.signal })`
 
 Tambahkan ekspor di objek kembalian `buatBridge`: `jalurStatus: () => jalur.status()`.
 
@@ -328,7 +335,7 @@ git commit -m "feat(ipos): bridge memakai jalur berproxy dengan fallback cadanga
 
 Di dalam `iposRingkas`, tambahkan properti `jalur` dengan nilai `bridge.jalurStatus ? bridge.jalurStatus() : null`. Jangan mengubah properti yang sudah ada.
 
-- [ ] **Step 2: Verifikasi lokal — TANPA menyalakan bot**
+- [ ] **Step 2: Verifikasi lokal â€” TANPA menyalakan bot**
 
 **DILARANG** menjalankan `index.js` di PC ini: itu menyalakan poller kedua dan
 menyebabkan Telegram 409 Conflict dengan bot di Railway.
@@ -358,8 +365,8 @@ git commit -m "feat(health): laporkan jalur iPos (proxy/cadangan) per toko"
 - [ ] **Step 1: Tambahkan blok sebelum `exec "$@"`**
 
 Aturan yang mengikat:
-- `TS_AUTHKEY` kosong → cetak `[TAILSCALE] dilewati (TS_AUTHKEY kosong)` dan **lanjut**.
-- Biner tidak ada → cetak peringatan dan **lanjut**.
+- `TS_AUTHKEY` kosong â†’ cetak `[TAILSCALE] dilewati (TS_AUTHKEY kosong)` dan **lanjut**.
+- Biner tidak ada â†’ cetak peringatan dan **lanjut**.
 - Jalankan `tailscaled --tun=userspace-networking --outbound-http-proxy-listen=127.0.0.1:1056 --state=/data/tailscale/tailscaled.state --socket=/data/tailscale/tailscaled.sock` di background, log ke `/data/logs/tailscaled.log`.
 - Tunggu socket siap maks 20 detik.
 - `tailscale --socket=... up --authkey="$TS_AUTHKEY" --hostname=bcode-railway --accept-routes` (jangan pernah `echo` kuncinya).
@@ -374,8 +381,8 @@ menyalakan bot (bot lokal harus tetap mati):
 Run: `sh -n docker-entrypoint.sh`
 Expected: tidak ada output (sintaks valid)
 
-Verifikasi perilaku "tanpa `TS_AUTHKEY` → dilewati" dilakukan di Railway pada
-Task 9 Step 2–3 dengan `TS_AUTHKEY` dikosongkan sementara.
+Verifikasi perilaku "tanpa `TS_AUTHKEY` â†’ dilewati" dilakukan di Railway pada
+Task 9 Step 2â€“3 dengan `TS_AUTHKEY` dikosongkan sementara.
 
 - [ ] **Step 3: Verifikasi sintaks shell**
 
@@ -435,12 +442,12 @@ git commit -m "build(image): bawa biner tailscale 1.102.4 (tidak fatal bila gaga
 
 Pemeriksaan wajib (cetak `[LULUS]`/`[GAGAL]` per baris):
 1. `IPOS_TAILSCALE_PROXY` terisi
-2. proxy menjawab (`fetch` ke proxy dengan URL tak ada → error jaringan, bukan `ECONNREFUSED` ke proxy)
-3. `tailscale status --json` → `BackendState === "Running"`
+2. proxy menjawab (`fetch` ke proxy dengan URL tak ada â†’ error jaringan, bukan `ECONNREFUSED` ke proxy)
+3. `tailscale status --json` â†’ `BackendState === "Running"`
 4. `IPOS_URL` menjawab `/ipos/health` 200 lewat proxy
-5. `IPOS_NK_URL` menjawab 200 lewat proxy (boleh `[LEWAT]` bila sumbernya memang mati — dibedakan dari gagal proxy)
+5. `IPOS_NK_URL` menjawab 200 lewat proxy (boleh `[LEWAT]` bila sumbernya memang mati â€” dibedakan dari gagal proxy)
 6. `IPOS_KEFA_URL` menjawab 200 lewat proxy
-7. SSE `/ipos/api/events` menerima **≥3** potongan dalam 60 detik
+7. SSE `/ipos/api/events` menerima **â‰¥3** potongan dalam 60 detik
 8. `api.telegram.org` **tidak** lewat proxy (panggil tanpa `dispatcher`, ukur: harus berhasil dan tidak memakai proxy)
 
 - [ ] **Step 2: Verifikasi sintaks**
@@ -487,7 +494,7 @@ Expected: `exit 0`, semua pemeriksaan `[LULUS]` (CP/NK boleh `[LEWAT]` bila list
 - [ ] **Step 5: Ubah URL ke tailnet, satu per satu**
 
 Ubah **hanya** `IPOS_KEFA_URL=http://100.123.166.13:8080/ipos`. Tunggu redeploy.
-Expected: `/health` → `ipos.kefa.online=true`, `sse=true`, `tailscale.siap=true`
+Expected: `/health` â†’ `ipos.kefa.online=true`, `sse=true`, `tailscale.siap=true`
 
 - [ ] **Step 6: Buktikan SSE stabil 5 menit**
 
@@ -586,7 +593,8 @@ git commit -m "fix: perbaikan dari uji regresi menyeluruh"
 
 ## Rollback
 
-1. Kosongkan `IPOS_TAILSCALE_PROXY` di Railway → `ipos-jalur.js` memakai `fetch` biasa.
+1. Kosongkan `IPOS_TAILSCALE_PROXY` di Railway â†’ `ipos-jalur.js` memakai `fetch` biasa.
 2. Isi `IPOS_KEFA_URL` kembali ke URL tunnel.
 3. `Enable-ScheduledTask BCODE-JAGA-TUNNEL` untuk menghidupkan pengawas tunnel.
 4. Tidak perlu deploy ulang kode.
+
