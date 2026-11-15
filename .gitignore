@@ -79,11 +79,11 @@ boot/uji-*.js
 boot/diag-*.js
 boot/monitor-*.js
 boot/profile-*.js
-# PENGECUALIAN: uji ini WAJIB ikut ke dalam image karena dijalankan DI DALAM
-# container Railway (`railway ssh -- node /app/boot/uji-tailscale.js`) untuk
-# membuktikan jalur tailnet sebelum IPOS_*_URL diubah. Tanpa ini, uji tidak
-# pernah ada di container dan verifikasi mustahil dilakukan.
+# PENGECUALIAN: uji & probe ini WAJIB ikut ke dalam image karena dijalankan
+# DI DALAM container Railway untuk membuktikan jalur tailnet sebelum
+# IPOS_*_URL diubah. Tanpa ini, verifikasi mustahil dilakukan dari luar.
 !boot/uji-tailscale.js
+!boot/probe-tailnet.js
 boot/koreksi-cek.js
 boot/lihat-db.js
 boot/tunggu-notif.js
