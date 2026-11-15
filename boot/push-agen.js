@@ -428,6 +428,24 @@ function buatToko(t) {
    * "data lama" dan "PC mati" tampak sama dari sisi server — dua hal yang
    * sangat berbeda, dan menyamakannya membuat alarm tidak bisa dipercaya.
    */
+  // Denyut PERTAMA dikirim segera, jangan menunggu interval.
+  //
+  // Alasannya: setelah agen restart, server belum tahu PC hidup sampai denyut
+  // berikutnya tiba. Selama jeda itu /health menampilkan denyut yang makin tua
+  // padahal semuanya sehat — dan itu terlihat persis seperti gangguan.
+  for (const a of agen) {
+    try {
+      const r = await dorong(a.keadaan.toko, 'denyut', { hidup: true });
+      if (r && r.perluPenuh) {
+        const n = await a.kirimPenuh();
+        console.log('[PUSH] ' + a.keadaan.toko + ': server kosong saat start - katalog dipulihkan ' + n + ' item');
+        await a.kirimLaporan(true);
+      }
+    } catch (e) {
+      catatGagal(a.keadaan.toko, 'denyut', e.message);
+    }
+  }
+
   const denyut = setInterval(async () => {
     for (const a of agen) {
       try {

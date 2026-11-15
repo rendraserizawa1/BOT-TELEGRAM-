@@ -1,4 +1,4 @@
-# Wrapper task BCODE-JAGA-PUSH.
+﻿# Wrapper task BCODE-JAGA-PUSH.
 # Menjalankan penjaga agen dorong (boot/jaga-push.js) yang memastikan agen
 # dorong iPos hidup terus dan hanya ada SATU.
 #
@@ -6,7 +6,7 @@
 # Ia hanya menjaga proses pengirim data.
 #
 # Konfigurasi dibaca dari boot\push-agen.env (diabaikan git) lalu dari .env.
-# NILAI RAHASIA TIDAK PERNAH DICETAK — hanya panjangnya, agar log aman.
+# NILAI RAHASIA TIDAK PERNAH DICETAK â€” hanya panjangnya, agar log aman.
 
 $ErrorActionPreference = 'Continue'
 
@@ -59,7 +59,11 @@ Tulis ("wrapper jaga-push mulai (pid=$PID) PUSH_URL=" + $env:PUSH_URL + " PUSH_T
 for ($i = 1; $i -le 100000; $i++) {
   Tulis "menjalankan node jaga-push.js (percobaan $i)"
   try {
-    & $node $skrip *>> $log
+    # JANGAN pakai `*>>` di sini: di PowerShell 5.1 operator itu menulis
+    # UTF-16LE, sehingga log berisi byte nol di antara huruf dan tidak terbaca
+    # oleh alat lain (terbukti: log penuh "2 0 2 6 - 1 1 ..."). Pipe ke
+    # Out-File -Encoding utf8 menghasilkan log yang bisa dibaca langsung.
+    & $node $skrip 2>&1 | Out-File -FilePath $log -Append -Encoding utf8
     Tulis "node berhenti exit=$LASTEXITCODE"
   } catch {
     Tulis ("node gagal: " + $_.Exception.Message)
