@@ -94,6 +94,19 @@ const iposNk = iposBridge.nk;
 // Instans KEFA (Perabot Mamaku Kefamenanu) — null kalau IPOS_KEFA_URL kosong di .env
 const iposKefa = iposBridge.kefa;
 
+// PENERIMA DORONGAN iPos.
+// Arah "tarik" (Railway menghubungi iPos di PC) sudah dicoba lewat Cloudflare
+// tunnel dan Tailscale, keduanya gagal karena PC tidak bisa dijangkau dari luar
+// (CGNAT). Arah "dorong" terbukti: PC -> Railway 780 KB dalam 0,81 detik.
+//
+// Modul gudang adalah INSTANS TUNGGAL yang dipakai bersama oleh HTTP (tulis)
+// dan ipos-bridge (baca). Kalau masing-masing punya instans sendiri, data
+// masuk tetapi bot tetap melihat kosong.
+//
+// Bila PUSH_TOKEN kosong, endpoint MENOLAK SEMUA (503) dan bridge tetap
+// menarik dari iPos — perilaku lokal tidak berubah.
+const pushGudang = require('./boot/push-gudang');
+
 // ════════════════════════════════════════════════════════════════
 //   1. KONFIGURASI
 // ════════════════════════════════════════════════════════════════
@@ -14180,11 +14193,47 @@ webApp.get('/health', (req, res) => {
         return { proxyDikonfigurasi: false, error: String((e && e.message) || e).slice(0, 100) };
       }
     })(),
+    // ── DORONGAN iPos DARI PC ──────────────────────────────────────────
+    // Sumber kebenaran TENTANG DATA, bukan tentang koneksi. `umurDetik` besar
+    // berarti PC berhenti mengirim — beda hal dari "bot mati".
+    // Tidak memuat token dan tidak memuat isi data.
+    push: {
+      // `aktif:false` berarti PUSH_TOKEN belum diisi -> endpoint menolak semua.
+      aktif: pushGudang.aktif(),
+      cp: pushGudang.status('cp'),
+      nk: pushGudang.status('nk'),
+      kefa: pushGudang.status('kefa'),
+    },
   });
 });
 
 webApp.use(express.json({ limit: '10mb' }));
 webApp.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// ── PENERIMA DORONGAN iPos ───────────────────────────────────────────────
+// PC (sumber data) mengirim ke sini lewat HTTPS publik. Tidak ada sambungan
+// yang harus dijaga: kalau kiriman gagal, PC mengulang. Inilah yang membuat
+// iPos "tidak pernah putus" — tidak ada tunnel yang bisa mati, tidak ada
+// relay yang bisa timeout.
+//
+// WAJIB setelah express.json: tanpa itu req.body kosong dan setiap kiriman
+// ditolak sebagai "items harus array tidak kosong" — kegagalan yang
+// membingungkan karena terlihat seperti kesalahan data.
+webApp.post('/api/ipos/push', (req, res) => {
+  const hasil = pushGudang.terima(req.body, req.get('x-push-token'));
+  if (hasil.status === 200) {
+    const b = hasil.body;
+    console.log('[PUSH] ' + b.toko + '/' + b.jenis + ' diterima: ' +
+      (b.jumlah == null ? 'laporan' : b.jumlah + ' item'));
+  } else if (hasil.status === 401 || hasil.status === 503) {
+    // Kegagalan konfigurasi: laporkan sekali, jangan banjiri log.
+    if (!webApp._pushPeringatan || Date.now() - webApp._pushPeringatan > 60000) {
+      webApp._pushPeringatan = Date.now();
+      console.warn('[PUSH] ditolak: ' + hasil.body.err);
+    }
+  }
+  res.status(hasil.status).json(hasil.body);
+});
 
 webApp.use(session({
   secret: CONFIG.sessionSecret,

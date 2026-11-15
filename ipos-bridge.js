@@ -52,6 +52,24 @@ function buatBridge({ url, key, toko, label }) {
     proxy: process.env.IPOS_TAILSCALE_PROXY || '',
   });
 
+  // ── MODE DORONG ─────────────────────────────────────────────────────
+  // Bila PUSH_TOKEN diisi, data iPos TIDAK ditarik lagi dari sini: PC yang
+  // mendorongnya lewat HTTPS publik. Ini menggantikan arah tarik yang gagal
+  // karena PC tidak bisa dijangkau dari luar (CGNAT) — Cloudflare tunnel mati,
+  // Tailscale lewat DERP relay dan intermiten.
+  //
+  // Bila PUSH_TOKEN kosong, `pushAktif()` selalu false dan SELURUH jalur lama
+  // tetap dipakai persis seperti sebelumnya. Rollback = kosongkan satu env.
+  const pushGudang = require('./boot/push-gudang');
+  const tokoUtama = Array.isArray(toko) && toko.length ? String(toko[0]).toLowerCase() : '';
+  function pushAktif() {
+    try { return pushGudang.aktif(); } catch (_) { return false; }
+  }
+  // Berapa lama data dorongan masih dianggap layak dipakai. Harus lebih longgar
+  // dari jeda dorong PC (15 menit untuk katalog penuh), kalau tidak katalog
+  // akan dianggap basi terus padahal alirannya sehat.
+  const PUSH_BATAS_DETIK = Number(process.env.PUSH_BATAS_PAKAI_DETIK || 1200);
+
   let lastSync = 0;
   let lastSseAt = 0;
   let lastSseFrameAt = 0;
@@ -107,6 +125,21 @@ function buatBridge({ url, key, toko, label }) {
   // ─────────────────────────────────────────────────────────────────────────
 
   async function ambilItems(attempt = 0) {
+    // MODE DORONG: katalog datang dari PC. Tidak ada fetch, tidak ada timeout,
+    // tidak ada tunnel yang bisa mati.
+    //
+    // Bila data dorongan BASI (PC berhenti mengirim), kita JANGAN diam-diam
+    // memakai angka beku seolah segar. Kita lempar error supaya status
+    // melaporkan OFFLINE — kegagalan harus terlihat, bukan disembunyikan.
+    if (pushAktif()) {
+      const dariDorong = pushGudang.ambilSegar(tokoUtama, 'items', PUSH_BATAS_DETIK);
+      if (Array.isArray(dariDorong) && dariDorong.length) return dariDorong;
+      const umur = pushGudang.umurDetik(tokoUtama, 'items');
+      throw new Error(umur == null
+        ? 'belum ada katalog dorongan dari PC'
+        : `katalog dorongan basi (${umur} dtk) — PC berhenti mengirim`);
+    }
+
     if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Number(process.env.IPOS_CATALOG_TIMEOUT_MS || 60000));
@@ -404,6 +437,29 @@ function buatBridge({ url, key, toko, label }) {
     const kini = Date.now();
     const c = lapCache.get(url);
     if (!fresh && c && kini - c.t < LAP_TTL) return c.data;
+
+    // MODE DORONG: laporan penjualan juga datang dari PC.
+    // Bentuk objeknya SAMA PERSIS dengan yang dikembalikan /api/jual, jadi
+    // seluruh pemanggil di bawah tidak perlu diubah.
+    if (pushAktif()) {
+      const dariDorong = pushGudang.ambilSegar(tokoUtama, 'jual', PUSH_BATAS_DETIK);
+      if (dariDorong && typeof dariDorong === 'object') {
+        lapErrTerakhir = null;
+        lapDiperiksaPada = Date.now();
+        const upd = Number(dariDorong && dariDorong.update);
+        if (Number.isFinite(upd) && upd > 0) {
+          lapUpdateTerakhir = upd > 1e12 ? upd : upd * 1000;
+        }
+        lapCache.set(url, { t: Date.now(), data: dariDorong, jualE: lastJualEvent });
+        return dariDorong;
+      }
+      const umur = pushGudang.umurDetik(tokoUtama, 'jual');
+      lapErrTerakhir = umur == null
+        ? 'belum ada laporan dorongan dari PC'
+        : `laporan dorongan basi (${umur} dtk)`;
+      throw new Error(lapErrTerakhir);
+    }
+
     if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
     if (kini < bolehCobaLagiPada) {
       const sisa = Math.ceil((bolehCobaLagiPada - kini) / 1000);
@@ -490,6 +546,36 @@ function buatBridge({ url, key, toko, label }) {
   // ─────────────────────────────────────────────────────────────────────────
 
   function mulaiSSE(getDataBarang) {
+    // MODE DORONG: tidak ada SSE yang ditarik. Perubahan datang sebagai
+    // dorongan dari PC. Yang perlu dilakukan di sini hanyalah MEMANTAU
+    // penghitung versi: begitu ada kiriman baru, terapkan isinya.
+    //
+    // Kenapa tidak langsung memakai data di dalam handler HTTP? Karena
+    // penerapan 4593 item memblokir event loop dan akan menahan respons HTTP
+    // (PC lalu menganggap kiriman gagal dan mengulang). Jadi HTTP hanya
+    // menyimpan, dan pemrosesan terjadi di sini secara terpisah.
+    if (pushAktif()) {
+      let versiTerakhir = -1;
+      let sedangJalan = false;
+      const pemantau = setInterval(() => {
+        if (sedangJalan) return;
+        let v;
+        try { v = pushGudang.versiSekarang(tokoUtama); } catch (_) { return; }
+        if (v === versiTerakhir) return;
+        versiTerakhir = v;
+        sedangJalan = true;
+        // Pakai ULANG syncStok: ia sudah menangani pembersihan item yang hilang,
+        // kepemilikan per toko, dan pembaruan status (online/itemSegar).
+        // Menduplikasi logika itu di sini pernah membuat item toko lain ikut
+        // terhapus — kegagalan yang jauh lebih mahal daripada satu panggilan.
+        syncStok(getDataBarang(), { verbose: false })
+          .catch((e) => { lastError = formatError(e); })
+          .finally(() => { sedangJalan = false; });
+      }, Number(process.env.PUSH_PANTAU_MS || 2000));
+      if (pemantau.unref) pemantau.unref();
+      return;
+    }
+
     // Batas diam SSE. iPos mengirim `jual-ping` jauh lebih sering dari ini
     // (terukur ~1 frame / 12-18 dtk), jadi diam selama batas ini berarti
     // koneksi sudah mati diam-diam (half-open: TCP hidup, tidak ada data,
@@ -618,7 +704,15 @@ function buatBridge({ url, key, toko, label }) {
     const umurItemDetik = terakhirItem ? Math.round((Date.now() - terakhirItem) / 1000) : null;
     const itemSegar = umurItemDetik !== null && umurItemDetik <= 150;
     return {
-      online, sse: sseOk ? '🟢 realtime' : '🔴 putus',
+      online, sse: pushAktif()
+        // Mode dorong: "realtime" berarti PC benar-benar sedang mengirim.
+        // Dilaporkan dari umur data, bukan dari ada/tidaknya koneksi SSE —
+        // karena memang tidak ada SSE yang dijaga.
+        ? (() => {
+            const umur = pushGudang.umurDetik(tokoUtama, 'items');
+            return umur != null && umur <= PUSH_BATAS_DETIK ? '🟢 realtime (dorong)' : '🔴 putus (dorong)';
+          })()
+        : (sseOk ? '🟢 realtime' : '🔴 putus'),
       total: lastCount, lastSync, lastSseAt, lastError,
       umurDetik: terakhirUbah ? Math.round((Date.now() - terakhirUbah) / 1000) : null,
       umurKoneksiDetik: terakhirKoneksi ? Math.round((Date.now() - terakhirKoneksi) / 1000) : null,

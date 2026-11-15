@@ -1,10 +1,10 @@
 {
   "mulai": "2026-11-15T06:17:19.291Z",
   "pid": 9232,
-  "siklus": 84,
+  "siklus": 91,
   "temuan": [],
   "tindakan": [],
-  "diperbarui": "2026-11-15T08:02:37.493Z",
+  "diperbarui": "2026-11-15T08:14:42.269Z",
   "proxyIpos": {
     "hidup": true,
     "pids": [
@@ -16,7 +16,7 @@
     "status": "OK",
     "polling": true,
     "streak": 0,
-    "uptime": 26.80396384,
+    "uptime": 115.52979936,
     "konflik": false
   }
 }

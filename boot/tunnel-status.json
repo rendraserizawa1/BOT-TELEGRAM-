@@ -1,7 +1,7 @@
 {
   "mulai": "2026-11-15T06:20:04.494Z",
   "pid": 12048,
-  "siklus": 53,
+  "siklus": 54,
   "sasaran": {
     "CP": {
       "nama": "IPOS_URL",
@@ -29,11 +29,11 @@
       "url": "https://scales-lil-accurate-beneath.trycloudflare.com",
       "pidTunnel": 11416,
       "logFile": "C:\\Users\\rdpadmin\\AppData\\Local\\Temp\\cf-jaga-KEFA-1794727451688.log",
-      "keadaan": "sehat",
+      "keadaan": "url-beda",
       "alasan": null,
       "terakhirPasang": "2026-11-15T07:24:31.072Z",
-      "terakhirSehat": "2026-11-15T07:36:26.216Z"
+      "terakhirSehat": "2026-11-15T07:37:35.274Z"
     }
   },
-  "diperbarui": "2026-11-15T07:36:26.394Z"
+  "diperbarui": "2026-11-15T08:10:54.692Z"
 }
