@@ -14119,6 +14119,9 @@ webApp.get('/health', (req, res) => {
         lastError: s.lastError || null,
         toko: s.toko,
         url: s.url,
+        // Jalur yang sedang dipakai: proxy Tailscale aktif? utama atau cadangan?
+        // Tanpa ini, saat Tailscale bermasalah kita hanya bisa menebak.
+        jalur: (() => { try { return b.jalurStatus ? b.jalurStatus() : null; } catch (e) { return null; } })(),
       };
     } catch (e) { return null; }
   };

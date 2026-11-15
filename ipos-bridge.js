@@ -42,6 +42,16 @@ function buatBridge({ url, key, toko, label }) {
   const IPOS_TIMEOUT = Number(process.env.IPOS_TIMEOUT_MS || 15000); // full katalog ribuan item butuh timeout lebih longgar; item-live tetap cepat
   const LABEL = label || (toko && toko[0] ? toko[0].toUpperCase() : 'iPos');
 
+  // ── JALUR iPos (proxy Tailscale + cadangan) ─────────────────────────
+  // Tanpa `IPOS_TAILSCALE_PROXY`, `jalur.ambil()` sama persis dengan `fetch`
+  // biasa -> perilaku di PC TIDAK berubah dan rollback cukup mengosongkan
+  // satu variabel. Lihat boot/ipos-jalur.js untuk aturan lengkapnya.
+  const jalur = require('./boot/ipos-jalur').buatJalurIpos({
+    urlUtama: IPOS_URL,
+    urlCadangan: process.env['IPOS_' + String(toko || '').toUpperCase() + '_URL_CADANGAN'] || '',
+    proxy: process.env.IPOS_TAILSCALE_PROXY || '',
+  });
+
   let lastSync = 0;
   let lastSseAt = 0;
   let lastSseFrameAt = 0;
@@ -101,7 +111,7 @@ function buatBridge({ url, key, toko, label }) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Number(process.env.IPOS_CATALOG_TIMEOUT_MS || 60000));
     try {
-      const res = await fetch(`${IPOS_URL}/api/items?key=${encodeURIComponent(IPOS_KEY)}`,
+      const res = await jalur.ambil(`${IPOS_URL}/api/items?key=${encodeURIComponent(IPOS_KEY)}`,
         { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -144,7 +154,7 @@ function buatBridge({ url, key, toko, label }) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), IPOS_TIMEOUT);
     try {
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await jalur.ambil(url, { signal: controller.signal });
       if (res.status === 404) return { found: false, liveOk: url.includes('item-live') };
       if (!res.ok) return null;
       const j = await res.json();
@@ -404,7 +414,7 @@ function buatBridge({ url, key, toko, label }) {
     const timer = setTimeout(() => controller.abort(), 15000);
     let data;
     try {
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await jalur.ambil(url, { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       data = await res.json();
       gagalLaporanBerturut = 0;
@@ -503,7 +513,7 @@ function buatBridge({ url, key, toko, label }) {
         };
         try {
           resetIdle();
-          const res = await fetch(`${IPOS_URL}/api/events?key=${encodeURIComponent(IPOS_KEY)}`,
+          const res = await jalur.ambil(`${IPOS_URL}/api/events?key=${encodeURIComponent(IPOS_KEY)}`,
             { headers: { accept: 'text/event-stream' }, signal: ac.signal });
           if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
           sseOk = true;
@@ -720,6 +730,9 @@ function buatBridge({ url, key, toko, label }) {
   return {
     url: IPOS_URL, toko, label: LABEL, syncStok, terapkan, ambilItem, status, mulaiAutoSync,
     ambilLaporanKasir, ambilLaporanMerek, ambilLaporanMarketplace,
+    // Diagnostik jalur: proxy aktif? jalur mana yang dipakai (utama/cadangan)?
+    // Dipakai /health supaya tidak ada tebak-tebakan saat Tailscale bermasalah.
+    jalurStatus: () => jalur.status(),
     // Diagnostik: mengembalikan JUMLAH item (bukan datanya) dari /api/items.
     // Dipakai /api/diag/ipos untuk membuktikan apakah kegagalan berasal dari
     // proses ini atau dari jaringan. Tidak membocorkan key.

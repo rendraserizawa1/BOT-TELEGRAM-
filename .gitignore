@@ -71,11 +71,19 @@ boot/_*.json
 # Skrip probe & diagnostik sekali-pakai (tidak dipakai produksi).
 # Test suite resmi (boot/test-*.js, boot/verify-all.js) TETAP di-commit.
 boot/_*.js
+boot/_*.err
+boot/_*.out
+boot/_*.lock
 boot/probe-*.js
 boot/uji-*.js
 boot/diag-*.js
 boot/monitor-*.js
 boot/profile-*.js
+# PENGECUALIAN: uji ini WAJIB ikut ke dalam image karena dijalankan DI DALAM
+# container Railway (`railway ssh -- node /app/boot/uji-tailscale.js`) untuk
+# membuktikan jalur tailnet sebelum IPOS_*_URL diubah. Tanpa ini, uji tidak
+# pernah ada di container dan verifikasi mustahil dilakukan.
+!boot/uji-tailscale.js
 boot/koreksi-cek.js
 boot/lihat-db.js
 boot/tunggu-notif.js

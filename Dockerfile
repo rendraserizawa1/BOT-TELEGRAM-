@@ -42,6 +42,41 @@ RUN npm install --omit=dev --no-audit --no-fund
 
 COPY . .
 
+# ── TAILSCALE (OPSIONAL) ──────────────────────────────────────────────
+# Railway tidak memberi /dev/net/tun maupun NET_ADMIN, jadi tailscaled dipakai
+# dalam mode userspace (`-tun=userspace-networking`) dan lalu lintas keluar
+# dialihkan lewat proxy HTTP lokal yang dibuka tailscaled sendiri.
+#
+# PENTING: unduhan ini TIDAK BOLEH menggagalkan build. Kalau gagal, entrypoint
+# otomatis melewati blok Tailscale dan bot tetap jalan seperti sebelumnya.
+# Unduhan memakai `node` (sudah pasti ada; node:24-slim tidak punya curl).
+#
+# Diletakkan SETELAH `COPY . .` supaya cache layer tidak rusak tiap kode berubah.
+ARG TAILSCALE_VER=1.102.4
+RUN node -e " \
+      const { execSync } = require('child_process'); \
+      const fs = require('fs'); \
+      const os = require('os'); \
+      const path = require('path'); \
+      const ver = process.env.TAILSCALE_VER; \
+      const url = 'https://pkgs.tailscale.com/stable/tailscale_' + ver + '_amd64.tgz'; \
+      const tgz = path.join(os.tmpdir(), 'ts.tgz'); \
+      (async () => { \
+        try { \
+          const r = await fetch(url, { signal: AbortSignal.timeout(180000) }); \
+          if (!r.ok) throw new Error('HTTP ' + r.status); \
+          fs.writeFileSync(tgz, Buffer.from(await r.arrayBuffer())); \
+          execSync('tar -xzf ' + tgz + ' -C /usr/local/bin --strip-components=1 tailscale_' + ver + '_amd64/tailscale tailscale_' + ver + '_amd64/tailscaled', { stdio: 'inherit' }); \
+          fs.chmodSync('/usr/local/bin/tailscale', 0o755); \
+          fs.chmodSync('/usr/local/bin/tailscaled', 0o755); \
+          console.log('[BUILD] tailscale ' + ver + ' terpasang'); \
+        } catch (e) { \
+          console.log('[BUILD] PERINGATAN: tailscale gagal diunduh (' + e.message + ') - container akan jalan tanpa tailnet'); \
+        } \
+      })(); \
+    " \
+ && (test -x /usr/local/bin/tailscaled && echo "[BUILD] tailscaled siap" || echo "[BUILD] tailscaled tidak ada (tidak fatal)")
+
 COPY docker-entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 

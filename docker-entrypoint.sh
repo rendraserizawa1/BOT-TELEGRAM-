@@ -91,5 +91,97 @@ fi
 # tetapi mencetak versinya di sini memudahkan diagnosa dari log Railway.
 echo "[ENTRY] Node $(node --version)"
 
+# ── TAILSCALE (OPSIONAL, TIDAK PERNAH FATAL) ──────────────────────────
+# Tujuan: container ini menjadi anggota tailnet sendiri supaya bisa memakai
+# HTTP iPos yang SUDAH ADA lewat IP Tailscale (100.x), tanpa tunnel Cloudflare.
+#
+# ATURAN KERAS:
+#   - TS_AUTHKEY kosong -> blok ini DILEWATI TOTAL. Bot jalan persis seperti
+#     sebelumnya. Ini yang membuat rollback cukup mengosongkan satu variabel.
+#   - Kegagalan APA PUN di sini hanya PERINGATAN, tidak boleh menghentikan
+#     skrip. Container yang mati karena Tailscale gagal jauh lebih buruk
+#     daripada container yang hidup tanpa iPos.
+#   - Kunci TIDAK PERNAH dicetak. Hanya status yang dilaporkan.
+#
+# Kenapa `-tun=userspace-networking`: Railway tidak memberi /dev/net/tun dan
+# tidak memberi NET_ADMIN. Mode userspace tidak butuh keduanya. Karena tidak
+# ada TUN, lalu lintas keluar dialihkan lewat proxy HTTP lokal yang dibuka
+# tailscaled sendiri (`--outbound-http-proxy-listen`).
+if [ -z "${TS_AUTHKEY:-}" ]; then
+  echo "[TAILSCALE] dilewati (TS_AUTHKEY kosong) - iPos memakai jalur langsung"
+else
+  TS_DIR="$DATA_ROOT/tailscale"
+  TS_SOCK="$TS_DIR/tailscaled.sock"
+  TS_PROXY="127.0.0.1:1056"
+  mkdir -p "$TS_DIR" 2>/dev/null || true
+
+  if ! command -v tailscaled >/dev/null 2>&1; then
+    echo "[TAILSCALE] PERINGATAN: biner tailscaled tidak ada di image - dilewati"
+  else
+    echo "[TAILSCALE] menjalankan tailscaled (userspace, proxy $TS_PROXY)"
+    tailscaled \
+      --tun=userspace-networking \
+      --outbound-http-proxy-listen="$TS_PROXY" \
+      --state="$TS_DIR/tailscaled.state" \
+      --socket="$TS_SOCK" \
+      >>"$DATA_ROOT/logs/tailscaled.log" 2>&1 &
+    TS_PID=$!
+
+    # Tunggu socket siap (maks 20 dtk). Jangan menggantung selamanya.
+    i=0
+    while [ $i -lt 20 ]; do
+      if [ -S "$TS_SOCK" ]; then break; fi
+      i=$((i + 1))
+      sleep 1
+    done
+
+    if [ ! -S "$TS_SOCK" ]; then
+      echo "[TAILSCALE] PERINGATAN: socket tidak siap dalam 20 dtk (pid $TS_PID) - lanjut tanpa tailnet"
+    else
+      # Kunci dibaca dari environment, TIDAK dicetak ke log.
+      if tailscale --socket="$TS_SOCK" up \
+           --authkey="$TS_AUTHKEY" \
+           --hostname=bcode-railway \
+           --accept-routes \
+           --timeout=60s >>"$DATA_ROOT/logs/tailscaled.log" 2>&1; then
+        echo "[TAILSCALE] up berhasil"
+      else
+        echo "[TAILSCALE] PERINGATAN: 'tailscale up' gagal - lanjut tanpa tailnet"
+      fi
+
+      # Tunggu BackendState=Running (maks 60 dtk).
+      i=0
+      SIAP=0
+      while [ $i -lt 60 ]; do
+        if tailscale --socket="$TS_SOCK" status --json 2>/dev/null | grep -q '"BackendState":[[:space:]]*"Running"'; then
+          SIAP=1
+          break
+        fi
+        i=$((i + 1))
+        sleep 1
+      done
+
+      if [ "$SIAP" = "1" ]; then
+        echo "[TAILSCALE] siap hostname=bcode-railway"
+        # Bukti nyata: satu percobaan HTTP ke tiap iPos, dicatat ke log.
+        # Ini membuat kegagalan ACL/ firewall terlihat TANPA perlu SSH.
+        for U in "${IPOS_URL:-}" "${IPOS_NK_URL:-}" "${IPOS_KEFA_URL:-}"; do
+          [ -z "$U" ] && continue
+          if node -e '
+            const u = process.argv[1] + "/health";
+            fetch(u, { signal: AbortSignal.timeout(8000) })
+              .then((r) => { console.log("HTTP " + r.status); process.exit(r.ok ? 0 : 1); })
+              .catch((e) => { console.log((e.cause && e.cause.code) || e.message); process.exit(1); });
+          ' "$U" 2>&1 | { read -r HASIL; echo "[TAILSCALE]   $U -> $HASIL"; }; then
+            :
+          fi
+        done
+      else
+        echo "[TAILSCALE] PERINGATAN: BackendState bukan Running dalam 60 dtk - lanjut tanpa tailnet"
+      fi
+    fi
+  fi
+fi
+
 echo "[ENTRY] Selesai. Menjalankan bot..."
 exec "$@"
