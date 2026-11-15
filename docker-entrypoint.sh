@@ -238,7 +238,7 @@ else
                 ? new undici.Socks5ProxyAgent(alamat)
                 : new undici.ProxyAgent(alamat);
               const ac = new AbortController();
-              const batas = setTimeout(() => ac.abort(), 20000);
+              const batas = setTimeout(() => ac.abort(), 35000);
               const t0 = Date.now();
               (async () => {
                 try {
