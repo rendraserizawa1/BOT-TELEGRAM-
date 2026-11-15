@@ -1,7 +1,7 @@
 {
   "mulai": "2026-11-15T06:20:04.494Z",
   "pid": 12048,
-  "siklus": 44,
+  "siklus": 48,
   "sasaran": {
     "CP": {
       "nama": "IPOS_URL",
@@ -26,14 +26,14 @@
       "sumber": "http://127.0.0.1:8080",
       "sumberHidup": true,
       "sumberAlasan": null,
-      "url": "https://old-distance-owns-workshops.trycloudflare.com",
-      "pidTunnel": 1080,
-      "logFile": "C:\\Users\\rdpadmin\\AppData\\Local\\Temp\\cf-jaga-KEFA-1794723766420.log",
+      "url": "https://scales-lil-accurate-beneath.trycloudflare.com",
+      "pidTunnel": 11416,
+      "logFile": "C:\\Users\\rdpadmin\\AppData\\Local\\Temp\\cf-jaga-KEFA-1794727451688.log",
       "keadaan": "sehat",
       "alasan": null,
-      "terakhirPasang": "2026-11-15T06:23:00.077Z",
-      "terakhirSehat": "2026-11-15T07:21:25.423Z"
+      "terakhirPasang": "2026-11-15T07:24:31.072Z",
+      "terakhirSehat": "2026-11-15T07:29:36.576Z"
     }
   },
-  "diperbarui": "2026-11-15T07:21:25.424Z"
+  "diperbarui": "2026-11-15T07:29:36.576Z"
 }

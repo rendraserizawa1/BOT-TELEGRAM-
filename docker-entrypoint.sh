@@ -279,7 +279,19 @@ else
       fi
     fi
   fi
-fi
+fi        # Probe presisi (opsional): memisahkan "header tak datang" dari
+        # "body ditahan". Diaktifkan dengan UJI_PROBE=1 supaya startup normal
+        # tidak diperlambat.
+        if [ "${UJI_PROBE:-0}" = "1" ]; then
+          echo "[TAILSCALE] --- probe presisi ---"
+          UJI_TARGET="${UJI_TARGET:-${IPOS_KEFA_URL:-}}" \
+          UJI_KEY="${UJI_KEY:-${IPOS_KEFA_KEY:-}}" \
+          IPOS_TAILSCALE_PROXY="${IPOS_TAILSCALE_PROXY:-http://$TS_PROXY}" \
+            node /app/boot/probe-tailnet.js --detik=25 2>&1 | while read -r L; do
+              echo "[PROBE] $L"
+            done
+        fi
+
 
 echo "[ENTRY] Selesai. Menjalankan bot..."
 exec "$@"
