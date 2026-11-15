@@ -1,4 +1,4 @@
-# iPos → Railway: Arsitektur DORONG (final)
+﻿# iPos â†’ Railway: Arsitektur DORONG (final)
 
 **Status: TERPASANG dan TERBUKTI.** Dokumen ini menggantikan
 `2026-11-15-railway-tailscale-design.md`. Tailscale dan Cloudflare tunnel
@@ -13,8 +13,8 @@ bekerja andal, dan sudah dibuktikan gagal dua kali dengan pengukuran:
 
 | Percobaan | Hasil terukur | Sebab |
 |---|---|---|
-| Cloudflare quick tunnel | ketiga hostname `*.trycloudflare.com` → `ENOTFOUND`; body SSE 0 byte / 150 dtk | proses cloudflared mati; tunnel menahan body |
-| Tailscale userspace | `/health` 200, tetapi `/api/items` (780 KB) putus `UND_ERR_SOCKET` / `SOCKS5 connection timeout` | node Railway tidak punya jalur langsung ke PC (**CGNAT**) → semua lewat DERP relay |
+| Cloudflare quick tunnel | ketiga hostname `*.trycloudflare.com` â†’ `ENOTFOUND`; body SSE 0 byte / 150 dtk | proses cloudflared mati; tunnel menahan body |
+| Tailscale userspace | `/health` 200, tetapi `/api/items` (780 KB) putus `UND_ERR_SOCKET` / `SOCKS5 connection timeout` | node Railway tidak punya jalur langsung ke PC (**CGNAT**) â†’ semua lewat DERP relay |
 
 Keduanya gagal karena sebab yang sama: **PC tidak bisa dijangkau dari luar.**
 
@@ -24,21 +24,21 @@ Arah dorong membalik masalahnya. Terukur: **780 KB dari PC ke Railway dalam
 Yang lebih penting: **tidak ada sambungan yang harus dijaga.** Tidak ada
 tunnel yang bisa mati, tidak ada relay yang bisa timeout. Kalau satu kiriman
 gagal, kiriman berikutnya menyusul. Itulah arti "tidak pernah putus" yang
-benar-benar bisa dijamin — bukan janji, melainkan sifat arsitekturnya.
+benar-benar bisa dijamin â€” bukan janji, melainkan sifat arsitekturnya.
 
 ```
    PC (di balik CGNAT)                    Railway
-   ┌──────────────────┐                   ┌─────────────────────┐
-   │ proxy iPos :8080 │                   │ index.js            │
-   │        │         │                   │  POST /api/ipos/push│
-   │        ▼         │   HTTPS publik    │        │            │
-   │  push-agen.js ───┼──────────────────▶│        ▼            │
-   │   (SSE lokal)    │   POST 780 KB     │  push-gudang        │
-   └──────────────────┘                   │        │            │
-                                          │        ▼            │
-                                          │  ipos-bridge        │
-                                          │  (pakai data)       │
-                                          └─────────────────────┘
+   â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”                   â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+   â”‚ proxy iPos :8080 â”‚                   â”‚ index.js            â”‚
+   â”‚        â”‚         â”‚                   â”‚  POST /api/ipos/pushâ”‚
+   â”‚        â–¼         â”‚   HTTPS publik    â”‚        â”‚            â”‚
+   â”‚  push-agen.js â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¶â”‚        â–¼            â”‚
+   â”‚   (SSE lokal)    â”‚   POST 780 KB     â”‚  push-gudang        â”‚
+   â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜                   â”‚        â”‚            â”‚
+                                          â”‚        â–¼            â”‚
+                                          â”‚  ipos-bridge        â”‚
+                                          â”‚  (pakai data)       â”‚
+                                          â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ---
@@ -52,7 +52,7 @@ benar-benar bisa dijamin — bukan janji, melainkan sifat arsitekturnya.
 | `boot/push-agen.js` | Berjalan di **PC**: langganan SSE proxy lokal, dorong katalog/delta/laporan/denyut. |
 | `boot/jaga-push.js` | Penjaga di PC: pastikan agen hidup, **tepat satu**, dan data di server segar. |
 | `boot/jaga-push.ps1` | Wrapper task; memuat `boot/push-agen.env`. |
-| `boot/push-agen.env` | `PUSH_URL` + `PUSH_TOKEN`. **Diabaikan git** — jangan pernah di-commit. |
+| `boot/push-agen.env` | `PUSH_URL` + `PUSH_TOKEN`. **Diabaikan git** â€” jangan pernah di-commit. |
 
 ### Kenapa gudang harus modul tunggal
 
@@ -66,19 +66,19 @@ me-`require` `boot/push-gudang` yang sama.
 
 ## 3. Aliran data
 
-1. **Katalog penuh** (`items`) — saat agen mulai, dan tiap 15 menit.
-2. **Delta** (`items-ubah`) — setiap frame `items` dari SSE proxy lokal.
-   Biasanya 1–5 baris, bukan 780 KB.
-3. **Laporan** (`jual`) — tiap ~60 detik dan segera setelah ada nota.
-4. **Denyut** (`denyut`) — tiap 30 detik, **tanpa data**. Bukti PC hidup.
+1. **Katalog penuh** (`items`) â€” saat agen mulai, dan tiap 15 menit.
+2. **Delta** (`items-ubah`) â€” setiap frame `items` dari SSE proxy lokal.
+   Biasanya 1â€“5 baris, bukan 780 KB.
+3. **Laporan** (`jual`) â€” tiap ~60 detik dan segera setelah ada nota.
+4. **Denyut** (`denyut`) â€” tiap 30 detik, **tanpa data**. Bukti PC hidup.
 
 ### Aturan keselamatan (semua diuji)
 
-- Token kosong di server → endpoint menolak semua (**503**). Tidak pernah ada
+- Token kosong di server â†’ endpoint menolak semua (**503**). Tidak pernah ada
   endpoint terbuka tanpa sengaja.
 - Data kosong ditolak (**400**). Satu kiriman kosong tidak boleh menghapus
   katalog bagus yang sedang dipakai.
-- Delta tanpa katalog penuh ditolak (**409**) → PC mengirim katalog penuh.
+- Delta tanpa katalog penuh ditolak (**409**) â†’ PC mengirim katalog penuh.
   Tanpa aturan ini, delta 3 item akan membuat katalog tampak hanya 3 item.
 - Data basi **tidak** diam-diam dipakai: bridge melempar error agar status
   melaporkan OFFLINE. Kegagalan harus terlihat.
@@ -86,7 +86,7 @@ me-`require` `boot/push-gudang` yang sama.
 
 ---
 
-## 4. Dua batas kesegaran — dan kenapa HARUS berbeda
+## 4. Dua batas kesegaran â€” dan kenapa HARUS berbeda
 
 Ini kesalahan yang sudah pernah terjadi dan meninggalkan alarm palsu:
 
@@ -97,12 +97,12 @@ Ini kesalahan yang sudah pernah terjadi dan meninggalkan alarm palsu:
 
 Dengan satu batas 180 dtk untuk keduanya, `/health` akan melaporkan "katalog
 basi" **setiap malam** saat toko tutup. Alarm yang selalu berbunyi akan
-diabaikan orang — dan itu lebih berbahaya daripada tidak punya alarm.
+diabaikan orang â€” dan itu lebih berbahaya daripada tidak punya alarm.
 
 **Denyut** memisahkan dua hal yang berbeda:
 
-- "data lama" → normal kalau toko sepi
-- "PC mati" → masalah nyata
+- "data lama" â†’ normal kalau toko sepi
+- "PC mati" â†’ masalah nyata
 
 Tanpa denyut, keduanya tampak identik dari sisi server.
 
@@ -112,7 +112,7 @@ Tanpa denyut, keduanya tampak identik dari sisi server.
 
 Penyimpanan penerima hanya di **memori**. Setiap redeploy/restart Railway
 mengosongkannya. Tanpa penanganan, PC baru mengirim ulang saat jeda 15 menit
-tiba — dan selama itu bot melayani toko **tanpa data**.
+tiba â€” dan selama itu bot melayani toko **tanpa data**.
 
 Karena itu denyut membawa `perluPenuh: true` bila server belum punya katalog.
 Agen menanggapinya dengan mengirim katalog penuh **segera**.
@@ -121,14 +121,53 @@ Agen menanggapinya dengan mengirim katalog penuh **segera**.
 
 ---
 
-## 6. Realtime — terukur
+## 6. Realtime â€” terukur
 
 Delta yang dikirim lewat HTTP dipakai bridge dalam **1,2 detik**
 (`umurKoneksiDetik` langsung 0). Ini bukan klaim: diukur pada produksi.
 
-Rantainya: nota di iPos → proxy lokal menyiarkan frame `items` → agen
-mendorong delta → bridge memantau penghitung versi tiap 2 detik → item
-diterapkan.
+Rantainya: perubahan terdeteksi di PC â†’ agen mendorong delta â†’ bridge memantau
+penghitung versi tiap 2 detik â†’ item diterapkan.
+
+### âš ï¸ Cacat proxy lokal yang menjadi akar masalah "tidak realtime"
+
+Ditemukan saat memverifikasi, di `C:\Users\rdpadmin\ipos-api\server.js`:
+
+```js
+// baris 124-125
+if (!old || old.nama !== it.nama || old.satuan !== it.satuan
+  || old.harga !== it.harga || old.harga2 !== it.harga2
+  || old.hpp !== it.hpp || old.statusjual !== it.statusjual) berubah.push(it);
+//              ^^^ `stok` TIDAK ikut dibandingkan
+
+// baris 122-126  perbandingan berjalan di sini...
+// baris 129-133  ...tetapi stok baru diisi DI SINI
+```
+
+Dua akibat yang keduanya mematikan realtime:
+
+1. **`stok` tidak dibandingkan.** Nota penjualan mengubah stok, bukan harga â€”
+   jadi `broadcast('items')` tidak pernah terpicu oleh penjualan.
+2. **Perbandingan berjalan sebelum stok diisi**, sehingga saat dibandingkan
+   `stok` semua item masih `0`.
+
+**Dibuktikan dengan probe SSE 31 menit:** 3 frame `jual` masuk, frame `items`
+**nol**.
+
+Karena proxy adalah proses produksi yang sedang melayani toko (dan tidak boleh
+dihentikan), perbaikan dipasang di **sisi agen**: agen membandingkan stok
+sendiri (`kirimSelisihStok`) pada loop 3 detik, terpisah dari loop pengawas
+30 detik. Hasilnya sama tanpa menyentuh produksi.
+
+Dikunci oleh `boot/test-push-stok.js` (10/10) dan
+`boot/test-push-stok-e2e.js` (7/7 â€” memakai proxy tiruan yang **sengaja**
+tidak pernah mengirim frame `items`, persis seperti aslinya).
+
+> Perbaikan permanen di proxy tetap disarankan saat ada jendela pemeliharaan:
+> tambahkan `old.stok !== it.stok` ke perbandingan **dan** pindahkan
+> perbandingan ke setelah stok diisi. Setelah itu deteksi di agen bisa
+> dipertahankan sebagai lapisan kedua (tidak berbahaya, hanya sedikit
+> redundan).
 
 ---
 
@@ -173,7 +212,7 @@ Kunci iPos **tidak** disalin ke berkas ini. Agen membacanya langsung dari
 Mode dorong hanya aktif bila `PUSH_TOKEN` terisi. Untuk kembali ke perilaku
 lama:
 
-1. Kosongkan `PUSH_TOKEN` di Railway → endpoint menolak semua, bridge kembali
+1. Kosongkan `PUSH_TOKEN` di Railway â†’ endpoint menolak semua, bridge kembali
    menarik dari `IPOS_*_URL`.
 2. Hentikan `BCODE-JAGA-PUSH` + agen.
 
@@ -185,11 +224,13 @@ dilewati ketika mode dorong menyala.
 ## 9. Verifikasi
 
 ```powershell
-node boot\uji-jaminan.js      # 19/19 — gerbang lengkap
+node boot\uji-jaminan.js      # 19/19 â€” gerbang lengkap
 node boot\test-push-penerima.js   # 14/14
 node boot\test-push-delta.js      #  8/8
 node boot\test-push-denyut.js     # 10/10
 node boot\test-push-pulih.js      #  5/5
+node boot\test-push-stok.js       # 10/10
+node boot\test-push-stok-e2e.js   #  7/7
 node boot\test-push-pendorong.js  #  7/7
 node boot\test-push-integrasi.js  #  9/9
 node boot\pindai-rahasia.js       # "HASIL: nol kebocoran"
@@ -205,12 +246,12 @@ tidak ada bot lokal, tidak ada poller ganda).
 
 1. **`railway variables --set` bisa exit 0 tanpa menerapkan.** Selalu baca
    ulang dengan `--json` (buang BOM `\uFEFF`) dan bandingkan.
-2. **Menyetel variabel Railway memicu redeploy** → 60–90 dtk 502. Jangan
+2. **Menyetel variabel Railway memicu redeploy** â†’ 60â€“90 dtk 502. Jangan
    menilai hasil di tengah jendela itu.
 3. **`jaga-tunnel` lama menulis `IPOS_*_URL` ke Railway tiap 60 dtk.** Kalau
    dibiarkan, ia bisa menimpa konfigurasi dorong. Sudah dimatikan (task
    Disabled + HKCU Run dihapus).
-4. **Jangan pernah menjalankan `index.js` di PC** — ia menjadi poller kedua dan
+4. **Jangan pernah menjalankan `index.js` di PC** â€” ia menjadi poller kedua dan
    memicu Telegram 409.
 5. **Replika Railway harus 1.** Dua replika = dua poller.
 6. **Node 24 wajib** (`node:sqlite` butuh 22+).
