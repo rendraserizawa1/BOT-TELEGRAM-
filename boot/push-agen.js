@@ -257,12 +257,84 @@ function buatToko(t) {
   let laporanTerakhir = 0;
   let laporanSedangJalan = false;
 
+  /**
+   * PETA STOK TERAKHIR — dipakai mendeteksi perubahan stok SENDIRI.
+   *
+   * KENAPA AGEN HARUS MELAKUKAN INI
+   * -------------------------------
+   * Proxy lokal hanya menyiarkan frame `items` bila NAMA/SATUAN/HARGA/HPP/
+   * STATUSJUAL berubah (lihat server.js baris 124-125). **`stok` tidak ikut
+   * dibandingkan**, padahal nota penjualan justru mengubah stok, bukan harga.
+   * Lebih jauh, perbandingan itu berjalan SEBELUM stok diisi, jadi saat
+   * dibandingkan `stok` masih 0 untuk semua item.
+   *
+   * Akibatnya: menyalakan SSE saja TIDAK membuat stok realtime. Tanpa deteksi
+   * sendiri di sini, penjualan di toko tidak akan pernah sampai ke Railway
+   * sampai katalog penuh berikutnya (15 menit) — persis keluhan "tidak update".
+   *
+   * Proxy TIDAK saya ubah: ia proses produksi yang sedang melayani toko, dan
+   * menghentikannya untuk memasang perbaikan justru membuat data berhenti.
+   * Deteksi di sisi agen memberi hasil yang sama tanpa menyentuh produksi.
+   */
+  const stokTerakhir = new Map();
+  let selisihSedangJalan = false;
+
+  /** Bandingkan stok sekarang dengan yang terakhir dikirim; dorong bila beda. */
+  async function kirimSelisihStok() {
+    if (selisihSedangJalan) return 0;
+    selisihSedangJalan = true;
+    try {
+      const j = await ambilJson(t.url + '/api/items?key=' + encodeURIComponent(t.key), 120000);
+      const items = Array.isArray(j && j.data) ? j.data : null;
+      if (!items || !items.length) return 0;
+
+      const delta = [];
+      for (const it of items) {
+        if (!it || !it.kode) continue;
+        const k = String(it.kode).toUpperCase();
+        const stokBaru = Number(it.stok);
+        const stokLama = stokTerakhir.get(k);
+        // `undefined` = belum pernah dikirim. Jangan dianggap delta: katalog
+        // penuh yang baru dikirim sudah mencakup semuanya, jadi cukup dicatat.
+        if (stokLama === undefined) { stokTerakhir.set(k, stokBaru); continue; }
+        if (stokLama !== stokBaru) {
+          stokTerakhir.set(k, stokBaru);
+          delta.push(it);
+        }
+      }
+
+      if (!delta.length) return 0;
+      console.log('[PUSH] ' + t.toko + ': ' + delta.length + ' item berubah STOK (tanpa frame SSE)');
+      const r = await dorong(t.toko, 'items-ubah', delta);
+      if (r && r.perluPenuh) {
+        await kirimPenuh();
+        return 0;
+      }
+      keadaan.terakhirDelta = new Date().toISOString();
+      return delta.length;
+    } catch (e) {
+      catatGagal(t.toko, 'items-ubah', e.message);
+      return 0;
+    } finally {
+      selisihSedangJalan = false;
+    }
+  }
+
+  /** Catat stok dari katalog penuh agar pembanding berikutnya punya dasar. */
+  function catatStokPenuh(items) {
+    stokTerakhir.clear();
+    for (const it of items) {
+      if (it && it.kode) stokTerakhir.set(String(it.kode).toUpperCase(), Number(it.stok));
+    }
+  }
+
   /** Katalog penuh. */
   async function kirimPenuh() {
     const j = await ambilJson(t.url + '/api/items?key=' + encodeURIComponent(t.key), 120000);
     const items = Array.isArray(j && j.data) ? j.data : null;
     if (!items || !items.length) throw new Error('katalog kosong dari proxy');
     await dorong(t.toko, 'items', items);
+    catatStokPenuh(items);
     keadaan.items = items.length;
     keadaan.terakhirPenuh = new Date().toISOString();
     penuhTerakhir = Date.now();
@@ -371,7 +443,7 @@ function buatToko(t) {
     sambung();
   }
 
-  return { keadaan, kirimPenuh, kirimLaporan, mulaiSSE, get penuhTerakhir() { return penuhTerakhir; } };
+  return { keadaan, kirimPenuh, kirimLaporan, kirimSelisihStok, mulaiSSE, get penuhTerakhir() { return penuhTerakhir; } };
 }
 
 // ── JALAN ────────────────────────────────────────────────────────────────
@@ -483,6 +555,10 @@ function buatToko(t) {
       } catch (e) {
         catatGagal(a.keadaan.toko, 'items', e.message);
       }
+      // Perubahan STOK tidak pernah muncul sebagai frame `items` dari proxy
+      // (proxy tidak membandingkan stok). Jadi di sinilah stok menjadi
+      // realtime: dibandingkan sendiri, didorong sebagai delta.
+      await a.kirimSelisihStok();
       await a.kirimLaporan(false);
     }
     tulisStatus();
