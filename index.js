@@ -11735,8 +11735,21 @@ async function simpanFileNota(chatId, userId, imageBuffer, info) {
   // Nota dicatat di antrean (nota + .json berisi alasan & waktu) supaya
   // sapuAntrean() benar-benar bisa mengirimnya nanti. Tanpa catatan itu,
   // janji "akan disalin" hanyalah kebohongan.
+  //
+  // PENTING: antrean ini HANYA bisa tersapu oleh proses yang melihat folder
+  // share. Bot berjalan di container Linux dan tujuan nota adalah share
+  // Windows, jadi sapuan di sisi bot TIDAK AKAN PERNAH berhasil. Yang
+  // mengerjakannya adalah agen PC lewat /api/ipos/nota. Karena itu pesan ke
+  // pengguna harus menyebut hal yang benar-benar terjadi.
   const antre = notaMod.simpanKeAntrean(folderAntrean, namaFile, imageBuffer, hasil.alasanShare, folderShare);
   log.warn('NOTA', `Share tidak terjangkau (${hasil.alasanShare}) - disimpan lokal: ${hasil.path}`);
+
+  // Apakah ada agen PC yang benar-benar menjemput antrean? Tanpa bukti ini,
+  // menjanjikan "akan dipindahkan otomatis" adalah janji kosong. Lebih baik
+  // memberi tahu pengguna dan admin bahwa nota perlu dipindahkan manual.
+  const jemput = webApp._notaJemput || null;
+  const penjemputHidup = !!(jemput && jemput.terakhir && (Date.now() - jemput.terakhir) < 10 * 60 * 1000);
+
   if (CONFIG.adminId) {
     try {
       await bot.sendMessage(CONFIG.adminId,
@@ -11746,7 +11759,10 @@ async function simpanFileNota(chatId, userId, imageBuffer, info) {
         + `📁 \`${escapeMd(hasil.path)}\`\n\n`
         + `❗ ${escapeMd(hasil.alasanShare || 'tidak diketahui')}\n`
         + (antre && antre.ok
-          ? '🔁 Masuk antrean: akan dicoba kirim ulang otomatis ke folder share.'
+          ? (penjemputHidup
+            ? '🔁 Masuk antrean: agen PC aktif, nota akan dipindahkan otomatis ke folder share.'
+            : '⚠️ Masuk antrean, TAPI belum ada agen PC yang menjemput.\n'
+              + 'Aktifkan penjemput di PC: isi `PUSH_NOTA_AKAR` di `boot/push-agen.env`.')
           : '❗ Gagal masuk antrean: ' + escapeMd((antre && antre.error) || 'tidak diketahui')),
         { parse_mode: 'Markdown' });
     } catch (e) {
@@ -11757,8 +11773,11 @@ async function simpanFileNota(chatId, userId, imageBuffer, info) {
     '✅ *NOTA TERSIMPAN!*\n' + GARIS_TEBAL +
     `\n🔖 ${escapeMd(namaFile)}` +
     `\n📅 ${info.tanggal} ${bulan} ${info.tahun}` +
-    '\n\n📦 Tersimpan di penyimpanan bot. Folder share sedang tidak terjangkau;'
-    + ' bot akan mencoba memindahkannya otomatis ke folder share, dan admin sudah diberi tahu.'
+    (penjemputHidup
+      ? '\n\n📦 Tersimpan di penyimpanan bot. Folder share sedang tidak terjangkau;'
+        + ' nota akan dipindahkan otomatis ke folder share.'
+      : '\n\n📦 Tersimpan di penyimpanan bot. Folder share sedang tidak terjangkau;'
+        + ' admin sudah diberi tahu dan akan memindahkannya.')
     + '\n\n📸 Kirim foto nota lain, atau ketik *batal*.',
     { reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]] } }
   );
@@ -14261,6 +14280,13 @@ webApp.get('/health', (req, res) => {
     // share sedang tidak terjangkau dan nota menumpuk di penyimpanan bot.
     notaTertunda,
     notaTertundaTerakhir,
+    // Bukti PC benar-benar menjemput antrean nota. Tanpa ini, "antrean kosong"
+    // dan "antrean tidak pernah tersapu" tampak sama dari luar.
+    notaJemput: (() => {
+      const j = webApp._notaJemput || {};
+      const umur = j.terakhir ? Math.max(0, Math.round((Date.now() - j.terakhir) / 1000)) : null;
+      return { daftar: j.daftar || 0, isi: j.isi || 0, selesai: j.selesai || 0, umurDetik: umur };
+    })(),
     db: botDb.stats(),
     loopLagMs,
     loopLagMax60s: _lagHist.length ? Math.max(..._lagHist) : 0,
@@ -14382,6 +14408,99 @@ webApp.get('/api/ipos/perlu', (req, res) => {
   webApp._jemput[toko] = j;
   const daftar = pushGudang.jemputPermintaan(toko);
   res.json({ ok: true, toko, permintaan: daftar });
+});
+
+// ── ANTREAN NOTA: DIBACA & DIKIRIM OLEH PC ──────────────────────────────
+//
+// KENAPA HARUS LEWAT PC
+// ---------------------
+// Tujuan nota adalah share Windows `\\100.125.99.99\E\...`. Bot berjalan di
+// container Linux, dan di Linux path UNC bukan path absolut — jadi sapuan di
+// sisi bot TIDAK AKAN PERNAH berhasil. Nota masuk antrean dan menumpuk di
+// volume selamanya, sementara pesan ke pengguna menjanjikan "akan dipindahkan
+// otomatis ke folder share".
+//
+// Arahnya sama seperti laporan tanggal lampau: server tidak bisa menjangkau
+// jaringan toko, jadi PC yang menjemput. Tiga endpoint di bawah adalah sisi
+// server dari jalur itu. Tanpa ketiganya, janji di pesan itu bohong.
+//
+// Token: sama dengan PUSH_TOKEN, karena hanya agen PC yang boleh memakainya.
+
+/** Validasi token jalur jemput. Mengembalikan true bila boleh lanjut. */
+function tokenJemputSah(req) {
+  const dikirim = req.get('x-push-token') || req.query.token;
+  const sah = String(process.env.PUSH_TOKEN || '');
+  if (!sah) return { ok: false, status: 503, err: 'PUSH_TOKEN belum diisi di server' };
+  if (String(dikirim || '') !== sah) return { ok: false, status: 401, err: 'token salah' };
+  return { ok: true };
+}
+
+/** Catat aktivitas jemput nota supaya /health bisa membuktikannya. */
+function catatJemputNota(jenis) {
+  if (!webApp._notaJemput) webApp._notaJemput = { daftar: 0, isi: 0, selesai: 0, terakhir: 0 };
+  webApp._notaJemput[jenis]++;
+  webApp._notaJemput.terakhir = Date.now();
+}
+
+/** Daftar nota yang menunggu dikirim ke share. */
+webApp.get('/api/ipos/nota', (req, res) => {
+  const t = tokenJemputSah(req);
+  if (!t.ok) return res.status(t.status).json({ ok: false, err: t.err });
+  const notaMod = require('./boot/nota-simpan');
+  const dir = path.join(CONFIG.paths.storage, 'nota-gagal');
+  const daftar = notaMod.daftarAntrean(dir);
+  // Penghitung ini yang membedakan "PC hidup" dari "PC benar-benar menjemput
+  // nota". Tanpa itu, antrean yang tidak pernah tersapu terlihat sama saja
+  // dengan antrean yang sedang kosong.
+  catatJemputNota('daftar');
+  notaTertunda = daftar.length;
+  res.json({ ok: true, jumlah: daftar.length, nota: daftar });
+});
+
+/** Isi satu nota (byte mentah) supaya PC bisa menuliskannya ke share. */
+webApp.get('/api/ipos/nota/isi', (req, res) => {
+  const t = tokenJemputSah(req);
+  if (!t.ok) return res.status(t.status).json({ ok: false, err: t.err });
+  const notaMod = require('./boot/nota-simpan');
+  const nama = String(req.query.nama || '');
+  // Nama divalidasi ulang di sini: query string adalah masukan dari luar, dan
+  // `path.join` akan menelusuri `..` bila nama tidak disaring.
+  if (!nama || notaMod.namaAman(nama) !== nama) {
+    return res.status(400).json({ ok: false, err: 'nama nota tidak sah' });
+  }
+  const jalur = path.join(CONFIG.paths.storage, 'nota-gagal', nama);
+  let isi;
+  try {
+    isi = fs.readFileSync(jalur);
+  } catch (e) {
+    return res.status(404).json({ ok: false, err: 'nota tidak ada di antrean' });
+  }
+  catatJemputNota('isi');
+  res.setHeader('content-type', 'application/octet-stream');
+  res.setHeader('content-length', isi.length);
+  res.end(isi);
+});
+
+/**
+ * Hapus nota dari antrean SETELAH PC memastikan nota benar-benar tersimpan.
+ *
+ * Sengaja dipisah dari endpoint isi: nota hanya boleh hilang dari antrean bila
+ * tulis ke share sudah terbukti berhasil. Kalau pengiriman dan penghapusan
+ * digabung, koneksi yang putus di tengah bisa menghapus nota yang belum sampai.
+ */
+webApp.post('/api/ipos/nota/selesai', (req, res) => {
+  const t = tokenJemputSah(req);
+  if (!t.ok) return res.status(t.status).json({ ok: false, err: t.err });
+  const notaMod = require('./boot/nota-simpan');
+  const nama = String((req.body && req.body.nama) || '');
+  const hasil = notaMod.hapusDariAntrean(path.join(CONFIG.paths.storage, 'nota-gagal'), nama);
+  if (!hasil.ok) return res.status(400).json({ ok: false, err: hasil.error });
+  catatJemputNota('selesai');
+  const sisa = notaMod.daftarAntrean(path.join(CONFIG.paths.storage, 'nota-gagal')).length;
+  notaTertunda = sisa;
+  notaTertundaTerakhir = new Date().toISOString();
+  log.info('NOTA', `Antrean: ${nama} dipindahkan ke folder share oleh PC (sisa ${sisa})`);
+  res.json({ ok: true, sisa });
 });
 
 webApp.use(session({

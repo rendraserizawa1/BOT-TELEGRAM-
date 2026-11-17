@@ -210,6 +210,120 @@ function bacaMeta(metaPath) {
 }
 
 /**
+ * Daftar isi antrean beserta catatan sampingnya, yang paling lama menunggu
+ * lebih dulu.
+ *
+ * KENAPA PERLU — BUKAN KERAPIAN
+ * ----------------------------
+ * `sapuAntrean()` hanya bisa berhasil kalau PROSES YANG MEMANGGILNYA bisa
+ * melihat folder share. Bot berjalan di container Linux, sedangkan tujuan nota
+ * adalah share Windows `\\100.125.99.99\E\...`. Di Linux path itu bukan path
+ * absolut sama sekali, jadi sapuan di sisi bot TIDAK AKAN PERNAH berhasil:
+ * pesan "akan dipindahkan otomatis ke folder share" menjadi janji kosong dan
+ * nota menumpuk selamanya di volume.
+ *
+ * Karena itu antrean harus bisa DIBACA PIHAK LAIN — PC yang punya jalur ke
+ * share. Fungsi ini dan `hapusDariAntrean()` adalah sisi baca/hapus untuk
+ * jalur jemput itu.
+ */
+function daftarAntrean(folderAntrean) {
+  const hasil = [];
+  let isi;
+  try {
+    if (!folderAntrean || !fsAsli.existsSync(folderAntrean)) return hasil;
+    isi = fsAsli.readdirSync(folderAntrean);
+  } catch (_) {
+    return hasil;
+  }
+
+  for (const nama of isi) {
+    if (nama.endsWith('.json') || nama.startsWith('.')) continue;
+    const jalur = path.join(folderAntrean, nama);
+    let ukuran = null;
+    try { ukuran = fsAsli.statSync(jalur).size; } catch (_) { /* biarkan null */ }
+    const meta = bacaMeta(path.join(folderAntrean, namaMeta(nama))) || {};
+    hasil.push({
+      nama,
+      tujuan: meta.tujuan || null,
+      alasan: meta.alasan || null,
+      waktu: meta.waktu || null,
+      ukuran,
+    });
+  }
+
+  hasil.sort((a, b) => String(a.waktu || '').localeCompare(String(b.waktu || '')));
+  return hasil;
+}
+
+/**
+ * Buang satu nota dari antrean setelah benar-benar tersimpan di share.
+ *
+ * Nama divalidasi dengan `namaAman` dan harus KEMBALI PERSIS SAMA. Tanpa
+ * syarat itu, nama seperti `../../app/index.js` akan lolos `path.join` dan
+ * menghapus berkas di luar antrean. Nama nota yang sah tidak pernah berubah
+ * oleh `namaAman`, jadi penolakan ini tidak pernah mengenai nota sungguhan.
+ */
+function hapusDariAntrean(folderAntrean, nama) {
+  const asli = String(nama == null ? '' : nama);
+  if (!asli || namaAman(asli) !== asli) {
+    return { ok: false, error: 'nama tidak sah: ' + asli };
+  }
+  try {
+    fsAsli.unlinkSync(path.join(folderAntrean, asli));
+  } catch (err) {
+    return { ok: false, error: (err && err.message) ? err.message : String(err) };
+  }
+  // Catatan samping boleh sudah tidak ada; itu bukan kegagalan.
+  try { fsAsli.unlinkSync(path.join(folderAntrean, namaMeta(asli))); } catch (_) { /* lanjut */ }
+  return { ok: true };
+}
+
+/**
+ * Akar folder yang boleh ditulisi oleh jalur jemput.
+ *
+ * BATAS KEAMANAN, BUKAN KERAPIAN: server mengirim `tujuan` berupa path, dan PC
+ * menulis ke sana. Kalau daftar ini tidak ada, server yang disusupi (atau
+ * catatan antrean yang rusak) bisa menyuruh PC menulis ke mana saja — mis.
+ * menaruh berkas di folder startup. Karena itu tujuannya dibatasi ke akar nota
+ * yang memang dikenal.
+ */
+const AKAR_NOTA_DEFAULT = [
+  '\\\\100.125.99.99\\E\\TOKO NASIONAL KITCHEN',
+  '\\\\100.125.99.99\\E\\Nota Toko Perabot Mamaku Kefamenanu',
+];
+
+/** Akar sah: dari env (dipisah ';') bila diisi, kalau tidak pakai bawaan. */
+function akarNotaSah(dariEnv) {
+  const daftar = String(dariEnv == null ? '' : dariEnv)
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return daftar.length ? daftar : AKAR_NOTA_DEFAULT.slice();
+}
+
+/**
+ * Apakah `tujuan` path Windows absolut DI DALAM salah satu akar sah?
+ * `path.win32` dipakai karena tujuannya path Windows, walaupun kode ini bisa
+ * saja dijalankan di mesin lain.
+ *
+ * WAJIB dinormalkan dulu. Pemeriksaan berbasis teks saja LOLOS untuk
+ * `\\server\E\TOKO NASIONAL KITCHEN\..\..\Windows`, yang teksnya berawalan akar
+ * sah tetapi sebenarnya menunjuk `\\server\E\Windows`. Tes menemukan ini.
+ */
+function tujuanNotaSah(tujuan, akar) {
+  const t = String(tujuan == null ? '' : tujuan);
+  if (!t.trim()) return false;
+  if (!path.win32.isAbsolute(t)) return false;
+  // `..` dibuang SEBELUM dibandingkan. Tanpa ini, batas keamanan ini bisa
+  // ditembus dengan awalan yang tampak sah.
+  const bawah = path.win32.normalize(t).toLowerCase().replace(/\\+$/, '');
+  return akarNotaSah(akar).some((a) => {
+    const ak = path.win32.normalize(String(a)).toLowerCase().replace(/\\+$/, '');
+    return bawah === ak || bawah.startsWith(ak + '\\');
+  });
+}
+
+/**
  * Sapu folder antrean: coba kirim setiap nota ke share. Yang berhasil
  * dihapus dari antrean (nota + catatan), yang gagal DIBIARKAN utuh.
  *
@@ -279,4 +393,9 @@ module.exports = {
   sapuAntrean,
   bacaMeta,
   namaAman,
+  daftarAntrean,
+  hapusDariAntrean,
+  tujuanNotaSah,
+  akarNotaSah,
+  AKAR_NOTA_DEFAULT,
 };

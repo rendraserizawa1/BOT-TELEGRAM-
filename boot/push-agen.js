@@ -49,6 +49,10 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const https = require('https');
+// Modul simpan-nota yang SAMA dengan yang dipakai bot. Dipakai ulang supaya
+// tulis atomik (.part + rename) dan sanitasi nama berlaku di jalur jemput ini
+// juga — bukan aturan kedua yang bisa menyimpang.
+const notaMod = require('./nota-simpan');
 
 const ROOT = path.join(__dirname, '..');
 const STATUS = process.env.PUSH_STATUS_FILE || path.join(__dirname, 'push-status.json');
@@ -324,6 +328,41 @@ async function ambilJson(url, timeout) {
   return JSON.parse(r.body);
 }
 
+/**
+ * Seperti `minta()`, tetapi isi dikembalikan sebagai Buffer MENTAH.
+ *
+ * KENAPA TERPISAH: `minta()` mengubah isi menjadi string UTF-8. Untuk JSON itu
+ * benar, tetapi untuk BERKAS GAMBAR itu merusaknya — byte di atas 0x7F diganti
+ * karakter pengganti, sehingga nota yang tersimpan tidak bisa dibuka dan
+ * ukurannya berubah. Nota adalah bukti transaksi; merusaknya diam-diam jauh
+ * lebih buruk daripada gagal.
+ */
+function mintaBiner(url, opsi = {}) {
+  return new Promise((resolve, reject) => {
+    let u;
+    try { u = new URL(url); } catch (e) { return reject(new Error('URL tidak sah: ' + url)); }
+    const lib = u.protocol === 'https:' ? https : http;
+    const req = lib.request({
+      protocol: u.protocol,
+      hostname: u.hostname,
+      port: u.port || (u.protocol === 'https:' ? 443 : 80),
+      path: u.pathname + u.search,
+      method: opsi.method || 'GET',
+      headers: { ...(opsi.headers || {}) },
+    }, (res) => {
+      const potong = [];
+      res.on('data', (d) => potong.push(d));
+      res.on('end', () => resolve({
+        status: res.statusCode,
+        body: Buffer.concat(potong),
+      }));
+    });
+    req.on('error', reject);
+    req.setTimeout(Number(opsi.timeout || 120000), () => req.destroy(new Error('timeout')));
+    req.end();
+  });
+}
+
 // ── DORONG ───────────────────────────────────────────────────────────────
 let berhentiKarenaToken = false;
 
@@ -398,6 +437,7 @@ function buatToko(t) {
   let marketplaceTerakhir = 0;
   let marketplaceSedangJalan = false;
   let permintaanSedangJalan = false;
+  let notaSedangJalan = false;
 
   /**
    * PETA STOK TERAKHIR — dipakai mendeteksi perubahan stok SENDIRI.
@@ -745,8 +785,120 @@ function buatToko(t) {
     sambung();
   }
 
+  /**
+   * JEMPUT ANTREAN NOTA — menyimpan nota ke share Windows yang TIDAK bisa
+   * dijangkau bot.
+   *
+   * KENAPA HARUS DI SINI
+   * --------------------
+   * Tujuan nota adalah share `\\100.125.99.99\E\...`. Bot berjalan di container
+   * Linux; di Linux path UNC bukan path absolut, jadi sapuan di sisi bot tidak
+   * pernah bisa berhasil. Akibatnya nota menumpuk di volume selamanya sementara
+   * pengguna diberi tahu "akan dipindahkan otomatis ke folder share".
+   *
+   * PC ini punya jalur ke share (dibuktikan: Test-Path True, tulis BERHASIL),
+   * jadi PC yang mengerjakannya — arahnya sama seperti penjemput laporan
+   * tanggal lampau. Server hanya menyimpan antrean; PC menjemput, menulis, lalu
+   * memberi tahu server bahwa nota sudah benar-benar tersimpan.
+   *
+   * URUTAN YANG DISENGAJA: tulis dulu, hapus belakangan. Kalau urutannya
+   * dibalik, koneksi yang putus di tengah bisa menghapus nota yang belum
+   * sampai ke share — kehilangan yang tidak bisa dipulihkan.
+   *
+   * MATI SECARA BAWAAN: hanya berjalan bila PUSH_NOTA_AKAR diisi. Tanpa itu
+   * perilaku PC tidak berubah sama sekali.
+   */
+  const akarNota = String(process.env.PUSH_NOTA_AKAR || '').trim();
+  const notaAktif = !!akarNota;
+
+  async function jemputNota() {
+    if (!notaAktif || notaSedangJalan) return;
+    notaSedangJalan = true;
+    try {
+      const r = await minta(PUSH_URL + '/api/ipos/nota', {
+        timeout: 20000,
+        headers: { 'x-push-token': PUSH_TOKEN },
+      });
+      if (r.status !== 200) {
+        // Gangguan sesaat bukan kegagalan yang perlu dicatat tiap 5 detik.
+        if ((r.status === 401 || r.status === 503) && keadaan.err !== 'nota: HTTP ' + r.status) {
+          keadaan.err = 'nota: HTTP ' + r.status;
+          catatGagal(t.toko, 'nota', 'HTTP ' + r.status + ' saat menjemput antrean nota');
+        }
+        return;
+      }
+      if (keadaan.err && keadaan.err.startsWith('nota:')) keadaan.err = null;
+
+      let j = null;
+      try { j = JSON.parse(r.body); } catch (_) { return; }
+      const daftar = Array.isArray(j && j.nota) ? j.nota : [];
+      if (!daftar.length) return;
+
+      // Batasi per siklus: satu nota bisa beberapa MB, dan menjejalkan
+      // semuanya dalam satu putaran membuat proses ini terlihat hang.
+      const batas = Math.max(1, Number(process.env.PUSH_NOTA_PER_SIKLUS || 5));
+      let dipindah = 0;
+
+      for (const n of daftar.slice(0, batas)) {
+        const nama = String((n && n.nama) || '');
+        const tujuan = String((n && n.tujuan) || '');
+        if (!nama) continue;
+
+        // BATAS KEAMANAN: tujuan datang dari server, jadi tidak boleh dipercaya
+        // begitu saja. Hanya akar nota yang dikenal yang boleh ditulisi.
+        if (!notaMod.tujuanNotaSah(tujuan, akarNota)) {
+          catatGagal(t.toko, 'nota', nama + ': tujuan di luar akar sah (' + tujuan + ')');
+          continue;
+        }
+
+        try {
+          // 1. Ambil isinya sebagai BYTE MENTAH (bukan string utf8).
+          const isi = await mintaBiner(
+            PUSH_URL + '/api/ipos/nota/isi?nama=' + encodeURIComponent(nama),
+            { timeout: 120000, headers: { 'x-push-token': PUSH_TOKEN } },
+          );
+          if (isi.status !== 200) throw new Error('HTTP ' + isi.status + ' saat ambil isi');
+          if (!isi.body || !isi.body.length) throw new Error('isi nota kosong');
+
+          // 2. Tulis ke share lewat modul yang sama dengan jalur lokal, supaya
+          //    tulis atomik (.part + rename) juga berlaku di sini.
+          const tulis = notaMod.simpanKeFolder(tujuan, nama, isi.body, { platform: 'win32' });
+          if (!tulis.ok) throw new Error(tulis.error || 'gagal tulis ke share');
+
+          // 3. Baru setelah TERSIMPAN, kabari server.
+          const r2 = await minta(PUSH_URL + '/api/ipos/nota/selesai', {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'x-push-token': PUSH_TOKEN,
+            },
+            body: JSON.stringify({ nama }),
+            timeout: 30000,
+          });
+          if (r2.status !== 200) {
+            // Nota SUDAH aman di share. Gagal mengabari bukan alasan mengulang
+            // tulis; antrean akan dibersihkan pada putaran berikutnya.
+            catatGagal(t.toko, 'nota', nama + ': tersimpan tapi gagal kabari (' + r2.status + ')');
+          }
+          dipindah++;
+        } catch (e) {
+          catatGagal(t.toko, 'nota', nama + ': ' + String(e.message).slice(0, 90));
+        }
+      }
+
+      if (dipindah > 0) {
+        console.log('[PUSH] ' + t.toko + ': ' + dipindah + ' nota dipindahkan ke folder share');
+        status.kiriman.nota = (status.kiriman.nota || 0) + dipindah;
+      }
+    } catch (e) {
+      // Gangguan jaringan sesaat: jangan catat tiap 5 detik.
+    } finally {
+      notaSedangJalan = false;
+    }
+  }
+
   return {
-    keadaan, kirimPenuh, kirimLaporan, kirimSelisihStok, kirimMerek, kirimMarketplace, mulaiSSE, profil, penuhiPermintaan,
+    keadaan, kirimPenuh, kirimLaporan, kirimSelisihStok, kirimMerek, kirimMarketplace, mulaiSSE, profil, penuhiPermintaan, jemputNota, notaAktif,
     get penuhTerakhir() { return penuhTerakhir; },
   };
 }
@@ -910,6 +1062,35 @@ function buatToko(t) {
     }, Number(process.env.PUSH_JEDA_PERMINTAAN_MS || 2000));
     if (t.unref) t.unref();
     pewaktuPermintaan.push(t);
+  }
+
+  // ── PENJEMPUT ANTREAN NOTA ───────────────────────────────────────────
+  //
+  // Nota disimpan ke share Windows yang TIDAK bisa dijangkau bot (bot berjalan
+  // di container Linux). Tanpa loop ini, pesan "akan dipindahkan otomatis ke
+  // folder share" tidak pernah ditepati dan nota menumpuk selamanya.
+  //
+  // Hanya berjalan bila PUSH_NOTA_AKAR diisi, jadi perilaku PC yang belum
+  // mengisinya TIDAK berubah sama sekali.
+  const notaAktif = agen.filter((a) => a.notaAktif);
+  if (notaAktif.length) {
+    console.log('[PUSH] penjemput nota AKTIF untuk: ' + notaAktif.map((a) => a.keadaan.toko).join(', ')
+      + ' (akar: ' + String(process.env.PUSH_NOTA_AKAR).split(';').filter(Boolean).join(' | ') + ')');
+    const pewaktuNota = [];
+    for (const a of notaAktif) {
+      const t = setInterval(async () => {
+        try { await a.jemputNota(); }
+        catch (e) { catatGagal(a.keadaan.toko, 'nota', e.message); }
+      }, Number(process.env.PUSH_JEDA_NOTA_MS || 5000));
+      if (t.unref) t.unref();
+      pewaktuNota.push(t);
+    }
+    // Jemput pertama segera: antrean yang sudah menumpuk jangan menunggu 5 dtk.
+    for (const a of notaAktif) {
+      try { await a.jemputNota(); } catch (_) { /* sudah dicatat di dalam */ }
+    }
+  } else {
+    console.log('[PUSH] penjemput nota mati (PUSH_NOTA_AKAR kosong) - antrean nota tidak akan tersapu dari PC ini');
   }
 
   // Jaring pengaman: katalog penuh berkala + laporan berkala.
