@@ -53,6 +53,7 @@ const https = require('https');
 // tulis atomik (.part + rename) dan sanitasi nama berlaku di jalur jemput ini
 // juga — bukan aturan kedua yang bisa menyimpang.
 const notaMod = require('./nota-simpan');
+const { pilihPenjemputNota } = require('./nota-penjemput-pilih');
 
 const ROOT = path.join(__dirname, '..');
 const STATUS = process.env.PUSH_STATUS_FILE || path.join(__dirname, 'push-status.json');
@@ -809,7 +810,21 @@ function buatToko(t) {
    * perilaku PC tidak berubah sama sekali.
    */
   const akarNota = String(process.env.PUSH_NOTA_AKAR || '').trim();
-  const notaAktif = !!akarNota;
+  // HANYA SATU AGEN BOLEH MENJEMPUT NOTA.
+  //
+  // Antrean nota itu GLOBAL, bukan per-toko. Kalau ketiga agen (cp/nk/kefa)
+  // menjemput bersamaan, ketiganya mengambil nota yang sama, menulis berkas
+  // yang sama, dan menghapusnya bertiga — terbukti di produksi: satu nota
+  // menghasilkan isi=3 dan kiriman.nota=3. Hasil akhirnya benar, tetapi
+  // pemborosan dan balapan yang tidak perlu.
+  //
+  // Aturannya ada di modul terpisah supaya bisa diuji tanpa menjalankan agen.
+  const pilihan = pilihPenjemputNota({
+    akar: akarNota,
+    toko: t.toko,
+    tokoDitunjuk: process.env.PUSH_NOTA_TOKO,
+  });
+  const notaAktif = pilihan.aktif;
 
   async function jemputNota() {
     if (!notaAktif || notaSedangJalan) return;
@@ -1074,7 +1089,7 @@ function buatToko(t) {
   // mengisinya TIDAK berubah sama sekali.
   const notaAktif = agen.filter((a) => a.notaAktif);
   if (notaAktif.length) {
-    console.log('[PUSH] penjemput nota AKTIF untuk: ' + notaAktif.map((a) => a.keadaan.toko).join(', ')
+    console.log('[PUSH] penjemput nota AKTIF oleh: ' + notaAktif.map((a) => a.keadaan.toko).join(', ')
       + ' (akar: ' + String(process.env.PUSH_NOTA_AKAR).split(';').filter(Boolean).join(' | ') + ')');
     const pewaktuNota = [];
     for (const a of notaAktif) {
@@ -1089,6 +1104,12 @@ function buatToko(t) {
     for (const a of notaAktif) {
       try { await a.jemputNota(); } catch (_) { /* sudah dicatat di dalam */ }
     }
+  } else if (String(process.env.PUSH_NOTA_AKAR || '').trim()) {
+    // Akar diisi tetapi tidak ada agen yang ditunjuk -> kesalahan konfigurasi
+    // yang harus TERLIHAT, bukan diam. Nota akan menumpuk tanpa suara.
+    console.error('[PUSH] PERINGATAN: PUSH_NOTA_AKAR diisi tetapi PUSH_NOTA_TOKO='
+      + String(process.env.PUSH_NOTA_TOKO || 'cp') + ' bukan toko yang aktif ('
+      + agen.map((a) => a.keadaan.toko).join(',') + ') - penjemput nota TIDAK berjalan');
   } else {
     console.log('[PUSH] penjemput nota mati (PUSH_NOTA_AKAR kosong) - antrean nota tidak akan tersapu dari PC ini');
   }
