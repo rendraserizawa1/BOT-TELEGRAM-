@@ -99,8 +99,37 @@ function tulisAtomik(folder, namaFile, buffer, opts) {
 }
 
 /**
+ * Folder yang SUDAH dipastikan ada di proses ini.
+ *
+ * `mkdirSync(folder, {recursive:true})` ke share SMB bukan operasi gratis:
+ * setiap panggilan menanyakan keberadaan tiap komponen path ke server. Nota
+ * berulang ke folder bulan yang sama tidak perlu mengulanginya.
+ *
+ * Aman karena: kegagalan tulis tetap tertangkap `writeFileSync` di
+ * `tulisAtomik`, dan bila folder benar-benar lenyap, panggilan berikutnya
+ * (setelah cache dibuang) akan membuatnya lagi. Cache dibuang saat ada
+ * kegagalan, supaya tidak ada keadaan "sudah ada" yang basi.
+ */
+const folderSiap = new Set();
+
+/**
  * Tulis buffer ke folder. Membuat folder bila belum ada, lalu MEMBUKTIKAN
- * folder benar-benar bisa ditulis (uji tulis + hapus) sebelum menulis nota.
+ * folder benar-benar bisa ditulis sebelum menulis nota.
+ *
+ * DIUKUR 17/11/2026 ke share SMB (latensi per operasi ~50-200 ms):
+ *   tulis 1 byte                    : 46-58 ms
+ *   uji-tulis kecil + unlink        : 194-223 ms   <- dihapus, lihat di bawah
+ *   tulis 145 KB langsung           : 85-300 ms
+ *   tulis 145 KB atomik (.part+rename): 378-550 ms
+ *
+ * Uji-tulis terpisah DIBUANG karena tulis atomik sudah membuktikannya sendiri:
+ * kalau folder tidak bisa ditulis, `writeFileSync` ke `.part` langsung gagal
+ * dan pesannya sama jelasnya. Uji-tulis hanya menambah ~200 ms per nota.
+ *
+ * Tulis atomik TETAP dipakai: kehilangan 100-200 ms jauh lebih murah daripada
+ * nota 0 byte tertinggal di folder share dengan nama yang benar (dulu terjadi
+ * saat sesi SMB putus di tengah tulis).
+ *
  * Tidak pernah melempar: selalu mengembalikan {ok, path} atau {ok:false, error}.
  */
 function simpanKeFolder(folder, namaFile, buffer, opts) {
@@ -113,20 +142,24 @@ function simpanKeFolder(folder, namaFile, buffer, opts) {
     const layak = bisaJadiShare(folder, platform);
     if (!layak.ok) return { ok: false, error: layak.alasan };
 
-    fs.mkdirSync(folder, { recursive: true });
-    if (!fs.existsSync(folder)) {
-      return { ok: false, error: 'folder tidak terbentuk: ' + folder };
+    if (!folderSiap.has(folder)) {
+      fs.mkdirSync(folder, { recursive: true });
+      // `existsSync` dipertahankan: satu panggilan SMB murah (13-16 ms) dan
+      // membedakan "folder tidak terbentuk" dari "tidak bisa menulis" pada
+      // pesan galat, yang penting saat menelusuri share yang putus.
+      if (!fs.existsSync(folder)) {
+        return { ok: false, error: 'folder tidak terbentuk: ' + folder };
+      }
+      folderSiap.add(folder);
     }
 
-    // Nama uji unik per proses: dua proses (PC + Railway) bisa menulis ke
-    // folder bulan yang sama; nama tetap akan saling hapus dan membuat nota
-    // yang sah dialihkan ke fallback.
-    const uji = path.join(folder, '.tulis-uji-' + process.pid + '-' + Date.now());
-    fs.writeFileSync(uji, 'ok');
-    fs.unlinkSync(uji);
-
-    return tulisAtomik(folder, namaFile, buffer, { fs });
+    const hasil = tulisAtomik(folder, namaFile, buffer, { fs });
+    // Gagal tulis bisa berarti folder benar-benar hilang -> buang cache supaya
+    // percobaan berikutnya membuatnya lagi.
+    if (!hasil.ok) folderSiap.delete(folder);
+    return hasil;
   } catch (err) {
+    folderSiap.delete(folder);
     return { ok: false, error: (err && err.message) ? err.message : String(err) };
   }
 }

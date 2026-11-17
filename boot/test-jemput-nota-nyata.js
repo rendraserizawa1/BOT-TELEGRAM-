@@ -78,8 +78,13 @@ if (fs.existsSync(jalurShare)) {
   cek('3: ukuran sama', isiShare.length === byteUji.length,
     isiShare.length + ' vs ' + byteUji.length);
 }
-cek('3: tidak ada sisa .part di share',
-  fs.readdirSync(tujuan).every((f) => !f.endsWith('.part')));
+// Yang diperiksa HANYA sisa .part milik berkas uji ini.
+// Memeriksa SELURUH folder membuat tes rapuh: agen produksi di PC yang sama
+// sedang memindahkan nota sungguhan dan sesaat menulis `.part`-nya sendiri.
+// Kegagalan yang muncul lalu bukan bug kode, melainkan tabrakan waktu.
+cek('3: tidak ada sisa .part untuk berkas uji ini',
+  !fs.existsSync(path.join(tujuan, '.' + namaUji + '.part')),
+  fs.readdirSync(tujuan).filter((f) => f.startsWith('.')).join(','));
 
 console.log('\n=== 4. HAPUS DARI ANTREAN SETELAH TERBUKTI TERSIMPAN ===');
 const rHapus = notaMod.hapusDariAntrean(antre, namaUji);

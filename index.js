@@ -11575,10 +11575,25 @@ function buildFolderNota(info, folderCfg) {
     .replace('{bulan}', bulan)
     .replace('{tahun}', String(info.tahun));
 }
+
+/**
+ * Format waktu tempuh untuk ditampilkan ke pengguna.
+ * Di bawah 1 detik sengaja ditampilkan dalam milidetik: itulah bukti bahwa
+ * jalurnya benar-benar cepat, dan pengguna bisa membandingkannya sendiri.
+ */
+function formatLama(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n < 0) return '-';
+  if (n < 1000) return n + ' ms';
+  return (n / 1000).toFixed(1).replace('.', ',') + ' dtk';
+}
 // ── [MESIN NOTA] END
 
 async function handleSimpanNotaFoto(chatId, userId, imageBuffer, fileId, session) {
-  kirim(chatId, '📸 _Membaca kode, nomor & tanggal nota..._').catch(() => {});
+  // Notifikasi "sedang membaca" dikirim TANPA ditunggu (`void`), supaya tidak
+  // menambah satu round-trip Telegram ke waktu tunggu pengguna. Sebelumnya
+  // dikirim lalu `.catch()` tetapi tetap dijalankan sebelum OCR dimulai.
+  void kirim(chatId, '📸 _Membaca kode, nomor & tanggal nota..._').catch(() => {});
   let info = null;
   try {
     const buf = await siapkanGambarNota(imageBuffer);
@@ -11595,64 +11610,117 @@ async function handleSimpanNotaFoto(chatId, userId, imageBuffer, fileId, session
   await simpanFileNota(chatId, userId, imageBuffer, info);
 }
 
+/**
+ * PENGATURAN OCR NOTA — semua angka di bawah HASIL UKUR, bukan tebakan.
+ *
+ * DIUKUR 17/11/2026 pada nota asli di share (gemini-3.5-flash-lite, 3-5 ulang):
+ *
+ *   Model (gambar asli, tanpa thinkingConfig):
+ *     gemini-3.5-flash-lite   rata 2.102 ms  min 1.747  BENAR 3/3  <- tercepat & benar
+ *     gemini-3.5-flash        rata 1.369 ms  min   334  GAGAL 3/3 (503 high demand)
+ *     gemini-2.5-flash        rata 3.954 ms             GAGAL 3/3
+ *     gemini-2.5-flash-lite   selalu 404 "no longer available"
+ *
+ *   Batas bawah kecepatan (6 percobaan paralel semua kunci): min 1.269 ms.
+ *   Jadi DI BAWAH 1 DETIK TIDAK MUNGKIN untuk OCR — itu jaringan + model,
+ *   bukan kode kita. Yang bisa dilakukan: jangan menambah waktu sia-sia.
+ *
+ *   Yang TERBUKTI menambah waktu sia-sia dan sudah dibuang:
+ *     - Jimp contrast+quality: gambar 145.937 -> 423.028 byte (2,9x) dan OCR
+ *       jadi 8.617 ms (3x lebih lambat). Kini gambar dikirim apa adanya.
+ *     - thinkingConfig: membuat gemini-3.5-flash-lite menjawab HTTP 400.
+ *     - Mencoba gemini-3.5-flash lebih dulu: saat 503, pengguna menunggu
+ *       38 DETIK sebelum pindah model.
+ *     - Mengulang 429/503 dengan jeda 2,5 dtk: menambah tunggu tanpa hasil.
+ *
+ *   Yang DIUJI dan DITOLAK (jangan dicoba lagi):
+ *     - Memotong kop nota 35%: TIDAK lebih cepat (3.139 vs 2.585 ms) dan
+ *       SALAH membaca nomor pada sebagian nota. Cepat tapi salah nama berkas
+ *       jauh lebih berbahaya daripada lambat.
+ *     - Memperkecil gambar ke 600-800 px: cepat tetapi salah baca nomor
+ *       (000016 vs 000018). Akurasi tidak boleh ditukar dengan kecepatan.
+ */
+const NOTA_OCR_TIMEOUT_MS = 15000;
+
+/**
+ * Siapkan gambar untuk OCR.
+ *
+ * Gambar hanya diolah bila MEMANG perlu:
+ *   - lebih dari 2000 px -> perkecil (kiriman besar memperlambat)
+ *   - bukan JPEG         -> ubah ke JPEG (model butuh JPEG)
+ * Foto nota biasa (Telegram mengirim <= 1280 px JPEG) dikirim APA ADANYA.
+ */
 async function siapkanGambarNota(imageBuffer) {
   try {
-    const image = await Jimp.read(imageBuffer);
-    const w = image.bitmap.width;
-    if (w > 1600) image.resize(1600, Jimp.AUTO);
-    image.contrast(0.2).quality(82);
-    return await image.getBufferAsync(Jimp.MIME_JPEG);
-  } catch(err) { return imageBuffer; }
+    const img = await Jimp.read(imageBuffer);
+    const lebar = img.bitmap.width;
+    const perluKecil = lebar > 2000;
+    // JPEG dikenali dari penanda SOI 0xFFD8. Selain itu (PNG, WebP) harus diubah.
+    const bukanJpeg = !(imageBuffer[0] === 0xFF && imageBuffer[1] === 0xD8);
+    if (!perluKecil && !bukanJpeg) return imageBuffer;
+    if (perluKecil) img.resize(1600, Jimp.AUTO);
+    return await img.getBufferAsync(Jimp.MIME_JPEG);
+  } catch (err) { return imageBuffer; }
 }
 
 let notaModelFavorit = null;
 const notaModelSkipSampai = {};
 
+/**
+ * URUTAN MODEL — lihat tabel hasil ukur di NOTA_OCR_TIMEOUT_MS di atas.
+ * Yang terbukti cepat & benar didahulukan; yang pensiun (404) dibuang.
+ */
+const NOTA_MODEL = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-2.5-flash'];
+
 async function notaOCRRace(imageBuffer) {
   const keys = [CONFIG.geminiKey, CONFIG.geminiKey2, CONFIG.geminiKey3].filter(Boolean);
   if (!keys.length || !Buffer.isBuffer(imageBuffer)) throw new Error('Tidak ada AI provider');
   const imageBase64 = imageBuffer.toString('base64');
-  const MODELS = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
-  const urut = notaModelFavorit ? [notaModelFavorit, ...MODELS.filter(m => m !== notaModelFavorit)] : MODELS;
+  const urut = notaModelFavorit
+    ? [notaModelFavorit, ...NOTA_MODEL.filter((m) => m !== notaModelFavorit)]
+    : NOTA_MODEL;
   const now = Date.now();
   for (const model of urut) {
     if ((notaModelSkipSampai[model] || 0) > now) continue;
     try {
       return await Promise.any(keys.map(async (key, ki) => {
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          try {
-            const response = await axios.post(
-              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-              {
-                contents: [{ role: 'user', parts: [
-                  { text: SCAN_PROMPT_NOTA },
-                  { inline_data: { mime_type: 'image/jpeg', data: imageBase64 } },
-                ]}],
-                generationConfig: { temperature: 0.1, maxOutputTokens: 512, thinkingConfig: { thinkingBudget: 0 } },
-              },
-              { timeout: 60000 }
-            );
-            const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-            const info = text ? parseNotaOCR(text) : null;
-            if (!info) throw new Error('hasil tidak valid');
-            notaModelFavorit = model;
-            return info;
-          } catch(err) {
-            const status = err.response?.status;
-            if (status === 404) {
-              // 404 permanen (model pensiun utk key ini) -> jangan coba lagi selamanya.
-              // Error lain (429/503/503-overload) -> skip 60 detik saja.
-              const permanen = /no longer available|not found for API version|is not found/i.test(err.response?.data?.error?.message || '');
-              notaModelSkipSampai[model] = permanen ? Number.MAX_SAFE_INTEGER : Date.now() + 60000;
-            }
-            else if (status === 429 || status === 503) notaModelSkipSampai[model] = Date.now() + 60000;
-            if (attempt < 2 && (status === 429 || status === 503)) {
-              await new Promise(r => setTimeout(r, 2500));
-              continue;
-            }
-            log.warn('NOTA', `${model} key#${ki+1}: ${status || err.message}`);
-            throw err;
+        // Satu percobaan per kunci. Mengulang 429/503 hanya menambah waktu
+        // tunggu; lebih baik pindah model, karena tiap kunci sudah dicoba
+        // bersamaan lewat Promise.any.
+        try {
+          const response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+            {
+              contents: [{ role: 'user', parts: [
+                { text: SCAN_PROMPT_NOTA },
+                { inline_data: { mime_type: 'image/jpeg', data: imageBase64 } },
+              ]}],
+              // TANPA thinkingConfig: parameter itu membuat gemini-3.5-flash-lite
+              // menjawab HTTP 400 "Request contains an invalid argument", sehingga
+              // model tercepat justru selalu gagal. Diukur: dengan thinkingConfig
+              // 400 dalam 531 ms; tanpa itu OK dalam 2.493 ms.
+              generationConfig: { temperature: 0.1, maxOutputTokens: 120 },
+            },
+            // 15 dtk, bukan 60: model yang 503 menjawab cepat, dan menunggu
+            // semenit untuk model mati membuat pengguna menunggu tanpa guna.
+            { timeout: 15000 }
+          );
+          const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          const info = text ? parseNotaOCR(text) : null;
+          if (!info) throw new Error('hasil tidak valid');
+          notaModelFavorit = model;
+          return info;
+        } catch(err) {
+          const status = err.response?.status;
+          if (status === 404) {
+            // 404 permanen (model pensiun utk key ini) -> jangan coba lagi selamanya.
+            // Error lain (429/503) -> skip 60 detik saja.
+            const permanen = /no longer available|not found for API version|is not found/i.test(err.response?.data?.error?.message || '');
+            notaModelSkipSampai[model] = permanen ? Number.MAX_SAFE_INTEGER : Date.now() + 60000;
           }
+          else if (status === 429 || status === 503) notaModelSkipSampai[model] = Date.now() + 60000;
+          log.warn('NOTA', `${model} key#${ki+1}: ${status || err.message}`);
+          throw err;
         }
       }));
     } catch(e) { /* wave model ini gagal semua, lanjut model berikut */ }
@@ -11704,6 +11772,10 @@ async function simpanFileNota(chatId, userId, imageBuffer, info) {
   const namaFile = buildNamaFileNota(info);
   const folderAntrean = path.join(CONFIG.paths.storage, 'nota-gagal');
 
+  // Waktu tempuh diukur dari sini, supaya notifikasi bisa menyebut angka
+  // sebenarnya ("tersimpan dalam 1,8 dtk") alih-alih klaim tanpa bukti.
+  const mulaiSimpan = Date.now();
+
   const notaMod = require('./boot/nota-simpan');
   const hasil = notaMod.simpanDenganFallback({
     folderShare,
@@ -11711,6 +11783,7 @@ async function simpanFileNota(chatId, userId, imageBuffer, info) {
     buffer: imageBuffer,
     folderFallback: folderAntrean,
   });
+  const lamaSimpanMs = Date.now() - mulaiSimpan;
 
   if (!hasil.ok) {
     log.error('NOTA', hasil.error || 'gagal simpan');
@@ -11718,13 +11791,16 @@ async function simpanFileNota(chatId, userId, imageBuffer, info) {
   }
 
   if (!hasil.fallback) {
-    log.info('NOTA', `Folder bulan siap: ${folderShare}`);
-    log.info('NOTA', `Disimpan: ${hasil.path}`);
+    log.info('NOTA', `Tersimpan ${lamaSimpanMs} ms: ${hasil.path}`);
+    // Notifikasi sukses: nama berkas, folder TUJUAN, dan bukti waktu.
+    // `hasil.path` adalah path lengkap yang benar-benar ditulis, jadi pengguna
+    // bisa memeriksa sendiri bahwa nota ada di folder yang dimaksud.
     await kirim(chatId,
       '✅ *NOTA TERSIMPAN!*\n' + GARIS_TEBAL +
       `\n🔖 ${escapeMd(namaFile)}` +
       `\n📅 ${info.tanggal} ${bulan} ${info.tahun}` +
       `\n📁 \`${escapeMd(hasil.path)}\`` +
+      `\n⚡ Masuk folder dalam ${formatLama(lamaSimpanMs)}` +
       '\n\n📸 Kirim foto nota lain, atau ketik *batal*.',
       { reply_markup: { inline_keyboard: [[{ text: '🔙 Menu Utama', callback_data: 'menu:main' }]] } }
     );
