@@ -89,17 +89,85 @@ konfigurasi dan **19** uji agen tiga-toko. Semua lulus.
 3. **Bridge selalu membaca jenis `jual`** — memperbaiki KEFA yang sudah rusak
    sekarang, bukan hanya CP/NK.
 
+## Pembandingan data asli iPos vs yang dipakai bot (2026-11-17)
+
+Dijalankan dengan **agen sungguhan + penerima sungguhan + modul bot sungguhan**
+(`boot/banding-laporan-ipos.js`), memakai data asli hari itu.
+
+```
+pemeriksaan: 819   berbeda: 0   -> SEMUA ANGKA COCOK DENGAN SUMBER iPos
+
+CP    penjualan  nota=18/18  omzet=24.813.000/24.813.000  kasir=3/3   COCOK
+      merek      HOMMY=191.000  KIREI=0                              COCOK
+      marketplace nota=0/0 omzet=0/0 nomor=12/12                      COCOK
+      katalog    11037/11037 item, sampel 250                         COCOK
+NK    penjualan  nota=40/40  omzet=4.954.500/4.954.500    kasir=3/3   COCOK
+      merek      HOMMY=362.000  KIREI=0                              COCOK
+      marketplace nota=0/0 omzet=0/0 nomor=0/0                        COCOK
+      katalog    5250/5250 item, sampel 250                           COCOK
+KEFA  penjualan  nota=8/8    omzet=1.078.000/1.078.000    kasir=2/2   COCOK
+      merek      HOMMY=10.000   KIREI=0                              COCOK
+      marketplace nota=0/0 omzet=0/0 nomor=0/0                        COCOK
+      katalog    4708/4708 item, sampel 250                           COCOK
+```
+
+Yang dibandingkan per toko: seluruh `total` laporan penjualan (nota, item, omzet,
+tunai, debit, kredit, jumlah kasir), rincian **per kasir** (userid/nota/item/omzet),
+`perTipe`, `dari`/`sampai`; seluruh `data` per merek + `total` + `merek` +
+`totalPelanggan` + `notaRentang` + `jangkauan`; seluruh `central` marketplace +
+`total` + `nomor` + `jangkauan`; dan jumlah katalog + sampel 250 item
+(stok/harga/harga2/hpp/nama/satuan).
+
+### Kesetiaan angka & jam mesin (`boot/banding-update-hidup.js`)
+
+```
+CP    jam SEJAJAR (+0)  sumber tidak bergerak  agen=1794877695841  bot SAMA PERSIS
+NK    jam SEJAJAR (+0)  sumber bergerak        agen di dalam rentang  bot SAMA PERSIS
+KEFA  jam SEJAJAR (+0)  sumber bergerak        agen di dalam rentang  bot SAMA PERSIS
+```
+
+Field `update` sengaja **tidak** dibandingkan sama-persis: nilainya naik terus
+saat toko melayani penjualan, jadi membandingkannya ketat selalu memberi alarm
+palsu. Yang dibuktikan: (a) bot memakai angka yang **sama persis** dengan yang
+dikirim agen, dan (b) angka agen sah dari sumber.
+
+### Catatan bentuk data yang berbeda antar build proxy
+
+| Proxy | `lastSync` | Kode error DB |
+|---|---|---|
+| KEFA | string ISO (`2026-11-17T01:58:07.729Z`) | — |
+| CP | angka epoch ms | `ENETUNREACH 192.168.77.250:5444` (hanya jalur laporan) |
+| NK | angka epoch ms | — |
+
+Bot **tidak** mem-parse `lastSync` dari proxy (ipos-bridge memakai `Date.now()`
+internal), jadi perbedaan bentuk ini tidak berdampak produksi — hanya perlu
+ditangani di alat ukur.
+
+`nomor` pada laporan marketplace = jumlah **HARI** di bulan berjalan yang punya
+nota marketplace (`hariJual.size`), **bukan** jumlah nota hari itu. Karena itu
+`nomor=12` dengan `central.nota=0` adalah wajar, bukan bug.
+
 ## Yang TIDAK bisa diperbaiki dari sini
 
 Laporan jual CP **beku di sumbernya**: `err: connect ENETUNREACH
 192.168.77.250:5444`. Proxy CP tidak bisa mencapai DB iPos di mesinnya sendiri.
-Bot kini menandainya jujur (`laporanBasi=true`, `laporanUmur≈2650 dtk`) alih-alih
+Bot kini menandainya jujur (`laporanBasi=true`, `laporanUmur≈3000 dtk`) alih-alih
 menampilkan angka lama seolah segar.
 
-Perbaikan butuh akses ke mesin admin Dimas (`100.125.99.99`, port 22 & 3389
-terbuka). Di PC ini **tidak ada** kredensial tersimpan: `credentials rdp.xlsx`
-tidak ditemukan, tidak ada kredensial RDP di `cmdkey`, dan SSH menolak
-publickey. Menebak kredensial dilarang.
+**Bukti penting bahwa DB-nya SEHAT** — hanya rute di mesin CP yang rusak:
+
+```
+dari PC ini:  192.168.77.250:5444  TERBUKA (DB hidup, lewat subnet router Tailscale)
+dari CP  :    ENETUNREACH           (proxy CP tidak bisa menjangkau DB-nya sendiri)
+```
+
+Jadi yang perlu diperbaiki di mesin admin Dimas hanyalah rute/`PGHOST` proxy CP,
+bukan database-nya. Katalog CP tetap segar karena memakai jalur lain.
+
+Perbaikan butuh akses ke mesin itu (`100.125.99.99`, port 22 & 3389 terbuka).
+Di PC ini **tidak ada** kredensial tersimpan: `credentials rdp.xlsx` tidak
+ditemukan, tidak ada kredensial RDP di `cmdkey`, dan SSH menolak publickey.
+Menebak kredensial dilarang.
 
 ## Rollback
 
