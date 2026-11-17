@@ -1096,7 +1096,11 @@ function buatToko(t) {
       const t = setInterval(async () => {
         try { await a.jemputNota(); }
         catch (e) { catatGagal(a.keadaan.toko, 'nota', e.message); }
-      }, Number(process.env.PUSH_JEDA_NOTA_MS || 5000));
+      // 2 detik, bukan 5: inilah jeda yang paling terasa oleh pengguna. Setelah
+  // nota masuk antrean, PC baru mulai menjemputnya setelah jeda ini. Nota
+  // yang menunggu 5 detik terasa seperti "tidak masuk-masuk", padahal
+  // penulisan ke share-nya sendiri hanya ~300 ms.
+  }, Number(process.env.PUSH_JEDA_NOTA_MS || 2000));
       if (t.unref) t.unref();
       pewaktuNota.push(t);
     }

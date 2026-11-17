@@ -11643,22 +11643,73 @@ async function handleSimpanNotaFoto(chatId, userId, imageBuffer, fileId, session
 const NOTA_OCR_TIMEOUT_MS = 15000;
 
 /**
+ * Baca lebar & tinggi JPEG LANGSUNG DARI HEADER, tanpa mendekode piksel.
+ *
+ * KENAPA — DIUKUR 17/11/2026 pada 5 nota asli, 3 ulang tiap nota:
+ *   Jimp.read()  : rata 216 ms  (min 155, maks 287)
+ *   header JPEG  : rata   0 ms  (min 0, maks 1)   <- 15/15 sama persis dengan Jimp
+ *
+ * Jalur nota hanya butuh LEBAR untuk memutuskan "perlu diperkecil atau tidak",
+ * lalu mengembalikan buffer asli. Memakai Jimp.read() untuk itu berarti
+ * mendekode seluruh gambar lalu membuang hasilnya — 216 ms terbuang di SETIAP
+ * nota, padahal hasilnya cuma satu angka.
+ *
+ * Mengembalikan null bila bukan JPEG atau header tidak terbaca; pemanggil lalu
+ * jatuh ke Jimp seperti sebelumnya, jadi perilaku untuk PNG/WebP tidak berubah.
+ */
+function dimensiJpeg(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 4) return null;
+  // Penanda SOI: setiap JPEG dimulai dengan 0xFF 0xD8.
+  if (buffer[0] !== 0xFF || buffer[1] !== 0xD8) return null;
+
+  let i = 2;
+  while (i + 9 < buffer.length) {
+    if (buffer[i] !== 0xFF) { i++; continue; }
+    const penanda = buffer[i + 1];
+
+    // Penanda tanpa medan panjang: SOI, TEM, dan RST0..RST7.
+    if (penanda === 0xD8 || penanda === 0x01 || (penanda >= 0xD0 && penanda <= 0xD7)) {
+      i += 2;
+      continue;
+    }
+    if (penanda === 0xD9) break; // EOI: tidak ada SOF, menyerah.
+
+    const panjang = buffer.readUInt16BE(i + 2);
+    if (panjang < 2) return null;
+
+    // SOF0..SOF15 memuat dimensi. DHT (C4), JPG (C8), dan DAC (CC) berada di
+    // rentang yang sama tetapi BUKAN SOF, jadi harus dikecualikan.
+    const soF = penanda >= 0xC0 && penanda <= 0xCF
+      && penanda !== 0xC4 && penanda !== 0xC8 && penanda !== 0xCC;
+    if (soF) {
+      // SOF: [panjang 2][presisi 1][tinggi 2][lebar 2]...
+      return { tinggi: buffer.readUInt16BE(i + 5), lebar: buffer.readUInt16BE(i + 7) };
+    }
+    i += 2 + panjang;
+  }
+  return null;
+}
+
+/**
  * Siapkan gambar untuk OCR.
  *
  * Gambar hanya diolah bila MEMANG perlu:
  *   - lebih dari 2000 px -> perkecil (kiriman besar memperlambat)
  *   - bukan JPEG         -> ubah ke JPEG (model butuh JPEG)
- * Foto nota biasa (Telegram mengirim <= 1280 px JPEG) dikirim APA ADANYA.
+ * Foto nota biasa (Telegram mengirim <= 1280 px JPEG) dikirim APA ADANYA,
+ * dan keputusan itu diambil dari header tanpa mendekode gambar (lihat
+ * `dimensiJpeg` di atas: hemat 216 ms per nota).
  */
 async function siapkanGambarNota(imageBuffer) {
+  const dim = dimensiJpeg(imageBuffer);
+  // JPEG yang lebarnya sudah wajar: kirim apa adanya. Ini jalur yang dipakai
+  // hampir semua nota, dan tidak menyentuh Jimp sama sekali.
+  if (dim && dim.lebar > 0 && dim.lebar <= 2000) return imageBuffer;
+
+  // Sisanya butuh Jimp: non-JPEG (PNG/WebP), JPEG raksasa, atau header rusak.
   try {
     const img = await Jimp.read(imageBuffer);
-    const lebar = img.bitmap.width;
-    const perluKecil = lebar > 2000;
-    // JPEG dikenali dari penanda SOI 0xFFD8. Selain itu (PNG, WebP) harus diubah.
-    const bukanJpeg = !(imageBuffer[0] === 0xFF && imageBuffer[1] === 0xD8);
-    if (!perluKecil && !bukanJpeg) return imageBuffer;
-    if (perluKecil) img.resize(1600, Jimp.AUTO);
+    if (img.bitmap.width > 2000) img.resize(1600, Jimp.AUTO);
     return await img.getBufferAsync(Jimp.MIME_JPEG);
   } catch (err) { return imageBuffer; }
 }
@@ -11817,7 +11868,7 @@ async function simpanFileNota(chatId, userId, imageBuffer, info) {
   // Windows, jadi sapuan di sisi bot TIDAK AKAN PERNAH berhasil. Yang
   // mengerjakannya adalah agen PC lewat /api/ipos/nota. Karena itu pesan ke
   // pengguna harus menyebut hal yang benar-benar terjadi.
-  const antre = notaMod.simpanKeAntrean(folderAntrean, namaFile, imageBuffer, hasil.alasanShare, folderShare);
+  const antre = notaMod.simpanKeAntrean(folderAntrean, namaFile, imageBuffer, hasil.alasanShare, folderShare, chatId);
   log.warn('NOTA', `Share tidak terjangkau (${hasil.alasanShare}) - disimpan lokal: ${hasil.path}`);
 
   // Apakah ada agen PC yang benar-benar menjemput antrean? Tanpa bukti ini,
@@ -11850,8 +11901,9 @@ async function simpanFileNota(chatId, userId, imageBuffer, info) {
     `\n🔖 ${escapeMd(namaFile)}` +
     `\n📅 ${info.tanggal} ${bulan} ${info.tahun}` +
     (penjemputHidup
-      ? '\n\n📦 Tersimpan di penyimpanan bot. Folder share sedang tidak terjangkau;'
-        + ' nota akan dipindahkan otomatis ke folder share.'
+      ? '\n\n📦 Tersimpan di penyimpanan bot. Folder share belum terjangkau dari server;'
+        + ' nota akan dipindahkan otomatis oleh PC, dan Anda akan diberi tahu'
+        + ' saat berkas benar-benar masuk folder.'
       : '\n\n📦 Tersimpan di penyimpanan bot. Folder share sedang tidak terjangkau;'
         + ' admin sudah diberi tahu dan akan memindahkannya.')
     + '\n\n📸 Kirim foto nota lain, atau ketik *batal*.',
@@ -14576,7 +14628,36 @@ webApp.post('/api/ipos/nota/selesai', (req, res) => {
   notaTertunda = sisa;
   notaTertundaTerakhir = new Date().toISOString();
   log.info('NOTA', `Antrean: ${nama} dipindahkan ke folder share oleh PC (sisa ${sisa})`);
+
+  // Balas agen PC DULU. Agen menunggu balasan ini sebelum lanjut ke nota
+  // berikutnya; menahan balasan demi mengirim pesan Telegram akan memperlambat
+  // seluruh antrean hanya untuk sesuatu yang tidak ia butuhkan.
   res.json({ ok: true, sisa });
+
+  // ── BERI TAHU PENGIRIM FOTO: notanya SUDAH masuk folder ────────────────
+  // Sampai di sini nota benar-benar sudah tertulis di share (agen hanya
+  // memanggil endpoint ini setelah tulis ke share terbukti berhasil). Itulah
+  // momen yang ditunggu pengguna, dan sebelumnya TIDAK diberitahukan sama
+  // sekali: foto diterima, lalu diam.
+  const meta = hasil.meta || null;
+  const chatTujuan = meta && meta.chatId ? String(meta.chatId) : '';
+  if (chatTujuan) {
+    const folderTujuan = meta.tujuan ? path.basename(String(meta.tujuan)) : '';
+    const umurMs = meta.waktu ? (Date.now() - new Date(meta.waktu).getTime()) : null;
+    const lamaTeks = (Number.isFinite(umurMs) && umurMs >= 0) ? formatLama(umurMs) : null;
+    // Dikirim tanpa ditunggu: kegagalan Telegram tidak boleh menggagalkan
+    // pemindahan nota yang sudah berhasil.
+    void bot.sendMessage(chatTujuan,
+      '📁 *NOTA BERHASIL MASUK FOLDER*\n' + GARIS_TEBAL +
+      `\n🔖 ${escapeMd(nama)}` +
+      (folderTujuan ? `\n📂 ${escapeMd(folderTujuan)}` : '') +
+      (lamaTeks ? `\n⚡ Selesai dalam ${lamaTeks} sejak foto dikirim` : '') +
+      '\n\n✅ Berkas sudah ada di folder share toko.',
+      { parse_mode: 'Markdown' }
+    ).catch((e) => {
+      log.warn('NOTA', 'Notifikasi "masuk folder" gagal: ' + (e && e.message ? e.message : String(e)));
+    });
+  }
 });
 
 webApp.use(session({

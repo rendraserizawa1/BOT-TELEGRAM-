@@ -29,6 +29,9 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
 
 // ══ A. Jimp tidak boleh dipakai untuk membesarkan gambar ═══════════════
 // Diambil langsung dari sumber karena fungsinya tidak diekspor dari index.js.
+// `dimensiJpeg` disertakan karena `siapkanGambarNota` memanggilnya; tanpa itu
+// eval di bawah gagal dengan "dimensiJpeg is not defined".
+const potonganDim = src.slice(src.indexOf('function dimensiJpeg'), src.indexOf('async function siapkanGambarNota'));
 const potonganSiapkan = src.slice(src.indexOf('async function siapkanGambarNota'));
 const badanSiapkan = potonganSiapkan.slice(0, potonganSiapkan.indexOf('\nlet notaModelFavorit'));
 
@@ -39,7 +42,13 @@ cek('A: siapkanGambarNota tidak memaksa quality()',
 cek('A: ada jalan pintas mengembalikan buffer asli',
   /return imageBuffer/.test(badanSiapkan), badanSiapkan.slice(0, 200));
 cek('A: hanya memperkecil bila memang besar',
-  /perluKecil/.test(badanSiapkan) && /2000|1600/.test(badanSiapkan));
+  /2000/.test(badanSiapkan) && /1600/.test(badanSiapkan));
+cek('A: lebar dibaca dari header, bukan dengan mendekode gambar',
+  /dimensiJpeg\(imageBuffer\)/.test(badanSiapkan),
+  'Jimp.read() hanya untuk membaca lebar memakan 216 ms per nota');
+cek('A: jalan pintas "apa adanya" terjadi SEBELUM Jimp.read',
+  badanSiapkan.indexOf('return imageBuffer') < badanSiapkan.indexOf('Jimp.read'),
+  'kalau Jimp.read lebih dulu, 216 ms sudah terbuang sebelum jalan pintas');
 
 // Bukti perilakunya pada gambar nyata: JPEG 720px harus kembali APA ADANYA.
 (async () => {
@@ -56,7 +65,13 @@ cek('A: hanya memperkecil bila memang besar',
 
   if (contoh) {
     // Jalankan fungsi yang sama persis, disalin dari index.js.
-    const siapkanGambarNota = eval('(' + badanSiapkan.replace(/^async function siapkanGambarNota/, 'async function') + ')');
+    // Dua deklarasi fungsi digabung: `dimensiJpeg` dipanggil oleh
+    // `siapkanGambarNota`, jadi keduanya harus ada dalam lingkup yang sama.
+    // `Jimp` diberikan sebagai parameter karena new Function tidak menangkap
+    // variabel modul.
+    const siapkanGambarNota = new Function('Jimp',
+      potonganDim + '\n' + badanSiapkan + '\nreturn siapkanGambarNota;'
+    )(Jimp);
     const hasil = await siapkanGambarNota(contoh);
     cek('A: JPEG 720px dikirim APA ADANYA (tidak dibesar-besarkan)',
       hasil.length === contoh.length, 'asli ' + contoh.length + ' vs hasil ' + hasil.length);

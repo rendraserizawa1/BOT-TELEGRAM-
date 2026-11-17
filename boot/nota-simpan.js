@@ -210,8 +210,13 @@ function namaMeta(namaNota) {
  * Menulis nota + catatan samping berisi alasan, waktu, dan FOLDER TUJUAN,
  * supaya sapuan berikutnya tahu ke mana harus mengirim tanpa menebak.
  * Mengembalikan { ok, path, metaPath } atau { ok:false, error }.
+ *
+ * `chatId` ikut dicatat supaya saat agen PC berhasil memindahkan nota ke
+ * folder share, pengguna yang mengirim foto bisa DIBERI TAHU. Tanpa itu,
+ * nota mendarat tanpa sepatah kata pun — dan pengguna tidak punya cara
+ * mengetahui apakah fotonya sudah benar-benar masuk folder atau belum.
  */
-function simpanKeAntrean(folderAntrean, namaFile, buffer, alasan, tujuan) {
+function simpanKeAntrean(folderAntrean, namaFile, buffer, alasan, tujuan, chatId) {
   try {
     if (!Buffer.isBuffer(buffer)) return { ok: false, error: 'buffer nota tidak valid' };
     const tulis = simpanKeFolder(folderAntrean, namaFile, buffer);
@@ -225,6 +230,9 @@ function simpanKeAntrean(folderAntrean, namaFile, buffer, alasan, tujuan) {
       tujuan: tujuan ? String(tujuan) : null,
       waktu: new Date().toISOString(),
       pid: process.pid,
+      // Disimpan sebagai string: chatId Telegram bisa melebihi Number.MAX_SAFE_INTEGER
+      // untuk sebagian akun, dan pembulatan akan mengirim notifikasi ke orang lain.
+      chatId: chatId == null || chatId === '' ? null : String(chatId),
     };
     fsAsli.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
     return { ok: true, path: tulis.path, metaPath };
@@ -301,6 +309,9 @@ function hapusDariAntrean(folderAntrean, nama) {
   if (!asli || namaAman(asli) !== asli) {
     return { ok: false, error: 'nama tidak sah: ' + asli };
   }
+  // Catatan samping dibaca SEBELUM dihapus: isinya (chatId, tujuan) dibutuhkan
+  // pemanggil untuk memberi tahu pengguna bahwa notanya sudah masuk folder.
+  const meta = bacaMeta(path.join(folderAntrean, namaMeta(asli)));
   try {
     fsAsli.unlinkSync(path.join(folderAntrean, asli));
   } catch (err) {
@@ -308,7 +319,7 @@ function hapusDariAntrean(folderAntrean, nama) {
   }
   // Catatan samping boleh sudah tidak ada; itu bukan kegagalan.
   try { fsAsli.unlinkSync(path.join(folderAntrean, namaMeta(asli))); } catch (_) { /* lanjut */ }
-  return { ok: true };
+  return { ok: true, meta: meta || null };
 }
 
 /**
