@@ -397,6 +397,7 @@ function buatToko(t) {
   let merekSedangJalan = false;
   let marketplaceTerakhir = 0;
   let marketplaceSedangJalan = false;
+  let permintaanSedangJalan = false;
 
   /**
    * PETA STOK TERAKHIR — dipakai mendeteksi perubahan stok SENDIRI.
@@ -556,6 +557,74 @@ function buatToko(t) {
   const kirimMarketplace = (paksa) => kirimLaporanTambahan('jual-marketplace', '/api/jual-marketplace', paksa);
 
   /**
+   * PENUHI PESANAN LAPORAN TANGGAL LAMPAU.
+   *
+   * Bot di Railway tidak bisa menjangkau iPos (CGNAT), jadi saat pengguna minta
+   * laporan tanggal lampau — mis. marketplace CP 14/11/2026 — server hanya bisa
+   * mencatat pesanan. Fungsi ini menjemput pesanan itu, mengambil laporannya
+   * dari proxy di toko, lalu mengirimnya. Hasilnya disimpan server per rentang,
+   * sehingga pertanyaan berikutnya untuk tanggal yang sama tidak perlu ke PC.
+   *
+   * PENTING: yang dikirim adalah respons APA ADANYA. Server memakai `dari`/
+   * `sampai` dari isi laporan itu untuk menyimpannya, jadi rentang yang
+   * tersimpan selalu persis yang diminta — tidak ada pencampuran tanggal.
+   */
+  const jalurLaporan = {
+    jual: '/api/jual',
+    'jual-merek': '/api/jual-merek',
+    'jual-marketplace': '/api/jual-marketplace',
+  };
+
+  async function penuhiPermintaan() {
+    if (permintaanSedangJalan) return;
+    if (!PUSH_URL) return;
+    permintaanSedangJalan = true;
+    try {
+      const r = await minta(
+        PUSH_URL + '/api/ipos/perlu?toko=' + encodeURIComponent(t.toko),
+        { timeout: 20000, headers: { 'x-push-token': PUSH_TOKEN } },
+      );
+      if (r.status !== 200) {
+        // 401/503 = salah konfigurasi; jangan mengulang tiap detik.
+        if (r.status === 401 || r.status === 503) {
+          keadaan.err = 'perlu: HTTP ' + r.status;
+          return;
+        }
+        return;
+      }
+      let j = null;
+      try { j = JSON.parse(r.body); } catch (_) { return; }
+      const daftar = Array.isArray(j && j.permintaan) ? j.permintaan : [];
+      if (!daftar.length) return;
+      for (const p of daftar) {
+        const jalur = jalurLaporan[p.jenis];
+        if (!jalur) continue;
+        const dari = String(p.dari || '').slice(0, 10);
+        const sampai = String(p.sampai || dari).slice(0, 10);
+        if (!dari) continue;
+        try {
+          const lap = await ambilJson(
+            t.url + jalur + '?dari=' + encodeURIComponent(dari)
+              + '&sampai=' + encodeURIComponent(sampai)
+              + '&key=' + encodeURIComponent(t.key),
+            120000,
+          );
+          if (!lap || typeof lap !== 'object') throw new Error('laporan kosong');
+          await dorong(t.toko, p.jenis, lap);
+          console.log('[PUSH] ' + t.toko + ': pesanan ' + p.jenis + ' ' + dari + ' s/d ' + sampai + ' dipenuhi');
+        } catch (e) {
+          // Pesanan dibiarkan; server akan membuangnya sendiri setelah 10 menit.
+          catatGagal(t.toko, 'permintaan', p.jenis + ' ' + dari + ': ' + String(e.message).slice(0, 90));
+        }
+      }
+    } catch (e) {
+      catatGagal(t.toko, 'permintaan', String(e.message).slice(0, 90));
+    } finally {
+      permintaanSedangJalan = false;
+    }
+  }
+
+  /**
    * Langganan SSE proxy lokal.
    * Ini sumber PERUBAHAN: setiap frame `items` = delta yang langsung didorong,
    * sehingga Railway tahu perubahan dalam hitungan detik, bukan menit.
@@ -635,7 +704,7 @@ function buatToko(t) {
   }
 
   return {
-    keadaan, kirimPenuh, kirimLaporan, kirimSelisihStok, kirimMerek, kirimMarketplace, mulaiSSE, profil,
+    keadaan, kirimPenuh, kirimLaporan, kirimSelisihStok, kirimMerek, kirimMarketplace, mulaiSSE, profil, penuhiPermintaan,
     get penuhTerakhir() { return penuhTerakhir; },
   };
 }
@@ -782,6 +851,23 @@ function buatToko(t) {
     }, a.profil.jedaStok);
     if (t.unref) t.unref();
     pewaktuStok.push(t);
+  }
+
+  // ── PENJEMPUT PESANAN LAPORAN TANGGAL LAMPAU ────────────────────────
+  //
+  // Server (Railway) tidak bisa menjangkau iPos di toko, jadi saat pengguna
+  // minta laporan tanggal lampau server hanya bisa mencatat pesanan. Loop ini
+  // menjemput pesanan itu tiap beberapa detik. Murah: satu GET kecil per toko,
+  // dan biasanya tidak ada isinya. Jeda dibuat pendek supaya pengguna tidak
+  // menunggu lama, tetapi tidak terlalu rapat supaya tidak membebani server.
+  const pewaktuPermintaan = [];
+  for (const a of agen) {
+    const t = setInterval(async () => {
+      try { await a.penuhiPermintaan(); }
+      catch (e) { catatGagal(a.keadaan.toko, 'permintaan', e.message); }
+    }, Number(process.env.PUSH_JEDA_PERMINTAAN_MS || 2000));
+    if (t.unref) t.unref();
+    pewaktuPermintaan.push(t);
   }
 
   // Jaring pengaman: katalog penuh berkala + laporan berkala.

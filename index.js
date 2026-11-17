@@ -1655,6 +1655,14 @@ const pesanLaporanGagal = (e, toko) => {
   if (/HTTP 404/.test(msg) && (toko === 'nk' || toko === 'kefa')) {
     return `⚠️ Fitur ini belum tersedia di API iPos ${toko === 'nk' ? 'Nasional Kitchen' : 'KEFA'} (endpoint belum ada di server ${toko === 'nk' ? 'NK' : 'KEFA'}).`;
   }
+  // Laporan tanggal lampau diambil dari PC, bukan dari server Railway. Pesannya
+  // harus membedakan "sedang diambil" dari "tidak ada penjualan" — kalau tidak,
+  // pengguna mengira tokonya tidak menjual apa pun padahal datanya sedang jalan.
+  if (e && e.kode === 'MENUNGGU_DORONG') {
+    const tgl = (ymd) => { const [y, m, d] = String(ymd || '').split('-'); return d ? `${d}/${m}/${y}` : String(ymd || '-'); };
+    const rentang = e.dari === e.sampai ? tgl(e.dari) : `${tgl(e.dari)} s/d ${tgl(e.sampai)}`;
+    return `⏳ Laporan ${escapeMd(rentang)} sedang diambil dari iPos di komputer toko.\nData ini BUKAN kosong — mohon tunggu sebentar lalu buka lagi.`;
+  }
   return `⚠️ iPos API tidak merespons: ${escapeMd(msg)}`;
 };
 
@@ -14233,6 +14241,35 @@ webApp.post('/api/ipos/push', (req, res) => {
     }
   }
   res.status(hasil.status).json(hasil.body);
+});
+
+/**
+ * PC MENJEMPUT PESANAN LAPORAN.
+ *
+ * KENAPA ARAHNYA "JEMPUT", BUKAN SERVER MEMINTA
+ * ---------------------------------------------
+ * Railway tidak bisa menjangkau iPos di toko (CGNAT), dan PC tidak bisa
+ * dijangkau dari luar. Jadi server tidak mungkin "memerintah" PC. Yang bisa
+ * dilakukan: server menaruh pesanan, dan PC — yang punya jalur ke iPos —
+ * menjemputnya sendiri secara berkala. Tidak ada koneksi masuk ke PC, jadi
+ * tidak ada yang perlu dijaga tetap hidup.
+ *
+ * Dipakai untuk laporan TANGGAL LAMPAU (mis. marketplace CP 14/11/2026).
+ * Laporan hari ini tetap lewat jalur dorongan biasa.
+ */
+webApp.get('/api/ipos/perlu', (req, res) => {
+  const tokenDikirim = req.get('x-push-token') || req.query.token;
+  if (!pushGudang.aktif()) {
+    return res.status(503).json({ ok: false, err: 'PUSH_TOKEN belum diisi di server' });
+  }
+  const tokenSah = String(process.env.PUSH_TOKEN || '');
+  if (!tokenSah || String(tokenDikirim || '') !== tokenSah) {
+    return res.status(401).json({ ok: false, err: 'token salah' });
+  }
+  const toko = String(req.query.toko || '').toLowerCase();
+  if (!toko) return res.status(400).json({ ok: false, err: 'toko wajib diisi' });
+  const daftar = pushGudang.jemputPermintaan(toko);
+  res.json({ ok: true, toko, permintaan: daftar });
 });
 
 webApp.use(session({

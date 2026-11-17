@@ -140,9 +140,16 @@ const kirim = (port, isi, token) => new Promise((resolve, reject) => {
 
   // ── 5. Laporan penjualan dari dorongan ───────────────────────────────
   await ujiAsync('laporan penjualan dipakai dari dorongan', async () => {
+    // `dari`/`sampai` WAJIB ada: bentuk asli respons proxy selalu menyertakannya,
+    // dan bridge memakainya untuk memastikan laporan yang disajikan memang
+    // untuk tanggal yang diminta (bukan angka tanggal lain).
     const r = await kirim(port, {
       toko: 'kefa', jenis: 'jual',
-      data: { siap: true, update: Math.floor(Date.now() / 1000), kasir: [{ nama: 'A', omzet: 1000 }], total: 1000 },
+      data: {
+        siap: true, dari: '2026-11-15', sampai: '2026-11-15',
+        update: Math.floor(Date.now() / 1000),
+        kasir: [{ nama: 'A', omzet: 1000 }], total: 1000,
+      },
     }, 'token-uji-integrasi');
     assert.strictEqual(r.status, 200);
     const lap = await kefa.ambilLaporanKasir('2026-11-15');

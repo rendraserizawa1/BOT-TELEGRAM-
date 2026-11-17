@@ -45,7 +45,7 @@ const TOKO_SAH = new Set(['cp', 'nk', 'kefa']);
  */
 const JENIS_SAH = new Set(['items', 'items-ubah', 'jual', 'jual-merek', 'jual-marketplace', 'kasir', 'denyut']);
 
-function buatPenerima({ token, batasSegarDetik, batasSegarLaporanDetik, batasSegarItemsDetik } = {}) {
+function buatPenerima({ token, batasSegarDetik, batasSegarLaporanDetik, batasSegarItemsDetik, batasRentangDetik } = {}) {
   const TOKEN = String(token || '');
   // Batas "segar" LAPORAN. Laporan dikirim ulang tiap ~60 dtk, jadi 180 dtk
   // berarti tiga kali kiriman terlewat — baru pantas dicurigai.
@@ -68,6 +68,125 @@ function buatPenerima({ token, batasSegarDetik, batasSegarLaporanDetik, batasSeg
 
   // toko -> jenis -> { data, jumlah, diterimaPada, jumlahPush }
   const simpanan = new Map();
+
+  /**
+   * GUDANG RENTANG: toko -> jenis -> kunci("dari_sampai") -> { data, diterimaPada }.
+   *
+   * KENAPA TERPISAH DARI `simpanan`
+   * -------------------------------
+   * `simpanan` hanya menyimpan SATU laporan terakhir per jenis, yaitu laporan
+   * HARI INI yang dipakai jalur cepat. Laporan untuk tanggal lain (mis.
+   * marketplace 14/11) tidak boleh menimpa itu, dan harus bisa ditanyakan
+   * berulang kali tanpa meminta ulang ke PC.
+   *
+   * Kenapa perlu sama sekali: Railway tidak bisa menjangkau iPos di toko
+   * (CGNAT), jadi angka tanggal lampau hanya bisa datang dari PC. Tanpa
+   * gudang ini, setiap pertanyaan tanggal lain berakhir "belum ada laporan".
+   */
+  const simpananRentang = new Map();
+  // Batas umur laporan rentang. Lebih longgar dari laporan harian karena
+  // laporan tanggal LAMPAU tidak berubah lagi — ia hanya perlu kadaluarsa
+  // supaya memori tidak tumbuh selamanya, bukan supaya tetap segar.
+  const BATAS_RENTANG = Number(batasRentangDetik || 6 * 60 * 60);
+
+  /**
+   * PERMINTAAN YANG MENUNGGU DIJEMPUT PC: toko -> jenis -> kunci -> { dari, sampai, dimintaPada }.
+   *
+   * Arah data tetap PC -> Railway. Server hanya menaruh "pesanan", dan PC
+   * (yang memang punya jalur ke iPos) menjemputnya lalu mengirim hasilnya.
+   * Tidak ada koneksi masuk ke PC, jadi tidak ada yang perlu dijaga hidup.
+   */
+  const permintaan = new Map();
+  // Permintaan lebih tua dari ini dibuang: kalau PC mati, jangan menumpuk
+  // pesanan selamanya dan jangan mengirim data basi berjam-jam kemudian.
+  const UMUR_PERMINTAAN = 10 * 60 * 1000;
+
+  const kunciRentang = (dari, sampai) => String(dari || '').slice(0, 10) + '_' + String(sampai || dari || '').slice(0, 10);
+
+  function perTokoRentang(toko) {
+    if (!simpananRentang.has(toko)) simpananRentang.set(toko, new Map());
+    return simpananRentang.get(toko);
+  }
+
+  function simpanRentang(toko, jenis, dari, sampai, data) {
+    const m = perTokoRentang(toko);
+    if (!m.has(jenis)) m.set(jenis, new Map());
+    const perJenis = m.get(jenis);
+    perJenis.set(kunciRentang(dari, sampai), { data, diterimaPada: Date.now() });
+    // Batasi jumlah rentang per jenis supaya memori tidak tumbuh tanpa batas
+    // (tiap entri bisa ratusan KB untuk rentang panjang).
+    if (perJenis.size > 60) perJenis.delete(perJenis.keys().next().value);
+  }
+
+  /**
+   * Ambil laporan untuk rentang PERSIS.
+   * @returns {{data:object, diterimaPada:number}|null} null bila belum ada atau
+   *   sudah lewat batas umur. Waktu terima ikut dikembalikan karena pemanggil
+   *   perlu membedakan laporan yang rentangnya masih berubah (mencakup hari ini
+   *   -> wajib segar) dari yang sudah lewat (boleh dipakai ulang).
+   */
+  function ambilRentang(toko, jenis, dari, sampai) {
+    const m = simpananRentang.get(toko);
+    if (!m) return null;
+    const perJenis = m.get(jenis);
+    if (!perJenis) return null;
+    const s = perJenis.get(kunciRentang(dari, sampai));
+    if (!s) return null;
+    const umurDetik = (Date.now() - s.diterimaPada) / 1000;
+    if (umurDetik > BATAS_RENTANG) return null;
+    return { data: s.data, diterimaPada: s.diterimaPada };
+  }
+
+  /**
+   * Catat bahwa ada yang MEMBUTUHKAN rentang ini, supaya PC menjemputnya.
+   * Aman dipanggil berkali-kali: satu rentang hanya jadi satu pesanan.
+   */
+  function mintaRentang(toko, jenis, dari, sampai) {
+    if (!TOKO_SAH.has(String(toko || '').toLowerCase())) return;
+    if (!JENIS_SAH.has(String(jenis || '').toLowerCase())) return;
+    if (!simpanan.has(toko)) simpanan.set(toko, new Map());
+    if (!permintaan.has(toko)) permintaan.set(toko, new Map());
+    const perJenis = permintaan.get(toko);
+    if (!perJenis.has(jenis)) perJenis.set(jenis, new Map());
+    const perRentang = perJenis.get(jenis);
+    const k = kunciRentang(dari, sampai);
+    const ada = perRentang.get(k);
+    if (ada && Date.now() - ada.dimintaPada < UMUR_PERMINTAAN) return;
+    perRentang.set(k, {
+      dari: String(dari || '').slice(0, 10),
+      sampai: String(sampai || dari || '').slice(0, 10),
+      dimintaPada: Date.now(),
+    });
+    if (perRentang.size > 40) perRentang.delete(perRentang.keys().next().value);
+  }
+
+  /**
+   * Jemput daftar pesanan untuk satu toko (dipanggil PC).
+   * Pesanan yang sudah terlalu tua dibuang di sini juga.
+   */
+  function jemputPermintaan(toko) {
+    const hasil = [];
+    const perJenis = permintaan.get(String(toko || '').toLowerCase());
+    if (!perJenis) return hasil;
+    const kini = Date.now();
+    for (const [jenis, perRentang] of perJenis) {
+      for (const [k, p] of perRentang) {
+        if (kini - p.dimintaPada > UMUR_PERMINTAAN) { perRentang.delete(k); continue; }
+        hasil.push({ jenis, dari: p.dari, sampai: p.sampai, umurDetik: Math.round((kini - p.dimintaPada) / 1000) });
+      }
+      if (!perRentang.size) perJenis.delete(jenis);
+    }
+    return hasil;
+  }
+
+  /** Hapus satu pesanan setelah PC mengirim hasilnya. */
+  function hapusPermintaan(toko, jenis, dari, sampai) {
+    const perJenis = permintaan.get(String(toko || '').toLowerCase());
+    if (!perJenis) return;
+    const perRentang = perJenis.get(String(jenis || '').toLowerCase());
+    if (!perRentang) return;
+    perRentang.delete(kunciRentang(dari, sampai));
+  }
 
   function slot(toko, jenis) {
     if (!simpanan.has(toko)) simpanan.set(toko, new Map());
@@ -196,12 +315,50 @@ function buatPenerima({ token, batasSegarDetik, batasSegarLaporanDetik, batasSeg
     // `jumlah` = banyaknya item untuk 'items', dan null untuk laporan (objek).
     // Ini yang dibaca /health sebagai `total`, jadi harus benar sejak di sini.
     const jumlah = Array.isArray(data) ? data.length : null;
-    perToko.set(jenis, {
-      data,
-      jumlah,
-      diterimaPada: Date.now(),
-      jumlahPush: (sebelum && sebelum.jumlahPush ? sebelum.jumlahPush : 0) + 1,
-    });
+
+    // Laporan juga disimpan per RENTANG, supaya:
+    //   - laporan hari ini tetap melayani jalur cepat (slot di bawah), dan
+    //   - laporan tanggal lain (mis. marketplace 14/11) bisa ditanyakan ulang
+    //     tanpa meminta ke PC lagi.
+    // Rentangnya diambil dari isi laporan itu sendiri (`dari`/`sampai`), bukan
+    // dari parameter permintaan: yang disimpan harus persis yang dikirim.
+    let rentang = null;
+    if (jenis !== 'items' && jenis !== 'items-ubah') {
+      const d1 = String((data && data.dari) || '').slice(0, 10);
+      const d2 = String((data && data.sampai) || '').slice(0, 10);
+      if (d1 && d2) {
+        simpanRentang(toko, jenis, d1, d2, data);
+        hapusPermintaan(toko, jenis, d1, d2);
+        rentang = { dari: d1, sampai: d2 };
+      }
+    }
+
+    // SLOT UTAMA HANYA UNTUK LAPORAN TERBARU.
+    //
+    // Slot ini adalah jalur cepat yang dipakai bot untuk laporan HARI INI, dan
+    // /health melaporkan umur datanya sebagai "kesegaran laporan". Kalau
+    // laporan tanggal LAMPAU (hasil pesanan) ikut menimpanya, dua hal buruk
+    // terjadi sekaligus:
+    //   1. /health melaporkan laporan hari ini "segar" padahal isinya laporan
+    //      minggu lalu — angka yang salah, tampak benar.
+    //   2. Permintaan laporan hari ini bisa dilayani isi tanggal lampau.
+    // Karena itu laporan dengan `sampai` lebih lama dari slot yang ada hanya
+    // disimpan di gudang rentang, tidak menggantikan slot.
+    const d1Slot = String((data && data.dari) || '').slice(0, 10);
+    const d2Slot = String((data && data.sampai) || '').slice(0, 10);
+    const d2Lama = sebelum && sebelum.data ? String(sebelum.data.sampai || '').slice(0, 10) : '';
+    const lebihBaru = !d2Lama || !d2Slot || d2Slot >= d2Lama;
+    if (lebihBaru) {
+      perToko.set(jenis, {
+        data,
+        jumlah,
+        diterimaPada: Date.now(),
+        jumlahPush: (sebelum && sebelum.jumlahPush ? sebelum.jumlahPush : 0) + 1,
+      });
+    } else {
+      // Tetap catat bahwa kiriman ini sah, tanpa menggeser slot.
+      perToko.set(jenis, sebelum);
+    }
 
     return {
       status: 200,
@@ -210,6 +367,7 @@ function buatPenerima({ token, batasSegarDetik, batasSegarLaporanDetik, batasSeg
         toko,
         jenis,
         jumlah,
+        rentang,
         // Waktu server supaya PC bisa mendeteksi jam yang tidak sinkron.
         diterimaPada: perToko.get(jenis).diterimaPada,
       },
@@ -270,14 +428,29 @@ function buatPenerima({ token, batasSegarDetik, batasSegarLaporanDetik, batasSeg
     return hasil;
   }
 
-  /** Hanya untuk uji: mundurkan waktu terima. */
+  /**
+   * Hanya untuk uji: mundurkan waktu terima.
+   *
+   * Memundurkan SLOT dan SEMUA entri gudang rentang untuk toko+jenis itu.
+   * Kalau hanya slot yang dimundurkan, uji kesegaran akan lulus secara palsu:
+   * gudang rentang masih "baru" sehingga laporan beku tetap disajikan.
+   */
   function _mundurkanWaktu(toko, jenis, ms) {
     if (!simpanan.has(toko)) return;
     const s = simpanan.get(toko).get(jenis);
     if (s) s.diterimaPada -= ms;
+    const m = simpananRentang.get(toko);
+    if (m && m.get(jenis)) {
+      for (const e of m.get(jenis).values()) e.diterimaPada -= ms;
+    }
   }
 
-  return { terima, ambil, status, _mundurkanWaktu, TOKO_SAH, JENIS_SAH };
+  return {
+    terima, ambil, status, _mundurkanWaktu,
+    // Rentang tanggal (laporan lampau) + pesanan yang dijemput PC.
+    ambilRentang, mintaRentang, jemputPermintaan, hapusPermintaan,
+    TOKO_SAH, JENIS_SAH,
+  };
 }
 
 module.exports = { buatPenerima, TOKO_SAH, JENIS_SAH };

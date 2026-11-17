@@ -75,6 +75,22 @@ function buatBridge({ url, key, toko, label }) {
   //    laporan yang berumur 10 menit berarti alirannya memang bermasalah.
   const PUSH_BATAS_ITEMS_DETIK = Number(process.env.PUSH_BATAS_PAKAI_DETIK || 1200);
   const PUSH_BATAS_LAPORAN_DETIK = Number(process.env.PUSH_BATAS_LAPORAN_DETIK || 180);
+  /**
+   * Berapa lama bot MENUNGGU laporan tanggal lampau yang sedang diambil PC.
+   *
+   * PC menjemput pesanan tiap beberapa detik (PUSH_JEDA_PERMINTAAN_MS), lalu
+   * mengambil laporan dari iPos dan mengirimnya. 12 detik cukup untuk satu
+   * putaran itu, dan tetap di bawah batas tunggu Telegram sehingga pengguna
+   * tidak melihat bot menggantung.
+   */
+  const PUSH_TUNGGU_RENTANG_MS = Number(process.env.PUSH_TUNGGU_RENTANG_MS || 12000);
+
+  /** Tanggal hari ini (YYYY-MM-DD) menurut jam server. */
+  function tanggalLokal() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+      + '-' + String(d.getDate()).padStart(2, '0');
+  }
 
   let lastSync = 0;
   let lastSseAt = 0;
@@ -450,34 +466,79 @@ function buatBridge({ url, key, toko, label }) {
    * menampilkan nol TANPA satu pun error — kesalahan yang tampak persis
    * seperti "toko sedang sepi", dan karena itu paling berbahaya.
    *
-   * RENTANG TANGGAL DIPERIKSA KETAT
-   * -------------------------------
-   * Agen hanya mengirim laporan untuk SATU rentang (hari ini). Menjawab
-   * permintaan rentang lain dengan data hari ini berarti menampilkan angka
-   * yang salah tanpa peringatan. Karena itu rentang yang tidak sama persis
-   * DITOLAK dengan pesan yang jelas — gagal terlihat jauh lebih baik daripada
-   * salah yang tersembunyi.
+   * RENTANG TANGGAL: DUA JALUR, BUKAN PENOLAKAN
+   * -------------------------------------------
+   * Versi pertama fungsi ini MENOLAK semua rentang selain hari ini. Niatnya
+   * benar (jangan menyajikan angka hari ini untuk pertanyaan tanggal lain),
+   * tetapi akibatnya laporan tanggal lampau — mis. marketplace CP 14/11/2026
+   * yang di sumbernya berisi 6 nota / Rp 26.583.000 — dilaporkan KOSONG.
+   * Menolak dengan benar tetap saja salah bagi pengguna.
+   *
+   * Sekarang:
+   *   1. Bila rentang yang diminta sudah ada di gudang rentang -> pakai itu.
+   *      Laporan tanggal lampau tidak berubah lagi, jadi tidak perlu segar.
+   *   2. Bila yang diminta adalah rentang laporan slot utama DAN laporan itu
+   *      segar -> pakai jalur cepat (laporan hari ini).
+   *   3. Selain itu -> catat PESANAN untuk dijemput PC dan beri tahu pemanggil
+   *      bahwa datanya sedang diambil. Tidak pernah menampilkan nol palsu.
    */
   function laporanDorong(jenis, dari, sampai) {
-    const data = pushGudang.ambilSegar(tokoUtama, jenis, PUSH_BATAS_LAPORAN_DETIK);
-    if (!data || typeof data !== 'object') {
-      const umur = pushGudang.umurDetik(tokoUtama, jenis);
-      throw new Error(umur == null
-        ? `belum ada laporan ${jenis} dorongan dari PC`
-        : `laporan ${jenis} dorongan basi (${umur} dtk)`);
-    }
-    const d1 = String(data.dari || '').slice(0, 10);
-    const d2 = String(data.sampai || '').slice(0, 10);
     const minta1 = String(dari || '').slice(0, 10);
     const minta2 = String(sampai || dari || '').slice(0, 10);
-    if (d1 && d2 && (minta1 !== d1 || minta2 !== d2)) {
-      throw new Error(
-        `laporan ${jenis} dorongan hanya tersedia untuk ${d1} s/d ${d2}, `
-        + `bukan ${minta1} s/d ${minta2}`);
+
+    // 1. Rentang yang sudah pernah dikirim.
+    //
+    //    PENTING: laporan yang rentangnya MENCAKUP HARI INI masih berubah
+    //    (nota baru terus masuk), jadi ia tetap WAJIB segar. Tanpa pemeriksaan
+    //    ini, laporan hari ini yang beku akan disajikan sebagai "sudah ada di
+    //    gudang" dan pengguna melihat angka lama tanpa peringatan — persis
+    //    kesalahan yang ingin dicegah.
+    //    Sebaliknya laporan yang rentangnya sudah LEWAT tidak berubah lagi,
+    //    sehingga boleh dipakai ulang berapa pun umurnya.
+    const tersimpan = pushGudang.ambilRentang(tokoUtama, jenis, minta1, minta2);
+    if (tersimpan && tersimpan.data) {
+      const hariIni = tanggalLokal();
+      const mencakupHariIni = minta2 >= hariIni;
+      if (!mencakupHariIni) {
+        const upd0 = Number(tersimpan.data.update);
+        if (Number.isFinite(upd0) && upd0 > 0) lapUpdateTerakhir = upd0 > 1e12 ? upd0 : upd0 * 1000;
+        return tersimpan.data;
+      }
+      // Mencakup hari ini: pakai hanya bila masih segar, kalau tidak jatuh ke
+      // jalur di bawah yang melaporkan "basi" dengan jelas.
+      const umurR = Math.round((Date.now() - Number(tersimpan.diterimaPada || 0)) / 1000);
+      if (Number.isFinite(umurR) && umurR <= PUSH_BATAS_LAPORAN_DETIK) {
+        const upd0 = Number(tersimpan.data.update);
+        if (Number.isFinite(upd0) && upd0 > 0) lapUpdateTerakhir = upd0 > 1e12 ? upd0 : upd0 * 1000;
+        return tersimpan.data;
+      }
     }
-    const upd = Number(data.update);
-    if (Number.isFinite(upd) && upd > 0) lapUpdateTerakhir = upd > 1e12 ? upd : upd * 1000;
-    return data;
+
+    // 2. Jalur cepat: laporan slot utama, hanya bila segar.
+    const slot = pushGudang.laporanSlot(tokoUtama, jenis);
+    const d1 = slot ? String(slot.dari || '').slice(0, 10) : '';
+    const d2 = slot ? String(slot.sampai || '').slice(0, 10) : '';
+    if (slot && d1 && d2 && d1 === minta1 && d2 === minta2) {
+      const segar = pushGudang.ambilSegar(tokoUtama, jenis, PUSH_BATAS_LAPORAN_DETIK);
+      if (segar) {
+        const upd = Number(segar.update);
+        if (Number.isFinite(upd) && upd > 0) lapUpdateTerakhir = upd > 1e12 ? upd : upd * 1000;
+        return segar;
+      }
+      const umur = pushGudang.umurDetik(tokoUtama, jenis);
+      throw new Error(`laporan ${jenis} dorongan basi (${umur} dtk)`);
+    }
+
+    // 3. Belum ada: pesan ke PC, dan katakan terus terang sedang diambil.
+    pushGudang.mintaRentang(tokoUtama, jenis, minta1, minta2);
+    const e = new Error(
+      `laporan ${jenis} untuk ${minta1} s/d ${minta2} sedang diambil dari iPos di PC`);
+    // Ditandai supaya pemanggil bisa menunggu lalu mengulang, bukan menyerah.
+    e.kode = 'MENUNGGU_DORONG';
+    e.jenis = jenis;
+    e.dari = minta1;
+    e.sampai = minta2;
+    throw e;
   }
 
   async function ambilLaporan(url, fresh = false, attempt = 0, jenis = 'jual', dari = '', sampai = '') {
@@ -494,11 +555,34 @@ function buatBridge({ url, key, toko, label }) {
         dariDorong = laporanDorong(jenis, dari, sampai);
       } catch (e) {
         lapErrTerakhir = String((e && e.message) || e);
+        // Rentang tanggal lampau: pesanannya sudah dicatat, dan PC menjemputnya
+        // tiap beberapa detik. Menunggu sebentar di sini membuat pengguna
+        // langsung mendapat laporannya, bukan pesan "coba lagi" yang harus
+        // ditekan ulang. Batasnya pendek supaya bot tidak menggantung.
+        if (e && e.kode === 'MENUNGGU_DORONG' && attempt === 0) {
+          const tungguSampai = Date.now() + PUSH_TUNGGU_RENTANG_MS;
+          while (Date.now() < tungguSampai) {
+            await new Promise((r) => setTimeout(r, 400));
+            const ada = pushGudang.ambilRentang(tokoUtama, jenis, e.dari, e.sampai);
+            if (ada && ada.data) {
+              lapErrTerakhir = null;
+              lapDiperiksaPada = Date.now();
+              return ada.data;
+            }
+          }
+        }
         throw e;
       }
       lapErrTerakhir = null;
       lapDiperiksaPada = Date.now();
-      lapCache.set(url, { t: Date.now(), data: dariDorong, jualE: lastJualEvent });
+      // Cache hanya untuk laporan HARI INI. Laporan tanggal lampau ditangani
+      // oleh gudang rentang, dan menyimpannya lagi di sini bisa membuat
+      // permintaan tanggal lain memakai isi yang salah (kunci cache = URL).
+      const d1c = String((dariDorong && dariDorong.dari) || '').slice(0, 10);
+      const d2c = String((dariDorong && dariDorong.sampai) || '').slice(0, 10);
+      if (d1c === String(dari || '').slice(0, 10) && d2c === String(sampai || dari || '').slice(0, 10)) {
+        lapCache.set(url, { t: Date.now(), data: dariDorong, jualE: lastJualEvent });
+      }
       return dariDorong;
     }
 

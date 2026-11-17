@@ -134,14 +134,44 @@ const LUSA = '2026-11-17';
     assert.strictEqual(r.nomor, 2);
   });
 
-  // ── Rentang yang tidak dicakup HARUS ditolak, bukan dijawab salah ────
-  await ujiAsync('rentang lain ditolak dengan pesan jelas (bukan angka salah)', async () => {
-    let pesan = null;
+  // ── Rentang yang tidak dicakup: JANGAN dijawab dengan angka salah ────
+  //
+  // Perilaku yang benar BUKAN sekadar menolak. Dulu bridge menolak dengan
+  // "hanya tersedia untuk <hari ini>", dan akibatnya laporan tanggal lampau
+  // yang datanya ADA di sumber (mis. marketplace CP 14/11/2026 = 6 nota /
+  // Rp 26.583.000) dilaporkan kosong kepada pengguna. Sekarang bridge mencatat
+  // PESANAN untuk dijemput PC dan memberi galat bertanda, sehingga:
+  //   - pemanggil tahu datanya sedang diambil (bukan "tidak ada penjualan"),
+  //   - dan angka hari ini tidak pernah dipakai untuk menjawab tanggal lain.
+  await ujiAsync('rentang lain TIDAK dijawab dengan angka hari ini', async () => {
+    let galat = null;
     try { await kefa.ambilLaporanMerek('2026-11-01', '2026-11-02'); }
-    catch (e) { pesan = e.message; }
-    assert.ok(pesan, 'harus melempar error, bukan mengembalikan data');
-    assert.ok(/hanya tersedia untuk 2026-11-15/.test(pesan),
-      'pesan harus menyebut rentang yang tersedia, dapat: ' + pesan);
+    catch (e) { galat = e; }
+    assert.ok(galat, 'harus melempar error, bukan mengembalikan data hari ini');
+    assert.ok(!/2026-11-15/.test(galat.message) || galat.kode === 'MENUNGGU_DORONG',
+      'tidak boleh menyajikan angka rentang lain, dapat: ' + galat.message);
+    assert.strictEqual(galat.kode, 'MENUNGGU_DORONG',
+      'galat harus bertanda MENUNGGU_DORONG agar pemanggil bisa menunggu, dapat: ' + galat.kode);
+    assert.strictEqual(galat.jenis, 'jual-merek', 'galat harus menyebut jenisnya');
+    assert.strictEqual(galat.dari, '2026-11-01', 'galat harus membawa tanggal yang diminta');
+    assert.strictEqual(galat.sampai, '2026-11-02', 'galat harus membawa tanggal akhir');
+  });
+
+  // ── Setelah PC mengirim rentang itu, permintaan yang sama tersedia ───
+  await ujiAsync('rentang lampau tersedia setelah PC mengirimnya', async () => {
+    const gudang = require('./push-gudang');
+    gudang.terima({
+      toko: 'kefa', jenis: 'jual-merek',
+      data: {
+        siap: true, dari: '2026-11-01', sampai: '2026-11-02',
+        merek: ['HOMMY', 'KIREI'], data: [], total: { nota: 0, item: 0, omzet: 0 },
+        jangkauan: { dari: '2026-01-06', sampai: '2026-11-15' }, update: 1794800000000,
+      },
+    }, process.env.PUSH_TOKEN);
+    const r = await kefa.ambilLaporanMerek('2026-11-01', '2026-11-02');
+    assert.strictEqual(r.dari, '2026-11-01');
+    assert.strictEqual(r.sampai, '2026-11-02');
+    assert.ok(Array.isArray(r.merek), 'harus berbentuk laporan merek, bukan laporan kasir');
   });
 
   await ujiAsync('rentang yang cocok tetap dilayani', async () => {
