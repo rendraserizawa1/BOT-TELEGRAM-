@@ -483,6 +483,39 @@ function buatToko(t) {
     return items.length;
   }
 
+  /**
+   * Tempelkan SEBAB kebekuan ke laporan, HANYA bila laporan itu memang beku.
+   *
+   * KENAPA PERLU
+   * ------------
+   * Proxy melaporkan galat DB-nya di `/health` (`jual.err`), BUKAN di respons
+   * `/api/jual`. Akibatnya laporan yang dikirim hanya membawa angka beku tanpa
+   * sebab, dan pengguna hanya bisa diberi tahu "laporan beku" tanpa tahu apa
+   * yang harus diperbaiki. Sebabnya itulah yang menentukan siapa yang harus
+   * bertindak: rute DB di mesin toko, atau bug di proxy.
+   *
+   * KENAPA HANYA SAAT BEKU
+   * ----------------------
+   * Satu permintaan tambahan per laporan per toko. Saat data segar, informasi
+   * itu tidak berguna, jadi jangan dibayar. Ambangnya sama dengan ambang
+   * peringatan di bot (10 menit) supaya keduanya tidak berbeda pendapat.
+   */
+  async function tempelSebabBilaBeku(t, laporan) {
+    try {
+      const upd = Number(laporan && laporan.update);
+      if (!Number.isFinite(upd) || upd <= 0) return laporan;
+      const updMs = upd > 1e12 ? upd : upd * 1000;
+      if (Date.now() - updMs < 10 * 60 * 1000) return laporan; // masih segar
+      const h = await ambilJson(t.url + '/health?key=' + encodeURIComponent(t.key), 20000);
+      const sebab = h && h.jual && h.jual.err;
+      if (sebab) laporan.updateSebab = String(sebab).slice(0, 120);
+    } catch (_) {
+      // Sebab hanya pelengkap. Kegagalan mengambilnya tidak boleh
+      // menggagalkan pengiriman laporan yang sudah berhasil didapat.
+    }
+    return laporan;
+  }
+
   /** Laporan penjualan hari ini. */
   async function kirimLaporan(paksa) {
     if (laporanSedangJalan) return;
@@ -496,6 +529,7 @@ function buatToko(t) {
         60000,
       );
       if (!j || typeof j !== 'object') throw new Error('laporan kosong');
+      await tempelSebabBilaBeku(t, j);
       await dorong(t.toko, 'jual', j);
       keadaan.terakhirLaporan = new Date().toISOString();
       laporanTerakhir = Date.now();

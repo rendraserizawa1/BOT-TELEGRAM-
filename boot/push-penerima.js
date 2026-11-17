@@ -419,11 +419,23 @@ function buatPenerima({ token, batasSegarDetik, batasSegarLaporanDetik, batasSeg
 
     // Laporan penjualan: sertakan angka utamanya supaya /health bisa
     // membuktikan isinya masuk, bukan hanya "ada data".
+    //
+    // JEBAKAN YANG SUDAH DIPERBAIKI: di sini dulu dibaca `jual.data.nota` dan
+    // `jual.data.omzet`. Bentuk laporan iPos menaruh angka itu di `total`,
+    // sehingga /health SELALU melaporkan `nota: null, omzet: null` — tampak
+    // seperti laporan kosong padahal isinya ada. Itu membuat diagnosis
+    // kebekuan CP menyesatkan: yang kosong adalah pembacaannya, bukan datanya.
+    // Kedua bentuk dibaca supaya build proxy yang berbeda tetap terbaca.
     const jual = perToko.get('jual');
     if (jual && hasil.jual && jual.data && typeof jual.data === 'object') {
-      hasil.jual.nota = jual.data.nota == null ? null : jual.data.nota;
-      hasil.jual.omzet = jual.data.omzet == null ? null : jual.data.omzet;
+      const tot = (jual.data.total && typeof jual.data.total === 'object') ? jual.data.total : {};
+      const angka = (a, b) => (a == null ? (b == null ? null : b) : a);
+      hasil.jual.nota = angka(jual.data.nota, tot.nota);
+      hasil.jual.omzet = angka(jual.data.omzet, tot.omzet);
       hasil.jual.update = jual.data.update == null ? null : jual.data.update;
+      // Sebab kebekuan ikut ditampilkan di /health supaya orang yang memeriksa
+      // tidak perlu membuka proxy toko satu per satu untuk tahu kenapa.
+      hasil.jual.updateSebab = jual.data.updateSebab == null ? null : jual.data.updateSebab;
     }
     return hasil;
   }
