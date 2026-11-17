@@ -648,6 +648,36 @@ function headerLaporanBasi(umurDetik, sebab) {
     + pesanSebab + `\n${GARIS_TEBAL}\n\n`;
 }
 
+/** Umur `update` laporan dalam detik; NaN bila tidak diketahui. */
+function umurLaporanDetik(r) {
+  const u = Number(r && r.update);
+  if (!Number.isFinite(u) || u <= 0) return NaN;
+  return (Date.now() - (u > 1e12 ? u : u * 1000)) / 1000;
+}
+
+/**
+ * Peringatan kebekuan — HANYA untuk laporan yang mencakup HARI INI.
+ *
+ * KENAPA HARUS DIBATASI
+ * ---------------------
+ * Laporan tanggal LAMPAU (mis. 14/11/2026) memang punya `update` tua: sumber
+ * terakhir memperbaruinya saat laporan itu diambil. Itu WAJAR dan datanya
+ * lengkap — tidak ada penjualan baru yang bisa muncul di tanggal yang sudah
+ * lewat. Kalau peringatan dipasang tanpa syarat, setiap kali pengguna membuka
+ * laporan tanggal lampau ia akan disambut "LAPORAN BEKU", dan peringatan yang
+ * selalu menyala sama saja dengan tidak ada peringatan: pengguna belajar
+ * mengabaikannya, lalu melewatkan yang sungguhan.
+ *
+ * Jadi yang diperingatkan hanya laporan yang rentangnya menyentuh hari ini —
+ * satu-satunya rentang yang angkanya masih bisa bertambah.
+ */
+function peringatanBasiLaporan(r, dari, sampai) {
+  const hariIni = ymdLokal(0);
+  const akhir = String((r && r.sampai) || sampai || dari || '').slice(0, 10);
+  if (akhir && akhir < hariIni) return '';
+  return headerLaporanBasi(umurLaporanDetik(r), r.updateSebab || r.errSumber);
+}
+
 log.info('INIT', `Members: ${MEMBERS.length}, Kontak: ${Object.keys(KONTAK).length}`);
 
 const crypto = require('crypto');
@@ -1820,10 +1850,7 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
     // tanggal ini." — kalimat yang salah dan berbahaya, karena penjualan bisa
     // saja ada tetapi tidak terbaca. Kebekuan harus disebut LEBIH DULU,
     // sebelum kesimpulan "tidak ada penjualan" diambil.
-    const basiKosong = headerLaporanBasi(
-      r.update ? (Date.now() - (Number(r.update) > 1e12 ? Number(r.update) : Number(r.update) * 1000)) / 1000 : NaN,
-      r.updateSebab || r.errSumber,
-    );
+    const basiKosong = peringatanBasiLaporan(r, ymd, ymd);
     if (basiKosong) {
       let msgBasi = basiKosong
         + `🧾 *LAPORAN PENJUALAN KASIR*\n${LABEL_TOKO}\n📅 ${escapeMd(tglLabel)}\n${GARIS_TEBAL}\n\n`
@@ -1855,10 +1882,10 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
   // Peringatan kebekuan: `update` = kapan SUMBER terakhir memperbarui angka.
   // Agen yang mengirim ulang laporan beku tetap terlihat "segar" dari sisi
   // kiriman, jadi kebekuan HARUS diperiksa dari isi laporan itu sendiri.
-  const basiKasir = headerLaporanBasi(
-    r.update ? (Date.now() - (Number(r.update) > 1e12 ? Number(r.update) : Number(r.update) * 1000)) / 1000 : NaN,
-    r.updateSebab || r.errSumber,
-  );
+  // Hanya untuk rentang yang menyentuh hari ini — laporan tanggal lampau
+  // memang tua dan lengkap, memperingatkannya hanya melatih pengguna
+  // mengabaikan peringatan.
+  const basiKasir = peringatanBasiLaporan(r, ymd, ymd);
   if (basiKasir) lines.push(basiKasir);
   lines.push('🧾 *LAPORAN PENJUALAN KASIR*');
   lines.push(LABEL_TOKO);
@@ -2089,10 +2116,7 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai, toko = 'cp') 
   const emoMerek = (m) => (m === 'HOMMY' ? '🛋️' : m === 'KIREI' ? '🪑' : '🏷️');
   const lines = [];
   if (dariBackupHk) lines.push(headerBackup(dariBackupHk.diambil, toko === 'nk' ? 'NK' : toko === 'kefa' ? 'KEFA' : 'CP'));
-  const basiHk = headerLaporanBasi(
-    r.update ? (Date.now() - (Number(r.update) > 1e12 ? Number(r.update) : Number(r.update) * 1000)) / 1000 : NaN,
-    r.updateSebab || r.errSumber,
-  );
+  const basiHk = peringatanBasiLaporan(r, dari, sampai);
   if (basiHk) lines.push(basiHk);
   lines.push('🛋️ *LAPORAN PENJUALAN HOMMY & KIREI*');
   lines.push(LABEL_TOKO_HK);
@@ -2320,10 +2344,7 @@ async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai, toko = 
   const adaRincianMp = (Number(c.nota) || 0) > 0 || notas.length > 0;
   const lines = [];
   if (dariBackupMp) lines.push(headerBackup(dariBackupMp.diambil, toko === 'nk' ? 'NK' : toko === 'kefa' ? 'KEFA' : 'CP'));
-  const basiMp = headerLaporanBasi(
-    r.update ? (Date.now() - (Number(r.update) > 1e12 ? Number(r.update) : Number(r.update) * 1000)) / 1000 : NaN,
-    r.updateSebab || r.errSumber,
-  );
+  const basiMp = peringatanBasiLaporan(r, dari, sampai);
   if (basiMp) lines.push(basiMp);
   if (isNk || isKefa) {
     // NK/KEFA: tidak ada toko pasangan — cukup baris toko sendiri (format manual sama)

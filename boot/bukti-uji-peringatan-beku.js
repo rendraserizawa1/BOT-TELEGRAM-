@@ -36,9 +36,9 @@ function ringkas(keluaran) {
 const asli = fs.readFileSync(BERKAS, 'utf8');
 let hasil = 1;
 try {
-  // Cari blok: dari `const basiKasir = headerLaporanBasi(` sampai baris
+  // Cari blok: dari `const basiKasir = peringatanBasiLaporan(` sampai baris
   // `if (basiKasir) lines.push(basiKasir);` (inklusif).
-  const awal = asli.indexOf('const basiKasir = headerLaporanBasi(');
+  const awal = asli.indexOf('const basiKasir = peringatanBasiLaporan(');
   if (awal < 0) throw new Error('basiKasir tidak ditemukan');
   const akhirPenanda = 'if (basiKasir) lines.push(basiKasir);';
   const akhir = asli.indexOf(akhirPenanda, awal);
