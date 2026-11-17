@@ -439,31 +439,67 @@ function buatBridge({ url, key, toko, label }) {
   // frekuensi percobaan yang dijarangkan.
   let gagalLaporanBerturut = 0;
   let bolehCobaLagiPada = 0;
-  async function ambilLaporan(url, fresh = false, attempt = 0) {
+  /**
+   * Laporan DORONGAN untuk SATU jenis.
+   *
+   * KENAPA JENIS HARUS DIPILIH, BUKAN SELALU 'jual'
+   * ----------------------------------------------
+   * Dulu cabang dorong di bawah SELALU membaca jenis `jual`, apa pun endpoint
+   * yang diminta. Akibatnya laporan MEREK dan MARKETPLACE mengembalikan bentuk
+   * laporan KASIR: `data`/`pelanggan`/`central` tidak ada, sehingga bot
+   * menampilkan nol TANPA satu pun error — kesalahan yang tampak persis
+   * seperti "toko sedang sepi", dan karena itu paling berbahaya.
+   *
+   * RENTANG TANGGAL DIPERIKSA KETAT
+   * -------------------------------
+   * Agen hanya mengirim laporan untuk SATU rentang (hari ini). Menjawab
+   * permintaan rentang lain dengan data hari ini berarti menampilkan angka
+   * yang salah tanpa peringatan. Karena itu rentang yang tidak sama persis
+   * DITOLAK dengan pesan yang jelas — gagal terlihat jauh lebih baik daripada
+   * salah yang tersembunyi.
+   */
+  function laporanDorong(jenis, dari, sampai) {
+    const data = pushGudang.ambilSegar(tokoUtama, jenis, PUSH_BATAS_LAPORAN_DETIK);
+    if (!data || typeof data !== 'object') {
+      const umur = pushGudang.umurDetik(tokoUtama, jenis);
+      throw new Error(umur == null
+        ? `belum ada laporan ${jenis} dorongan dari PC`
+        : `laporan ${jenis} dorongan basi (${umur} dtk)`);
+    }
+    const d1 = String(data.dari || '').slice(0, 10);
+    const d2 = String(data.sampai || '').slice(0, 10);
+    const minta1 = String(dari || '').slice(0, 10);
+    const minta2 = String(sampai || dari || '').slice(0, 10);
+    if (d1 && d2 && (minta1 !== d1 || minta2 !== d2)) {
+      throw new Error(
+        `laporan ${jenis} dorongan hanya tersedia untuk ${d1} s/d ${d2}, `
+        + `bukan ${minta1} s/d ${minta2}`);
+    }
+    const upd = Number(data.update);
+    if (Number.isFinite(upd) && upd > 0) lapUpdateTerakhir = upd > 1e12 ? upd : upd * 1000;
+    return data;
+  }
+
+  async function ambilLaporan(url, fresh = false, attempt = 0, jenis = 'jual', dari = '', sampai = '') {
     const kini = Date.now();
     const c = lapCache.get(url);
     if (!fresh && c && kini - c.t < LAP_TTL) return c.data;
 
     // MODE DORONG: laporan penjualan juga datang dari PC.
-    // Bentuk objeknya SAMA PERSIS dengan yang dikembalikan /api/jual, jadi
-    // seluruh pemanggil di bawah tidak perlu diubah.
+    // Bentuk objeknya SAMA PERSIS dengan yang dikembalikan endpoint aslinya,
+    // asalkan jenisnya dipilih dengan benar (lihat laporanDorong).
     if (pushAktif()) {
-      const dariDorong = pushGudang.ambilSegar(tokoUtama, 'jual', PUSH_BATAS_LAPORAN_DETIK);
-      if (dariDorong && typeof dariDorong === 'object') {
-        lapErrTerakhir = null;
-        lapDiperiksaPada = Date.now();
-        const upd = Number(dariDorong && dariDorong.update);
-        if (Number.isFinite(upd) && upd > 0) {
-          lapUpdateTerakhir = upd > 1e12 ? upd : upd * 1000;
-        }
-        lapCache.set(url, { t: Date.now(), data: dariDorong, jualE: lastJualEvent });
-        return dariDorong;
+      let dariDorong;
+      try {
+        dariDorong = laporanDorong(jenis, dari, sampai);
+      } catch (e) {
+        lapErrTerakhir = String((e && e.message) || e);
+        throw e;
       }
-      const umur = pushGudang.umurDetik(tokoUtama, 'jual');
-      lapErrTerakhir = umur == null
-        ? 'belum ada laporan dorongan dari PC'
-        : `laporan dorongan basi (${umur} dtk)`;
-      throw new Error(lapErrTerakhir);
+      lapErrTerakhir = null;
+      lapDiperiksaPada = Date.now();
+      lapCache.set(url, { t: Date.now(), data: dariDorong, jualE: lastJualEvent });
+      return dariDorong;
     }
 
     if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
@@ -500,7 +536,7 @@ function buatBridge({ url, key, toko, label }) {
     } finally {
       clearTimeout(timer);
     }
-    if (jualSaatMulai !== lastJualEvent && attempt < 2) return ambilLaporan(url, true, attempt + 1);
+    if (jualSaatMulai !== lastJualEvent && attempt < 2) return ambilLaporan(url, true, attempt + 1, jenis, dari, sampai);
     if (jualSaatMulai === lastJualEvent) {
       lapCache.set(url, { t: Date.now(), data, jualE: jualSaatMulai });
       if (lapCache.size > 200) lapCache.delete(lapCache.keys().next().value);
@@ -520,7 +556,7 @@ function buatBridge({ url, key, toko, label }) {
     if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);
       let url = `${IPOS_URL}/api/jual?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai || dari)}&key=${encodeURIComponent(IPOS_KEY)}`;
       if (opts && opts.hanyaKasir) url += '&kasir_only=1';
-      return ambilLaporan(url, !!(opts && opts.fresh));
+      return ambilLaporan(url, !!(opts && opts.fresh), 0, 'jual', dari, sampai || dari);
   }
 
   /**
@@ -533,7 +569,7 @@ function buatBridge({ url, key, toko, label }) {
    */
   async function ambilLaporanMerek(dari, sampai = dari, merek = '') {
     const url = `${IPOS_URL}/api/jual-merek?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai || dari)}&key=${encodeURIComponent(IPOS_KEY)}${merek ? `&merek=${encodeURIComponent(merek)}` : ''}`;
-    return ambilLaporan(url, true);
+    return ambilLaporan(url, true, 0, 'jual-merek', dari, sampai || dari);
   }
 
   /**
@@ -544,7 +580,7 @@ function buatBridge({ url, key, toko, label }) {
    */
   async function ambilLaporanMarketplace(dari, sampai = dari) {
     const url = `${IPOS_URL}/api/jual-marketplace?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai || dari)}&key=${encodeURIComponent(IPOS_KEY)}`;
-    return ambilLaporan(url, true);
+    return ambilLaporan(url, true, 0, 'jual-marketplace', dari, sampai || dari);
   }
 
   // ─────────────────────────────────────────────────────────────────────────

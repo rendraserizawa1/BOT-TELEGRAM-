@@ -36,17 +36,39 @@ if (-not (Test-Path $skrip)) {
 }
 if (-not (Test-Path $node)) { $node = 'node' }
 
-# Muat konfigurasi. File push-agen.env diutamakan karena berisi PUSH_URL/PUSH_TOKEN.
+# Muat konfigurasi.
+#
+# URUTAN & PRIORITAS — INI PERNAH MENYEBABKAN KESALAHAN SENYAP
+# -----------------------------------------------------------
+# Dulu nilai hanya diisi "kalau belum ada di env". Akibatnya sebuah wrapper
+# yang sudah lama hidup (mis. tertinggal setelah agen dimatikan manual) terus
+# mewariskan konfigurasi LAMA ke penjaga dan agen yang ia nyalakan — walau file
+# sudah diperbarui. Pernah terjadi: file berisi `PUSH_TOKO=cp,nk,kefa` tetapi
+# agen tetap hanya mendorong `kefa`, karena env proses menang atas file.
+#
+# Sekarang: push-agen.env adalah SUMBER KEBENARAN dan SELALU menimpa env
+# (wrapper adalah pintu masuk produksi, jadi ia yang menentukan konfigurasi).
+# .env hanya mengisi variabel yang belum ada, sehingga alamat tunnel di .env
+# tidak pernah menimpa alamat tailnet di push-agen.env.
+$namaSah = @('PUSH_URL','PUSH_TOKEN','PUSH_TOKO','PUSH_JEDA_PENUH_MS',
+             'PUSH_JEDA_STOK_MS','PUSH_JEDA_LAPORAN_MS',
+             'PUSH_JEDA_STOK_MS_CP','PUSH_JEDA_STOK_MS_NK',
+             'PUSH_JEDA_LAPORAN_MS_CP','PUSH_JEDA_LAPORAN_MS_NK',
+             'PUSH_JEDA_MEREK_MS_CP','PUSH_JEDA_MEREK_MS_NK',
+             'PUSH_JEDA_MARKETPLACE_MS_CP','PUSH_JEDA_MARKETPLACE_MS_NK',
+             'IPOS_URL','IPOS_KEY','IPOS_NK_URL','IPOS_NK_KEY',
+             'IPOS_KEFA_URL','IPOS_KEFA_KEY')
+
 foreach ($berkas in @($envPush, $envFile)) {
   if (-not (Test-Path $berkas)) { continue }
+  # push-agen.env menimpa; .env hanya mengisi yang kosong.
+  $timpa = ($berkas -eq $envPush)
   foreach ($baris in Get-Content -LiteralPath $berkas) {
     if ($baris -match '^\s*([A-Z0-9_]+)\s*=\s*(.*)$') {
       $nama = $Matches[1]
       $nilai = $Matches[2].Trim().Trim('"').Trim("'")
-      if ($nama -in @('PUSH_URL','PUSH_TOKEN','PUSH_TOKO','PUSH_JEDA_PENUH_MS',
-                      'IPOS_URL','IPOS_KEY','IPOS_NK_URL','IPOS_NK_KEY',
-                      'IPOS_KEFA_URL','IPOS_KEFA_KEY')) {
-        if (-not [Environment]::GetEnvironmentVariable($nama)) {
+      if ($nama -in $namaSah) {
+        if ($timpa -or -not [Environment]::GetEnvironmentVariable($nama)) {
           [Environment]::SetEnvironmentVariable($nama, $nilai, 'Process')
         }
       }
@@ -54,7 +76,7 @@ foreach ($berkas in @($envPush, $envFile)) {
   }
 }
 
-Tulis ("wrapper jaga-push mulai (pid=$PID) PUSH_URL=" + $env:PUSH_URL + " PUSH_TOKEN_len=" + $($env:PUSH_TOKEN.Length))
+Tulis ("wrapper jaga-push mulai (pid=$PID) PUSH_URL=" + $env:PUSH_URL + " PUSH_TOKEN_len=" + $($env:PUSH_TOKEN.Length) + " PUSH_TOKO=" + $env:PUSH_TOKO)
 
 for ($i = 1; $i -le 100000; $i++) {
   Tulis "menjalankan node jaga-push.js (percobaan $i)"

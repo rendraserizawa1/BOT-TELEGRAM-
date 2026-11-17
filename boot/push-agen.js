@@ -34,9 +34,16 @@
  *   node boot\push-agen.js
  *
  * Opsional:
- *   PUSH_TOKO=kefa            (default: semua toko yang IPOS_*_URL-nya ada)
+ *   PUSH_TOKO=cp,nk,kefa     (default: semua toko yang IPOS_*_URL-nya ada)
  *   PUSH_JEDA_PENUH_MS=900000 (katalog penuh tiap 15 menit)
- *   PUSH_JEDA_LAPORAN_MS=60000
+ *   PUSH_JEDA_STOK_MS / _CP / _NK  (jeda pemantau stok per toko)
+ *   PUSH_JEDA_LAPORAN_MS / _CP / _NK
+ *   PUSH_JEDA_MEREK_MS / _CP / _NK, PUSH_JEDA_MARKETPLACE_MS / _CP / _NK
+ *
+ * SUMBER YANG DIIZINKAN
+ * ---------------------
+ * Hanya loopback (127.0.0.1) dan tailnet (100.64.0.0/10). Tunnel publik
+ * ditolak — alamat itu untuk bot di Railway, bukan untuk agen di PC ini.
  */
 const fs = require('fs');
 const path = require('path');
@@ -49,11 +56,45 @@ const STATUS = process.env.PUSH_STATUS_FILE || path.join(__dirname, 'push-status
 // produksi yang sedang berjalan. Default tetap sama -> perilaku PC tidak berubah.
 const LOCK = process.env.PUSH_LOCK_FILE || path.join(__dirname, '.push-agen.lock');
 
+/**
+ * MUAT KONFIGURASI SENDIRI (jangan bergantung pada wrapper).
+ *
+ * KENAPA INI PENTING — BUKAN KERAPIAN
+ * -----------------------------------
+ * Dulu `boot/push-agen.env` HANYA dibaca oleh `jaga-push.ps1`. Kalau agen
+ * dijalankan dengan cara lain (uji, tugas terjadwal lain, atau penjaga yang
+ * dijalankan tanpa wrapper), `IPOS_URL` kosong dan agen memakai default
+ * `127.0.0.1:8080` — yaitu proxy KEFA. Akibatnya agen mendorong katalog KEFA
+ * SEBAGAI DATA CP: 4.708 item masuk ke slot CP, tampak "online" dan "segar",
+ * padahal isinya toko yang salah. Tidak ada error, tidak ada peringatan.
+ * Kesalahan senyap seperti ini jauh lebih berbahaya daripada tidak mengirim.
+ *
+ * Aturan precedence: env proses MENANG, lalu file. Sama dengan wrapper, jadi
+ * perilaku produksi tidak berubah.
+ */
+function muatEnvBerkas() {
+  const kandidat = [path.join(__dirname, 'push-agen.env'), path.join(ROOT, '.env')];
+  for (const berkas of kandidat) {
+    let isi;
+    try { isi = fs.readFileSync(berkas, 'utf8'); } catch (_) { continue; }
+    for (const baris of isi.split(/\r?\n/)) {
+      const m = baris.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+      if (!m) continue;
+      const nama = m[1];
+      const nilai = m[2].trim().replace(/^["']|["']$/g, '');
+      // Hanya isi yang belum ada: env proses tetap yang menang.
+      if (!process.env[nama]) process.env[nama] = nilai;
+    }
+  }
+}
+muatEnvBerkas();
+
 // ── KONFIGURASI ──────────────────────────────────────────────────────────
 const PUSH_URL = String(process.env.PUSH_URL || '').replace(/\/+$/, '');
 const PUSH_TOKEN = String(process.env.PUSH_TOKEN || '');
 const JEDA_PENUH_MS = Number(process.env.PUSH_JEDA_PENUH_MS || 900000);
-const JEDA_LAPORAN_MS = Number(process.env.PUSH_JEDA_LAPORAN_MS || 60000);
+// Jeda laporan sekarang PER TOKO (lihat profilToko): CP/NK lebih longgar
+// karena tiap tarikan membebani mesin toko lewat tailnet.
 const JEDA_ULANG_MS = Number(process.env.PUSH_JEDA_ULANG_MS || 5000);
 
 /**
@@ -76,6 +117,80 @@ function bacaKunciDariEnvIposApi() {
   return '';
 }
 
+/**
+ * Apakah URL ini sumber yang SAH untuk agen yang berjalan DI PC INI?
+ *
+ * Agen berjalan di PC kasir. Sumber yang sah hanya dua:
+ *   1. loopback (127.0.0.1 / localhost) — proxy lokal, kasus KEFA.
+ *   2. tailnet 100.64.0.0/10 — mesin toko lain (CP, NK) yang TERBUKTI
+ *      terjangkau dari PC ini. Ini alamat privat, bukan internet publik.
+ *
+ * Yang SENGAJA DITOLAK: alamat tunnel publik (trycloudflare dsb). Alamat itu
+ * dibuat untuk bot di Railway, bukan untuk agen. Kalau diterima, agen akan
+ * menarik data lewat internet publik padahal sumbernya ada di jaringan sendiri
+ * — dan tunnel itulah yang dulu mati berulang kali.
+ *
+ * Catatan: filter ini DULU hanya mengizinkan loopback, dan itulah sebab langsung
+ * CP & NK tidak pernah didorong sama sekali.
+ */
+function urlSumberSah(url) {
+  const s = String(url || '');
+  if (/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/i.test(s)) return true;
+  const m = s.match(/^http:\/\/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(:\d+)?(\/|$)/i);
+  if (!m) return false;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  // Tailscale CGNAT: 100.64.0.0/10 -> oktet kedua 64..127.
+  return a === 100 && b >= 64 && b <= 127;
+}
+
+/**
+ * PROFIL BEBAN PER TOKO — angka ini HASIL UKUR, bukan tebakan.
+ *
+ * KEFA : proxy lokal, katalog 780 KB / ~0,7 dtk. Poll 3 dtk murah.
+ * CP   : 11.037 item, katalog 2.107 KB / ~1,1 dtk lewat tailnet. Kalau dipoll
+ *        3 dtk, itu ~1,9 MB/dtk TERUS-MENERUS dan memakan satu inti PC kasir
+ *        (PC yang sama yang melayani penjualan). 15 dtk sudah cukup: SSE CP
+ *        TERBUKTI mengirim frame `items` sendiri.
+ * NK   : 5.250 item, katalog 981 KB tetapi butuh ~6,1 dtk (mesinnya lemah).
+ *        Poll rapat hanya menumpuk permintaan yang belum selesai.
+ *
+ * Delta tetap datang seketika lewat SSE. Poll stok hanyalah jaring pengaman
+ * untuk proxy yang kanal item-nya cacat (cacat itu terbukti ada di KEFA).
+ *
+ * Semua bisa diatur lewat env, dan default KEFA dipertahankan persis seperti
+ * sebelumnya supaya perilaku PC tidak berubah.
+ */
+function profilToko(nama) {
+  const p = {
+    kefa: {
+      jedaStok: Number(process.env.PUSH_JEDA_STOK_MS || 3000),
+      jedaLaporan: Number(process.env.PUSH_JEDA_LAPORAN_MS || 60000),
+      jedaMerek: Number(process.env.PUSH_JEDA_MEREK_MS || 300000),
+      jedaMarketplace: Number(process.env.PUSH_JEDA_MARKETPLACE_MS || 300000),
+    },
+    cp: {
+      jedaStok: Number(process.env.PUSH_JEDA_STOK_MS_CP || 15000),
+      jedaLaporan: Number(process.env.PUSH_JEDA_LAPORAN_MS_CP || 90000),
+      jedaMerek: Number(process.env.PUSH_JEDA_MEREK_MS_CP || 300000),
+      jedaMarketplace: Number(process.env.PUSH_JEDA_MARKETPLACE_MS_CP || 300000),
+    },
+    nk: {
+      jedaStok: Number(process.env.PUSH_JEDA_STOK_MS_NK || 20000),
+      jedaLaporan: Number(process.env.PUSH_JEDA_LAPORAN_MS_NK || 90000),
+      jedaMerek: Number(process.env.PUSH_JEDA_MEREK_MS_NK || 300000),
+      jedaMarketplace: Number(process.env.PUSH_JEDA_MARKETPLACE_MS_NK || 300000),
+    },
+  }[String(nama || '').toLowerCase()];
+  // Toko tak dikenal (kalau nanti ditambah): pakai profil paling hemat.
+  return p || {
+    jedaStok: Number(process.env.PUSH_JEDA_STOK_MS || 15000),
+    jedaLaporan: Number(process.env.PUSH_JEDA_LAPORAN_MS || 90000),
+    jedaMerek: 300000,
+    jedaMarketplace: 300000,
+  };
+}
+
 function daftarToko() {
   const hanya = String(process.env.PUSH_TOKO || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   const kunciLokal = bacaKunciDariEnvIposApi();
@@ -95,10 +210,27 @@ function daftarToko() {
   return calon
     .filter((t) => t.url && t.key)
     .filter((t) => !hanya.length || hanya.includes(t.toko))
-    // Jangan mendorong toko yang URL-nya menunjuk ke luar (tunnel/tailnet):
-    // itu alamat untuk bot di Railway, bukan untuk agen di PC ini.
-    .filter((t) => /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])/i.test(String(t.url)))
-    .map((t) => ({ ...t, url: String(t.url).replace(/\/+$/, '') }));
+    // Hanya loopback dan tailnet. Tunnel publik ditolak (lihat urlSumberSah).
+    .filter((t) => urlSumberSah(t.url))
+    .map((t) => ({ ...t, url: String(t.url).replace(/\/+$/, ''), profil: profilToko(t.toko) }));
+}
+
+/**
+ * Dua toko menunjuk alamat yang SAMA berarti salah konfigurasi: data satu toko
+ * akan masuk ke slot toko lain (mis. katalog KEFA tampil sebagai CP) tanpa
+ * error apa pun. Ini pernah benar-benar terjadi ketika IPOS_URL kosong
+ * sehingga `cp` jatuh ke default loopback yang sama dengan `kefa`.
+ * Kembalikan daftar alamat ganda supaya pemanggil bisa menolak jalan.
+ */
+function alamatGanda(toko) {
+  const peta = new Map();
+  for (const t of toko) {
+    const kunci = t.url.toLowerCase();
+    if (!peta.has(kunci)) peta.set(kunci, []);
+    peta.get(kunci).push(t.toko);
+  }
+  return [...peta.entries()].filter(([, daftar]) => daftar.length > 1)
+    .map(([url, daftar]) => ({ url, toko: daftar }));
 }
 
 const status = {
@@ -246,6 +378,7 @@ async function dorong(toko, jenis, data) {
 
 // ── PER TOKO ─────────────────────────────────────────────────────────────
 function buatToko(t) {
+  const profil = t.profil || profilToko(t.toko);
   const keadaan = {
     toko: t.toko,
     items: 0,
@@ -253,11 +386,17 @@ function buatToko(t) {
     terakhirPenuh: null,
     terakhirDelta: null,
     terakhirLaporan: null,
+    terakhirMerek: null,
+    terakhirMarketplace: null,
     err: null,
   };
   let penuhTerakhir = 0;
   let laporanTerakhir = 0;
   let laporanSedangJalan = false;
+  let merekTerakhir = 0;
+  let merekSedangJalan = false;
+  let marketplaceTerakhir = 0;
+  let marketplaceSedangJalan = false;
 
   /**
    * PETA STOK TERAKHIR — dipakai mendeteksi perubahan stok SENDIRI.
@@ -346,7 +485,7 @@ function buatToko(t) {
   /** Laporan penjualan hari ini. */
   async function kirimLaporan(paksa) {
     if (laporanSedangJalan) return;
-    if (!paksa && Date.now() - laporanTerakhir < JEDA_LAPORAN_MS) return;
+    if (!paksa && Date.now() - laporanTerakhir < profil.jedaLaporan) return;
     laporanSedangJalan = true;
     try {
       const d = new Date();
@@ -365,6 +504,56 @@ function buatToko(t) {
       laporanSedangJalan = false;
     }
   }
+
+  /**
+   * Laporan PENJUALAN PER MEREK dan MARKETPLACE.
+   *
+   * KENAPA IKUT DIDORONG
+   * --------------------
+   * Tanpa ini, di Railway laporan merek & marketplace hanya hidup kalau bot
+   * bisa menjangkau iPos langsung — dan itu sudah tidak mungkin untuk CP/NK.
+   * Fitur itu akan mati diam-diam (bot menampilkan nol) meskipun katalognya
+   * segar. Karena itu ketiga bentuk laporan didorong bersama.
+   *
+   * Objek yang dikirim adalah respons APA ADANYA dari proxy, termasuk `dari`
+   * dan `sampai`. Bridge memakai dua field itu untuk MENOLAK permintaan
+   * rentang tanggal lain, supaya tidak pernah menyajikan angka yang salah
+   * tanpa peringatan.
+   *
+   * Jeda 5 menit cukup: laporan merek/marketplace dipakai untuk rekap, bukan
+   * untuk memantau detik-per-detik, dan tiap tarikan membebani mesin toko.
+   */
+  async function kirimLaporanTambahan(jenis, jalur, paksa) {
+    const sedang = jenis === 'jual-merek'
+      ? () => merekSedangJalan
+      : () => marketplaceSedangJalan;
+    if (sedang()) return;
+    const terakhir = jenis === 'jual-merek' ? merekTerakhir : marketplaceTerakhir;
+    const jeda = jenis === 'jual-merek' ? profil.jedaMerek : profil.jedaMarketplace;
+    if (!paksa && Date.now() - terakhir < jeda) return;
+    if (jenis === 'jual-merek') merekSedangJalan = true;
+    else marketplaceSedangJalan = true;
+    try {
+      const d = new Date();
+      const tgl = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      const j = await ambilJson(
+        t.url + jalur + '?dari=' + tgl + '&sampai=' + tgl + '&key=' + encodeURIComponent(t.key),
+        90000,
+      );
+      if (!j || typeof j !== 'object') throw new Error(jenis + ' kosong');
+      await dorong(t.toko, jenis, j);
+      if (jenis === 'jual-merek') { keadaan.terakhirMerek = new Date().toISOString(); merekTerakhir = Date.now(); }
+      else { keadaan.terakhirMarketplace = new Date().toISOString(); marketplaceTerakhir = Date.now(); }
+    } catch (e) {
+      keadaan.err = jenis + ': ' + String(e.message).slice(0, 120);
+    } finally {
+      if (jenis === 'jual-merek') merekSedangJalan = false;
+      else marketplaceSedangJalan = false;
+    }
+  }
+
+  const kirimMerek = (paksa) => kirimLaporanTambahan('jual-merek', '/api/jual-merek', paksa);
+  const kirimMarketplace = (paksa) => kirimLaporanTambahan('jual-marketplace', '/api/jual-marketplace', paksa);
 
   /**
    * Langganan SSE proxy lokal.
@@ -392,7 +581,7 @@ function buatToko(t) {
         }
         keadaan.sse = 'hidup';
         gagal = 0;
-        console.log('[PUSH] ' + t.toko + ': SSE proxy lokal tersambung (sumber delta)');
+        console.log('[PUSH] ' + t.toko + ': SSE tersambung ke ' + t.url + ' (sumber delta)');
         let buf = '';
         res.setEncoding('utf8');
         res.on('data', (potongan) => {
@@ -445,7 +634,10 @@ function buatToko(t) {
     sambung();
   }
 
-  return { keadaan, kirimPenuh, kirimLaporan, kirimSelisihStok, mulaiSSE, get penuhTerakhir() { return penuhTerakhir; } };
+  return {
+    keadaan, kirimPenuh, kirimLaporan, kirimSelisihStok, kirimMerek, kirimMarketplace, mulaiSSE, profil,
+    get penuhTerakhir() { return penuhTerakhir; },
+  };
 }
 
 // ── JALAN ────────────────────────────────────────────────────────────────
@@ -470,10 +662,24 @@ function buatToko(t) {
     process.exit(1);
   }
 
+  // DUA TOKO SATU ALAMAT = data toko yang salah masuk ke slot toko lain.
+  // Contoh nyata: IPOS_URL kosong -> `cp` memakai default loopback yang sama
+  // dengan `kefa`, sehingga 4.708 item KEFA dikirim sebagai katalog CP.
+  // Tidak ada error dan /health tampak sehat, jadi ini WAJIB ditolak di sini.
+  const ganda = alamatGanda(toko);
+  if (ganda.length) {
+    for (const g of ganda) {
+      console.error('[PUSH] FATAL: toko ' + g.toko.join(' + ') + ' menunjuk alamat yang SAMA: ' + g.url);
+    }
+    console.error('[PUSH] isi IPOS_URL / IPOS_NK_URL / IPOS_KEFA_URL dengan alamat masing-masing toko.');
+    process.exit(1);
+  }
+
   status.toko = toko.map((t) => t.toko);
   tulisStatus();
-  console.log('[PUSH] mendorong ' + toko.map((t) => t.toko).join(', ') + ' -> ' + PUSH_URL);
+  console.log('[PUSH] mendorong ' + toko.map((t) => t.toko + ' (' + t.url + ')').join(', ') + ' -> ' + PUSH_URL);
   console.log('[PUSH] katalog penuh tiap ' + Math.round(JEDA_PENUH_MS / 60000) + ' menit; delta via SSE');
+  console.log('[PUSH] jeda stok: ' + toko.map((t) => t.toko + '=' + Math.round(t.profil.jedaStok / 1000) + 'dtk').join(', '));
 
   const agen = toko.map(buatToko);
 
@@ -488,8 +694,14 @@ function buatToko(t) {
     }
   }
 
-  // Laporan awal.
-  for (const a of agen) await a.kirimLaporan(true);
+  // Laporan awal. Merek & marketplace ikut, karena setelah redeploy memori
+  // server kosong dan fitur rekap itu akan tampak "nol" sampai 5 menit
+  // berikutnya kalau tidak dikirim sekarang.
+  for (const a of agen) {
+    await a.kirimLaporan(true);
+    await a.kirimMerek(true);
+    await a.kirimMarketplace(true);
+  }
 
   // SSE: sumber perubahan realtime.
   for (const a of agen) a.mulaiSSE();
@@ -514,6 +726,8 @@ function buatToko(t) {
         const n = await a.kirimPenuh();
         console.log('[PUSH] ' + a.keadaan.toko + ': server kosong saat start - katalog dipulihkan ' + n + ' item');
         await a.kirimLaporan(true);
+        await a.kirimMerek(true);
+        await a.kirimMarketplace(true);
       }
     } catch (e) {
       catatGagal(a.keadaan.toko, 'denyut', e.message);
@@ -537,6 +751,8 @@ function buatToko(t) {
           }
           // Laporan juga hilang bersama memori server.
           await a.kirimLaporan(true);
+          await a.kirimMerek(true);
+          await a.kirimMarketplace(true);
         }
       } catch (e) {
         catatGagal(a.keadaan.toko, 'denyut', e.message);
@@ -545,23 +761,28 @@ function buatToko(t) {
   }, Number(process.env.PUSH_JEDA_DENYUT_MS || 30000));
   if (denyut.unref) denyut.unref();
 
-  // ── PEMANTAU STOK (loop cepat) ──────────────────────────────────────
+  // ── PEMANTAU STOK (loop cepat, JEDA PER TOKO) ───────────────────────
   //
   // DIPISAH dari `pengawas` 30 detik, dan itu penting: perubahan stok akibat
   // penjualan harus terlihat dalam hitungan detik. Menumpangkannya pada loop
   // 30 detik membuat "realtime" hanya nama — pembeli bisa melihat stok lama
   // sampai setengah menit.
   //
-  // Beban satu putaran = satu GET /api/items ke proxy lokal (localhost,
-  // ~0,7 detik untuk 780 KB). Dengan jeda 3 detik itu ~23% waktu satu inti,
-  // masih wajar untuk PC kasir. Bisa diatur lewat PUSH_JEDA_STOK_MS.
-  const pemantauStok = setInterval(async () => {
-    for (const a of agen) {
+  // JEDA BERBEDA PER TOKO karena biayanya berbeda jauh (hasil ukur):
+  //   KEFA 780 KB / 0,7 dtk di localhost  -> 3 dtk
+  //   CP   2.107 KB / 1,1 dtk lewat tailnet -> 15 dtk (SSE CP kirim `items`)
+  //   NK   981 KB / 6,1 dtk (mesin lemah)   -> 20 dtk
+  // Satu jeda global akan membuat CP/NK memakan bandwidth tailnet terus-menerus
+  // atau membuat KEFA tidak realtime. Jadi tiap toko punya pewaktu sendiri.
+  const pewaktuStok = [];
+  for (const a of agen) {
+    const t = setInterval(async () => {
       try { await a.kirimSelisihStok(); }
       catch (e) { catatGagal(a.keadaan.toko, 'items-ubah', e.message); }
-    }
-  }, Number(process.env.PUSH_JEDA_STOK_MS || 3000));
-  if (pemantauStok.unref) pemantauStok.unref();
+    }, a.profil.jedaStok);
+    if (t.unref) t.unref();
+    pewaktuStok.push(t);
+  }
 
   // Jaring pengaman: katalog penuh berkala + laporan berkala.
   const pengawas = setInterval(async () => {
@@ -576,6 +797,8 @@ function buatToko(t) {
         catatGagal(a.keadaan.toko, 'items', e.message);
       }
       await a.kirimLaporan(false);
+      await a.kirimMerek(false);
+      await a.kirimMarketplace(false);
     }
     tulisStatus();
   }, 30000);
