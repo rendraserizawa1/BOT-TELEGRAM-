@@ -482,12 +482,26 @@ function buatBridge({ url, key, toko, label }) {
    *   3. Selain itu -> catat PESANAN untuk dijemput PC dan beri tahu pemanggil
    *      bahwa datanya sedang diambil. Tidak pernah menampilkan nol palsu.
    */
+  /**
+   * Tempelkan SEBAB kebekuan ke laporan yang dikirim.
+   *
+   * Proxy melaporkan galat DB-nya di `/health` (`err`), BUKAN di respons
+   * `/api/jual`. Tanpa ditempelkan di sini, bot hanya bisa bilang "laporan
+   * beku" tanpa menyebut sebabnya — dan sebabnya itulah yang menentukan siapa
+   * yang harus bertindak. Nilainya diambil dari laporan itu sendiri (`data.err`
+   * bila proxy menyertakannya), bukan dikarang.
+   */
+  function tempelSebab(d) {
+    if (!d || typeof d !== 'object') return d;
+    if (!d.updateSebab && d.err) d.updateSebab = String(d.err).slice(0, 120);
+    return d;
+  }
+
   function laporanDorong(jenis, dari, sampai) {
     const minta1 = String(dari || '').slice(0, 10);
     const minta2 = String(sampai || dari || '').slice(0, 10);
 
     // 1. Rentang yang sudah pernah dikirim.
-    //
     //    PENTING: laporan yang rentangnya MENCAKUP HARI INI masih berubah
     //    (nota baru terus masuk), jadi ia tetap WAJIB segar. Tanpa pemeriksaan
     //    ini, laporan hari ini yang beku akan disajikan sebagai "sudah ada di
@@ -502,7 +516,7 @@ function buatBridge({ url, key, toko, label }) {
       if (!mencakupHariIni) {
         const upd0 = Number(tersimpan.data.update);
         if (Number.isFinite(upd0) && upd0 > 0) lapUpdateTerakhir = upd0 > 1e12 ? upd0 : upd0 * 1000;
-        return tersimpan.data;
+        return tempelSebab(tersimpan.data);
       }
       // Mencakup hari ini: pakai hanya bila masih segar, kalau tidak jatuh ke
       // jalur di bawah yang melaporkan "basi" dengan jelas.
@@ -510,7 +524,7 @@ function buatBridge({ url, key, toko, label }) {
       if (Number.isFinite(umurR) && umurR <= PUSH_BATAS_LAPORAN_DETIK) {
         const upd0 = Number(tersimpan.data.update);
         if (Number.isFinite(upd0) && upd0 > 0) lapUpdateTerakhir = upd0 > 1e12 ? upd0 : upd0 * 1000;
-        return tersimpan.data;
+        return tempelSebab(tersimpan.data);
       }
     }
 
@@ -523,7 +537,7 @@ function buatBridge({ url, key, toko, label }) {
       if (segar) {
         const upd = Number(segar.update);
         if (Number.isFinite(upd) && upd > 0) lapUpdateTerakhir = upd > 1e12 ? upd : upd * 1000;
-        return segar;
+        return tempelSebab(segar);
       }
       const umur = pushGudang.umurDetik(tokoUtama, jenis);
       throw new Error(`laporan ${jenis} dorongan basi (${umur} dtk)`);
@@ -567,7 +581,7 @@ function buatBridge({ url, key, toko, label }) {
             if (ada && ada.data) {
               lapErrTerakhir = null;
               lapDiperiksaPada = Date.now();
-              return ada.data;
+              return tempelSebab(ada.data);
             }
           }
         }
@@ -583,7 +597,7 @@ function buatBridge({ url, key, toko, label }) {
       if (d1c === String(dari || '').slice(0, 10) && d2c === String(sampai || dari || '').slice(0, 10)) {
         lapCache.set(url, { t: Date.now(), data: dariDorong, jualE: lastJualEvent });
       }
-      return dariDorong;
+      return tempelSebab(dariDorong);
     }
 
     if (!IPOS_KEY) throw new Error(`IPOS_KEY untuk ${LABEL} belum diisi di .env`);

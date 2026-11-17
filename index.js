@@ -614,6 +614,40 @@ function headerBackup(diambil, namaToko) {
   return `⚠️ *API ${namaToko} MATI — DATA BACKUP TERAKHIR*\n📦 Data jam ${w.jam}, ${w.tgl} (${w.umur})\n_Inilah data terakhir sebelum mati — bukan data realtime._\n${GARIS_TEBAL}\n`;
 }
 
+/**
+ * Header peringatan saat laporan BERHASIL diambil tetapi angkanya BEKU.
+ *
+ * KENAPA INI PERLU, DAN KENAPA TIDAK CUKUP DENGAN /health
+ * -------------------------------------------------------
+ * Kasus nyata: proxy CP tidak bisa mencapai DB-nya (ENETUNREACH
+ * 192.168.77.250:5444), sehingga `update` laporan berhenti bertambah. Agen
+ * tetap mengirim ulang laporan yang sama tiap menit, jadi dari sisi /health
+ * KIRIMANNYA tampak segar — padahal ANGKA di dalamnya sudah 80 menit tidak
+ * berubah. Pengguna melihat laporan penjualan kasir seolah hari ini, padahal
+ * penjualan setelah titik itu tidak ada di dalamnya.
+ *
+ * Tanpa header ini, bot berbohong dengan tampang paling meyakinkan: angka
+ * rapi, tanpa satu pun tanda bahwa ada penjualan yang hilang. Lebih baik
+ * melaporkan kebasiannya terus terang.
+ *
+ * @param {number} umurDetik  umur `update` laporan (detik)
+ * @param {string} sebab      pesan galat sumber bila ada
+ * @returns {string} '' bila masih segar
+ */
+function headerLaporanBasi(umurDetik, sebab) {
+  const u = Number(umurDetik);
+  if (!Number.isFinite(u) || u < 600) return '';
+  const menit = Math.round(u / 60);
+  const lama = menit < 60
+    ? `${menit} menit`
+    : `${Math.floor(menit / 60)} jam ${menit % 60} menit`;
+  const pesanSebab = sebab ? `\n_Sebab: ${escapeMd(String(sebab).slice(0, 120))}_` : '';
+  return `🚨 *LAPORAN BEKU — ANGKA DI BAWAH BUKAN TERBARU*\n`
+    + `Sumber iPos tidak memperbarui data penjualan selama *${lama}*.\n`
+    + `_Penjualan setelah titik itu TIDAK termasuk di laporan ini._`
+    + pesanSebab + `\n${GARIS_TEBAL}\n\n`;
+}
+
 log.info('INIT', `Members: ${MEMBERS.length}, Kontak: ${Object.keys(KONTAK).length}`);
 
 const crypto = require('crypto');
@@ -1781,6 +1815,23 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
   const LABEL_TOKO = isKefa ? '🏪 Perabot Mamaku Kefamenanu (KEFA)' : isNk ? '🏬 Nasional Kitchen (NK)' : '🏢 Central Perabot (CP)';
   const LABEL_TOTAL = isKefa ? 'TOTAL KEFA' : isNk ? 'TOTAL NK' : 'TOTAL CP';
   if (!kasir.length && r.promoSiap !== false) {
+    // JEBAKAN TERBURUK: daftar kasir kosong BUKAN berarti "tidak ada penjualan".
+    // Bila sumbernya beku, bot dulu menjawab "😴 Tidak ada penjualan pada
+    // tanggal ini." — kalimat yang salah dan berbahaya, karena penjualan bisa
+    // saja ada tetapi tidak terbaca. Kebekuan harus disebut LEBIH DULU,
+    // sebelum kesimpulan "tidak ada penjualan" diambil.
+    const basiKosong = headerLaporanBasi(
+      r.update ? (Date.now() - (Number(r.update) > 1e12 ? Number(r.update) : Number(r.update) * 1000)) / 1000 : NaN,
+      r.updateSebab || r.errSumber,
+    );
+    if (basiKosong) {
+      let msgBasi = basiKosong
+        + `🧾 *LAPORAN PENJUALAN KASIR*\n${LABEL_TOKO}\n📅 ${escapeMd(tglLabel)}\n${GARIS_TEBAL}\n\n`
+        + `❓ *BUKAN "tidak ada penjualan"* — datanya tidak bisa dibaca, jadi jumlahnya tidak diketahui.`;
+      if (jangkauan.dari) msgBasi += `\n\n📦 Data iPos tersedia: ${jangkauan.dari} s/d ${jangkauan.sampai}`;
+      msgBasi += `\n\n💡 Coba lagi setelah sumber iPos tersambung kembali.`;
+      return kirim(chatId, msgBasi, { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd, toko) });
+    }
     let msg = `🧾 *LAPORAN PENJUALAN KASIR*\n${LABEL_TOKO}\n📅 ${escapeMd(tglLabel)}\n${GARIS_TEBAL}\n\n😴 Tidak ada penjualan pada tanggal ini.`;
     if (jangkauan.dari) msg += `\n\n📦 Data iPos tersedia: ${jangkauan.dari} s/d ${jangkauan.sampai}`;
     msg += `\n\n💡 Ketik: \`laporan ${isKefa ? 'kefa ' : isNk ? 'nk ' : ''}penjualan 24/09\``;
@@ -1801,6 +1852,14 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
 
   const lines = [];
   if (dariBackup) lines.push(headerBackup(dariBackup.diambil, isKefa ? 'KEFA' : isNk ? 'NK' : 'CP'));
+  // Peringatan kebekuan: `update` = kapan SUMBER terakhir memperbarui angka.
+  // Agen yang mengirim ulang laporan beku tetap terlihat "segar" dari sisi
+  // kiriman, jadi kebekuan HARUS diperiksa dari isi laporan itu sendiri.
+  const basiKasir = headerLaporanBasi(
+    r.update ? (Date.now() - (Number(r.update) > 1e12 ? Number(r.update) : Number(r.update) * 1000)) / 1000 : NaN,
+    r.updateSebab || r.errSumber,
+  );
+  if (basiKasir) lines.push(basiKasir);
   lines.push('🧾 *LAPORAN PENJUALAN KASIR*');
   lines.push(LABEL_TOKO);
   lines.push(`📅 ${escapeMd(tglLabel)}`);
@@ -2030,6 +2089,11 @@ async function tampilkanLaporanMerek(chatId, userId, dari, sampai, toko = 'cp') 
   const emoMerek = (m) => (m === 'HOMMY' ? '🛋️' : m === 'KIREI' ? '🪑' : '🏷️');
   const lines = [];
   if (dariBackupHk) lines.push(headerBackup(dariBackupHk.diambil, toko === 'nk' ? 'NK' : toko === 'kefa' ? 'KEFA' : 'CP'));
+  const basiHk = headerLaporanBasi(
+    r.update ? (Date.now() - (Number(r.update) > 1e12 ? Number(r.update) : Number(r.update) * 1000)) / 1000 : NaN,
+    r.updateSebab || r.errSumber,
+  );
+  if (basiHk) lines.push(basiHk);
   lines.push('🛋️ *LAPORAN PENJUALAN HOMMY & KIREI*');
   lines.push(LABEL_TOKO_HK);
   lines.push(`📅 ${escapeMd(periode)}`);
@@ -2256,6 +2320,11 @@ async function tampilkanLaporanMarketplace(chatId, userId, dari, sampai, toko = 
   const adaRincianMp = (Number(c.nota) || 0) > 0 || notas.length > 0;
   const lines = [];
   if (dariBackupMp) lines.push(headerBackup(dariBackupMp.diambil, toko === 'nk' ? 'NK' : toko === 'kefa' ? 'KEFA' : 'CP'));
+  const basiMp = headerLaporanBasi(
+    r.update ? (Date.now() - (Number(r.update) > 1e12 ? Number(r.update) : Number(r.update) * 1000)) / 1000 : NaN,
+    r.updateSebab || r.errSumber,
+  );
+  if (basiMp) lines.push(basiMp);
   if (isNk || isKefa) {
     // NK/KEFA: tidak ada toko pasangan — cukup baris toko sendiri (format manual sama)
     lines.push(`Total Penjualan Marketplace ${isNk ? 'Nasional Kitchen' : 'Perabot Mamaku Kefamenanu'} Periode ${periode}`);
