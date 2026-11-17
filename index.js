@@ -14211,6 +14211,19 @@ webApp.get('/health', (req, res) => {
       cp: pushGudang.status('cp'),
       nk: pushGudang.status('nk'),
       kefa: pushGudang.status('kefa'),
+      // Bukti PC MENJEMPUT pesanan laporan tanggal lampau. Tanpa ini,
+      // "PC hidup" dan "PC menjemput pesanan" tidak bisa dibedakan dari luar.
+      jemput: (() => {
+        const hasil = {};
+        const j = webApp._jemput || {};
+        for (const t of ['cp', 'nk', 'kefa']) {
+          const x = j[t];
+          hasil[t] = x
+            ? { jumlah: x.jumlah, umurDetik: Math.max(0, Math.round((Date.now() - x.terakhir) / 1000)) }
+            : { jumlah: 0, umurDetik: null };
+        }
+        return hasil;
+      })(),
     },
   });
 });
@@ -14268,6 +14281,15 @@ webApp.get('/api/ipos/perlu', (req, res) => {
   }
   const toko = String(req.query.toko || '').toLowerCase();
   if (!toko) return res.status(400).json({ ok: false, err: 'toko wajib diisi' });
+  // Penghitung penjemputan: bukti bahwa PC benar-benar menjemput pesanan.
+  // Tanpa ini, "PC hidup" dan "PC menjemput pesanan" tidak bisa dibedakan dari
+  // luar — dan fitur laporan tanggal lampau akan tampak rusak tanpa sebab.
+  if (!webApp._jemput) webApp._jemput = {};
+  const kini = Date.now();
+  const j = webApp._jemput[toko] || { jumlah: 0, terakhir: 0 };
+  j.jumlah++;
+  j.terakhir = kini;
+  webApp._jemput[toko] = j;
   const daftar = pushGudang.jemputPermintaan(toko);
   res.json({ ok: true, toko, permintaan: daftar });
 });
