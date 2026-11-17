@@ -585,13 +585,19 @@ function buatToko(t) {
         { timeout: 20000, headers: { 'x-push-token': PUSH_TOKEN } },
       );
       if (r.status !== 200) {
-        // 401/503 = salah konfigurasi; jangan mengulang tiap detik.
-        if (r.status === 401 || r.status === 503) {
+        // Gangguan sesaat (jaringan, redeploy) TIDAK dicatat sebagai kegagalan.
+        // Penjemput berjalan tiap 2 dtk, dan `catatGagal` menulis berkas status
+        // setiap kali dipanggil — mencatat tiap gangguan akan menulis disk
+        // terus-menerus dan mengubur kegagalan yang sungguhan. Hanya salah
+        // konfigurasi (401/503) yang perlu terlihat, dan itu pun sekali saja.
+        if ((r.status === 401 || r.status === 503) && keadaan.err !== 'perlu: HTTP ' + r.status) {
           keadaan.err = 'perlu: HTTP ' + r.status;
-          return;
+          catatGagal(t.toko, 'permintaan', 'HTTP ' + r.status + ' saat menjemput pesanan');
         }
         return;
       }
+      // Berhasil menjemput: bersihkan galat penjemput sebelumnya.
+      if (keadaan.err && keadaan.err.startsWith('perlu:')) keadaan.err = null;
       let j = null;
       try { j = JSON.parse(r.body); } catch (_) { return; }
       const daftar = Array.isArray(j && j.permintaan) ? j.permintaan : [];
@@ -613,12 +619,14 @@ function buatToko(t) {
           await dorong(t.toko, p.jenis, lap);
           console.log('[PUSH] ' + t.toko + ': pesanan ' + p.jenis + ' ' + dari + ' s/d ' + sampai + ' dipenuhi');
         } catch (e) {
-          // Pesanan dibiarkan; server akan membuangnya sendiri setelah 10 menit.
+          // Pesanan dibiarkan; server membuangnya sendiri setelah 10 menit.
           catatGagal(t.toko, 'permintaan', p.jenis + ' ' + dari + ': ' + String(e.message).slice(0, 90));
         }
       }
     } catch (e) {
-      catatGagal(t.toko, 'permintaan', String(e.message).slice(0, 90));
+      // Sama seperti di atas: gangguan jaringan sesaat bukan kegagalan yang
+      // perlu dicatat tiap 2 detik.
+      return;
     } finally {
       permintaanSedangJalan = false;
     }

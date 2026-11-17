@@ -2,6 +2,63 @@
 
 Status: **SELESAI & TERVERIFIKASI** (2026-11-17)
 
+## Laporan TANGGAL LAMPAU (perbaikan lanjutan, 2026-11-17)
+
+Keluhan: laporan marketplace CP **14/11/2026 dilaporkan KOSONG**, padahal di
+sumbernya ada 6 nota / **Rp 26.583.000**.
+
+### Akar masalah
+
+Agen hanya mendorong laporan **hari ini**, dan bridge **menolak** rentang tanggal
+lain. Penolakan itu niatnya benar — jangan menyajikan angka hari ini untuk
+pertanyaan tanggal lain — tetapi akibatnya data yang **ADA** menjadi tidak bisa
+diakses sama sekali. Penjaga rentang itu ditambahkan pada commit sebelumnya, jadi
+ini **regresi**, bukan cacat lama. Berlaku untuk semua toko, bukan hanya CP.
+
+### Perbaikan: jalur PESANAN
+
+Railway tidak bisa menjangkau iPos (CGNAT) dan PC tidak bisa dijangkau dari luar,
+jadi arah data **tetap PC → Railway**:
+
+1. Bot butuh rentang yang belum ada → catat **pesanan** (`mintaRentang`).
+2. Agen menjemput pesanan tiap 2 dtk: `GET /api/ipos/perlu?toko=cp` (token wajib).
+3. Agen mengambil laporan itu dari proxy toko, lalu mengirimnya seperti biasa.
+4. Bot menyajikannya; permintaan berikutnya dilayani dari **gudang rentang**.
+
+Tidak ada koneksi masuk ke PC, jadi tidak ada yang perlu dijaga tetap hidup.
+
+### Dua kesalahan yang ditemukan oleh uji (bukan oleh dugaan)
+
+1. **Laporan tanggal lampau menimpa slot laporan hari ini.** Akibatnya `/health`
+   melaporkan laporan hari ini "segar" padahal isinya laporan minggu lalu, dan
+   permintaan laporan hari ini bisa dilayani isi tanggal lampau. Sekarang slot
+   hanya digeser oleh laporan yang `sampai`-nya sama atau lebih baru.
+2. **Gudang rentang meloloskan laporan hari ini dari pemeriksaan kesegaran.**
+   Laporan yang rentangnya **mencakup hari ini** masih berubah, jadi tetap WAJIB
+   segar; hanya rentang yang sudah **lewat** yang boleh dipakai ulang.
+
+### Bukti
+
+| Uji | Hasil |
+|---|---|
+| `boot/test-laporan-rentang-lampau.js` | **25/25** |
+| `boot/bukti-uji-tangkap-bug.js` (uji vs kode lama) | kode lama **10 gagal**, kode baru **25/25** |
+| `boot/test-rantai-pesanan-nyata.js` (data ASLI) | **9/9** — marketplace CP 14/11 → 6 nota, Rp 26.583.000 |
+| 16 uji dorongan lain | semua lulus |
+| `boot/uji-jaminan.js` | 19/19 |
+| `boot/pindai-rahasia.js` | nol kebocoran |
+
+Uji rantai penuh membuktikan sambungannya, bukan hanya logikanya: agen sungguhan
+menjemput pesanan, mengambil dari proxy toko sungguhan, dan bot menyajikannya —
+dan permintaan kedua **tidak** meminta ulang ke PC.
+
+### Rollback
+
+Kembalikan `ipos-bridge.js` (`laporanDorong`), `boot/push-penerima.js`,
+`boot/push-gudang.js`, `boot/push-agen.js`, dan endpoint `/api/ipos/perlu` di
+`index.js` ke commit `1ad68f2^`. Tanpa endpoint itu, agen hanya gagal menjemput
+dan tidak mengganggu jalur dorongan yang sudah berjalan.
+
 ## Akar masalah (terbukti, bukan tebakan)
 
 | # | Temuan | Bukti |
