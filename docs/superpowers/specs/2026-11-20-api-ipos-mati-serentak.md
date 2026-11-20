@@ -160,6 +160,64 @@ ditambahkan tanpa hak admin. Percobaan `Start-Process -Verb RunAs` gagal dua kal
 6. **Pertimbangkan agen cadangan** — saat ini satu PC adalah titik gagal tunggal
    untuk ketiga toko.
 
+---
+
+## 7A. Perbaikan yang SUDAH dikerjakan (commit `1e92ca7`)
+
+| Berkas | Fungsi | Status |
+|---|---|---|
+| `boot/pasang-autologon.ps1` | autologon rdpadmin, password diverifikasi dulu | **siap, perlu dijalankan sebagai admin** |
+| `boot/lepas-autologon.ps1` | membatalkan autologon | siap |
+| `boot/jaga-ram.ps1` | tutup Chrome tiap 23:00 (daftar putih) | **sudah dipasang** (`BCODE-JAGA-RAM`, 23:00) |
+| `boot/pasang-jaga-ram.ps1` | memasang tugas di atas | sudah dipakai |
+| `boot/rotasi-kunci-kefa.js` | rotasi kunci proxy lokal | **sudah diterapkan & terverifikasi** |
+| `boot/nyalakan-ulang-agen.js` | restart seluruh rantai agen | sudah dipakai |
+| `boot/test-jaga-ram.js` | 44 assertion | lulus |
+| `boot/test-rantai-agen.js` | 29 assertion | lulus |
+
+### 7A.1 Temuan penting saat rotasi kunci: wrapper menahan env lama
+
+`jaga-push.ps1` adalah **wrapper** yang membaca `boot/push-agen.env` ke dalam
+environment **prosesnya sendiri** saat start, lalu mewariskannya ke
+`node jaga-push.js` → `node push-agen.js`.
+
+Akibatnya **mengubah `push-agen.env` tidak cukup**. Wrapper yang hidup sejak
+sebelum perubahan terus mewariskan nilai lama. Gejalanya menyesatkan: berkas
+sudah benar, proxy lokal menjawab HTTP 200 dengan kunci baru, tetapi KEFA tetap
+`online=false` — terlihat seperti "kunci salah" padahal kuncinya benar dan yang
+salah adalah **proses yang belum pernah membaca berkas baru**.
+
+Restart harus dari **akar rantai**, berurutan:
+
+```
+wscript.exe (run-hidden.vbs)
+  └─ powershell.exe (wrapper jaga-push.ps1)
+       └─ node jaga-push.js
+            └─ node push-agen.js
+```
+
+Mematikan hanya `push-agen.js` tidak menolong: penjaga menyalakannya ulang
+dalam hitungan detik memakai env lama.
+
+### 7A.2 Kesalahan yang sempat terjadi saat menulis skrip restart
+
+Filter proses `-match 'jaga-push'` **ikut mencocokkan proses pemeriksa itu
+sendiri**, karena teks perintahnya memuat kata "jaga-push". Skrip membunuh
+shell-nya sendiri (gejala: `kill ESRCH`, PID berubah-ubah tiap detik).
+Sekarang dipakai pola positif yang ketat ditambah penanda pengecualian, dan
+`boot/test-rantai-agen.js` mengunci perilaku itu.
+
+### 7A.3 Yang BELUM bisa diselesaikan dari sini
+
+- **Autologon belum aktif** — butuh hak admin, dan UAC tidak sampai ke layar
+  sesi RDP. Skrip sudah siap; jalankan manual sebagai Administrator.
+- **UPS dan RAM** — pekerjaan fisik.
+- **Kunci CP dan NK belum dirotasi** — kuncinya hidup di ADMIN_DIMAS dan
+  BARCODE-NN, bukan di PC ini. Merotasinya dari sini akan langsung memutus
+  laporan toko.
+- **Rotasi kunci CP/NK wajib**, karena kunci CP (`IPOS_KEY`) juga ikut tercetak
+  di keluaran PowerShell selama investigasi.
+
 ## 8. Catatan keamanan
 
 Kunci iPos tercetak di keluaran PowerShell selama investigasi ini (filter
