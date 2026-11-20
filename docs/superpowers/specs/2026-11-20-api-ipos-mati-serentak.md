@@ -1,8 +1,16 @@
 # Insiden 2026-11-20: "SEMUA API iPos MATI SERENTAK"
 
 **Kesimpulan satu baris:** ketiga API iPos **tidak pernah mati**. PC `BCODE-KEFA`
-crash, lalu tidak ada yang login selama 74 menit, sehingga agen pengirim data
-tidak menyala dan ketiga toko tampak mati bersamaan.
+mati mendadak berulang kali, dan agen pengirim data hanya menyala setelah ada
+manusia login, sehingga ketiga toko tampak mati bersamaan.
+
+> **PEMBARUAN 16:47 — jumlah crash naik selama investigasi.**
+> 5 crash pada 20/11 (bukan 3): `11:53`, `12:33`, `12:40`, `14:47`, `15:42`.
+> Jeda antar-crash **memendek**: 40 → 7 → 127 → 55 menit. Ini pola yang
+> memburuk, bukan gangguan sekali lewat. Dua crash terakhir membawa
+> `PowerButtonTimestamp` terisi — tombol power **ditekan** pada `12:19:36`
+> dan `14:47:27`. Untuk `12:40:12` tombol ditekan 20 menit sebelumnya,
+> jadi tidak menjelaskan reboot itu.
 
 ---
 
@@ -65,7 +73,24 @@ berhenti mengirim menjelaskan semuanya.
 
 Jadi autostart-saat-login **sudah benar**. Yang tidak ada adalah autostart
 **tanpa login**. Setelah crash, PC menyala ke layar login dan berhenti di situ
-sampai ada manusia yang masuk RDP.
+sampai ada manusia yang masuk.
+
+### 3.1 Setelah crash terakhir, agen telat 34 menit — padahal ada logon
+
+```
+15:42:54  boot selesai
+15:42:59  sesi konsol (LogonType=2) terbentuk   -> HKCU Run seharusnya jalan
+16:16:13  logon RDP (LogonType=10)
+16:16:43  agen menyala  (jaga-push, jaga-poller)
+16:16:48  push-agen menyala
+```
+
+Hanya ada **satu** `push-agen` hidup (pid 14420). Artinya `HKCU Run` **tidak
+berhasil** menjalankan agen pada logon konsol 15:42:59; agen baru hidup setelah
+logon RDP 16:16:13. Penyebab pastinya belum terbukti dan **tidak boleh ditebak** —
+kandidatnya: agen dari logon konsol memang sempat jalan lalu mati, atau `HKCU Run`
+tidak dieksekusi pada sesi itu. Yang jelas: ketergantungan pada logon manual
+tetap menjadi penyebab jeda panjang.
 
 ## 4. Penyebab crash — dan ini bukan software
 
