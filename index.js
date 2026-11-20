@@ -5195,12 +5195,27 @@ const NOTIF_MULAI_MS = 5 * 60 * 1000;      // baru lapor setelah offline 5 mnt
 // Karena itu teks dinamis di-escape, dan pengiriman memakai fallback teks
 // polos bila Markdown tetap ditolak.
 const __escMd = (s) => String(s == null ? '' : s).replace(/[_*[\]`]/g, (m) => '\\' + m);
+// `__semuaMatiDilaporkan` menahan peringatan gabungan agar hanya dikirim sekali
+// per insiden. Tanpa penahan ini, tiap siklus 60 detik akan mengirim ulang.
+let __semuaMatiDilaporkan = false;
 const __kirimAman = async (chatId, teksMarkdown, teksPolos) => {
+  // Hasil pengiriman WAJIB dicatat. Sebelum ini tidak ada jejak sama sekali,
+  // sehingga mustahil membedakan "admin sudah diberi tahu" dari "peringatan
+  // gagal terkirim" — dan pada 20/11/2026 ketiga toko gelap 79 menit tanpa
+  // bukti apakah admin pernah menerima peringatan.
   try {
     const r = await kirim(chatId, teksMarkdown, { parse_mode: 'Markdown' });
-    if (r) return r;
+    if (r) { log.info('NOTIF', 'peringatan terkirim ke admin (Markdown)'); return r; }
   } catch (e) { /* jatuh ke teks polos */ }
-  try { return await kirim(chatId, teksPolos, {}); } catch (e) { return null; }
+  try {
+    const r = await kirim(chatId, teksPolos, {});
+    if (r) { log.warn('NOTIF', 'peringatan terkirim sebagai teks polos — Markdown ditolak Telegram'); return r; }
+    log.warn('NOTIF', 'peringatan GAGAL: Telegram mengembalikan hasil kosong');
+    return null;
+  } catch (e) {
+    log.error('NOTIF', 'peringatan GAGAL terkirim: ' + (e && e.message ? e.message : String(e)));
+    return null;
+  }
 };
 setInterval(() => {
   try {
@@ -5246,6 +5261,45 @@ setInterval(() => {
           `Data kembali ter-update otomatis.`,
           `iPos ${nama} ONLINE lagi setelah ${menit} menit.\nData kembali ter-update otomatis.`);
       }
+    }
+
+    // ── Deteksi "KETIGA toko mati BERSAMAAN" ────────────────────────────
+    // Pada 20/11/2026 ketiga toko gelap 79 menit karena SATU PC crash lalu
+    // tidak ada yang login. Tiga peringatan terpisah menyembunyikan fakta
+    // bahwa penyebabnya satu: pengirim data di PC, bukan tiga API toko.
+    // Peringatan gabungan ini menyebut kemungkinan penyebabnya langsung,
+    // supaya admin tidak mengejar tiga masalah yang sebenarnya satu.
+    const jumlahMati = Object.keys(peta).filter((tk) => {
+      const b = peta[tk];
+      if (!b || !b.status) return false;
+      try {
+        const s = b.status();
+        return !!(s && !s.online);
+      } catch (_) { return false; }
+    });
+    if (jumlahMati.length === 3) {
+      if (!__semuaMatiDilaporkan) {
+        __semuaMatiDilaporkan = true;
+        log.warn('NOTIF', 'KETIGA toko OFFLINE bersamaan: cp, nk, kefa');
+        __kirimAman(adminId,
+          `🚨 *KETIGA TOKO OFFLINE BERSAMAAN*\n` +
+          `CP, NK, dan KEFA semuanya berhenti mengirim data.\n\n` +
+          `Tiga API yang mati serentak itu hampir mustahil. Penyebab yang paling ` +
+          `mungkin: *komputer pengirim data (BCODE-KEFA) mati, atau tidak ada yang ` +
+          `login setelah PC menyala* — agen hanya hidup kalau ada yang login.\n\n` +
+          `Periksa PC pengirim, bukan ketiga toko.`,
+          `KETIGA TOKO OFFLINE BERSAMAAN\n` +
+          `CP, NK, dan KEFA semuanya berhenti mengirim data.\n\n` +
+          `Tiga API yang mati serentak itu hampir mustahil. Penyebab paling mungkin: ` +
+          `komputer pengirim data (BCODE-KEFA) mati, atau tidak ada yang login setelah ` +
+          `PC menyala - agen hanya hidup kalau ada yang login.\n\n` +
+          `Periksa PC pengirim, bukan ketiga toko.`);
+      }
+    } else {
+      // Begitu ada toko yang pulih, izinkan peringatan gabungan terkirim lagi
+      // pada insiden berikutnya. Tidak akan spam karena syaratnya harus
+      // KETIGA toko mati lagi.
+      __semuaMatiDilaporkan = false;
     }
   } catch (e) { /* jangan ganggu loop utama */ }
 }, 60 * 1000);
