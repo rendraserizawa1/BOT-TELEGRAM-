@@ -1,14 +1,19 @@
 # Stock Opname — tampilkan petugas + jam pada barang yang sudah dihitung
 
 Tanggal: 2026-11-24
-Status: **dikerjakan** (lihat bagian "Hasil pelaksanaan" dan "Perbaikan lanjutan"
-di bawah)
+Status: **dikerjakan** (lihat bagian "Hasil pelaksanaan", "Perbaikan lanjutan",
+dan "Perbaikan ketiga" di bawah)
 
 > Catatan: rancangan awal hanya menampilkan entri milik **petugas lain**, sehingga
 > layar tetap kosong bila yang membuka adalah petugas yang sudah menghitung
 > barang itu. Bagian **"Perbaikan lanjutan — riwayat SELALU tampil"** di bawah
 > memperbaiki hal ini: sekarang semua entri tampil, entri sendiri ditandai
 > `(Anda)`.
+>
+> Bagian **"Perbaikan ketiga — tiap input jadi baris sendiri"** memperbaiki bug
+> penyimpanan: input berulang dari petugas yang sama dulu digabung menjadi satu
+> baris (`qty += `), sehingga qty 2 lalu 4 tampil sebagai `6` dan jam aslinya
+> hilang. Sekarang setiap input adalah entri tersendiri.
 
 ## Masalah
 
@@ -330,3 +335,113 @@ baru, satu sesi:
   (`test-so-petugas` 52, `test-so-data-nyata` 15, `test-kunci-proses` 16).
 - 22 berkas keluar dengan exit ≠ 0 di **kedua** versi karena butuh jaringan —
   sudah begitu sebelum perubahan ini.
+
+## Perbaikan ketiga — tiap input jadi baris sendiri (2026-11-24, sesi ketiga)
+
+### Keluhan
+
+Petugas `Tri` menginput `TOKO 2` lalu `TOKO 4`. Yang tampil di layar:
+
+```
+3. *Tri* _(Anda)_ di *RAK LANTAI 1 HOMMY*
+   ⏰ 10:27 \(updated\) | 🏪 FISIK: 6
+   ⚠️ data lama — petugas bisa tercampur, hitung ulang bila ragu
+```
+
+Dua input berbeda waktu digabung menjadi satu baris `6`, dan jam input aslinya
+hilang. Yang diminta: **dipisah per entry per qty, lengkap dengan jam:menit
+masing-masing**.
+
+### Akar masalah — di penyimpanan, bukan tampilan
+
+```js
+// index.js:2620-2629 (SEBELUM perbaikan ini)
+const existIdx = entries.findIndex(e =>
+  String(e.userId) === String(userId) &&
+  kunciPetugas(e.namaPetugas) === kunciPetugas(namaPetugas) &&
+  e.jenis === jenis
+);
+if (existIdx >= 0) {
+  entries[existIdx].qty += tambahQty;                    // qty DIGABUNG
+  entries[existIdx].jamInput = getJamSekarang() + ' (updated)';  // jam lama HILANG
+  entries[existIdx].timestamp = Date.now();
+}
+```
+
+Perbaikan sesi pertama hanya menambahkan `namaPetugas` ke pencocokan. Itu
+memisahkan qty antar **petugas berbeda**, tetapi petugas yang sama masih
+digabung. Reproduksi dengan data bentuk produksi membuktikan:
+
+```
+Tri input 2 lalu 4  ->  entri tersimpan: [[6, "10:30 (updated)"]]   (salah)
+```
+
+### Perubahan
+
+`tambahQtyItemSO` sekarang **selalu menambahkan entri baru** — tidak pernah
+mencari entri lama untuk digabung, tidak pernah menimpa `jamInput` dengan
+`(updated)`. Setiap input = satu entri dengan `qty`, `jamInput`, dan
+`timestamp` sendiri.
+
+Rekap tidak terpengaruh: semua pembaca (`getBarangDiSemuaRak`,
+`getTotalBarangSemuaRak`, `getSOGabunganData`, export Excel, layar rekap)
+menjumlahkan `e.qty`, sehingga total tetap sama. Diverifikasi:
+
+```
+5 input -> 5 entri
+  Dimas  fisik  qty=12
+  Irwan  fisik  qty=4
+  Tri    fisik  qty=2
+  Tri    fisik  qty=4
+  Tri    gudang qty=3
+rekap: totalFisik=22  totalGudang=3  total=25  (benar)
+```
+
+### Layar setelah perbaikan
+
+```
+📋 *RIWAYAT HITUNG BARANG INI:*
+1. *Dimas* di *RAK LANTAI 1 HOMMY*
+   ⏰ 10:25 | 🏪 FISIK: 12
+2. *Irwan* di *RAK LANTAI 1 HOMMY*
+   ⏰ 10:27 | 🏪 FISIK: 4
+3. *Tri* _(Anda)_ di *RAK LANTAI 1 HOMMY*
+   ⏰ 10:28 | 🏪 FISIK: 2
+4. *Tri* _(Anda)_ di *RAK LANTAI 1 HOMMY*
+   ⏰ 10:29 | 🏪 FISIK: 4
+
+📦 *Total dihitung:* 22 dari 4 input
+```
+
+### Ikut diperbaiki (kelas bug yang sama)
+
+- Layar **EDIT RAK** menampilkan rincian per entri tetapi **tanpa jam**. Sekarang
+  tiap baris menyertakan `⏰ jamInput`.
+- Layar **EDIT RAK** dan **EDIT ITEM** memasukkan `namaPetugas`/`jenis`/`jamInput`
+  mentah ke pesan ber-`parse_mode: 'Markdown'`. Nama ber-`_` akan membuat
+  Telegram menolak seluruh pesan. Sekarang memakai `escapeMd()`.
+
+### Berkas yang berubah pada sesi ketiga
+
+- `index.js` — `tambahQtyItemSO` (selalu entri baru), layar EDIT RAK, layar
+  EDIT ITEM.
+- `boot/test-so-petugas.js` — 58 → **78 pemeriksaan**. Tes 6/6b/6c/6d yang dulu
+  mengunci perilaku "digabung" dibalik menjadi "entri baru". Ditambah tes 6f–6h
+  (kapitalisasi & jenis berbeda), tes 17 (kasus nyata Tri TOKO 2 lalu TOKO 4),
+  dan tes 18 (layar EDIT RAK/EDIT ITEM merinci jam + escape, serta tidak ada lagi
+  penggabungan qty di sumber).
+
+### Regresi sesi ketiga
+
+| | Baseline `e2f2cd7` | Sekarang |
+|---|---|---|
+| Total lulus | 304 | **397** |
+| Total gagal | 2 | 2 (sama, butuh jaringan) |
+| Regresi | — | **0** |
+
+### Catatan data lama
+
+Entri yang sudah terlanjur digabung sebelum perbaikan ini **tidak** diubah
+(tidak bisa dipisah tanpa menebak qty dan jam aslinya). Entri itu tetap dikenali
+dari penanda `(updated)`/`(edited)` dan tetap diberi peringatan
+`⚠️ data lama — petugas bisa tercampur` di layar. Input berikutnya sudah benar.

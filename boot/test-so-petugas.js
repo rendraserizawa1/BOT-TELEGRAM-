@@ -200,17 +200,31 @@ cek('5. petugas beda -> entri terpisah', entri5.length === 2, `jumlah entri=${en
 cek('5b. nama petugas baru tersimpan benar', entri5.some((e) => e.namaPetugas === 'MAS ANDRI' && e.qty === 5), JSON.stringify(entri5.map((e) => [e.namaPetugas, e.qty])));
 cek('5c. entri petugas lama TIDAK ikut bertambah', entri5.some((e) => e.namaPetugas === 'ibu fitri dan intan' && e.qty === 7), JSON.stringify(entri5.map((e) => [e.namaPetugas, e.qty])));
 
-// ── 6. Petugas SAMA menambah lagi -> tetap SATU entri, qty bertambah ─────
+// ── 6. Petugas SAMA input lagi -> entri BARU, bukan digabung ─────────────
+// Permintaan pemilik: tiap input harus tampil terpisah per entry per qty,
+// dengan jam:menit masing-masing. Dulu qty digabung jadi satu entri dan jam
+// lamanya hilang (ditimpa "... (updated)").
 F2.tambahQtyItemSO('kefa', 'rak kaca lantai 1 toko', 'NN09296', '8997270739', 'MAS ANDRI', 3, 'fisik');
 const entri6 = SO.kefa.racks['rak kaca lantai 1 toko'].items.NN09296.entries;
-cek('6. petugas sama menambah -> tetap 2 entri', entri6.length === 2, `jumlah=${entri6.length}`);
-cek('6b. qty petugas itu bertambah jadi 8', entri6.some((e) => e.namaPetugas === 'MAS ANDRI' && e.qty === 8), JSON.stringify(entri6.map((e) => [e.namaPetugas, e.qty])));
+cek('6. petugas sama input lagi -> entri BARU (3 entri)', entri6.length === 3, `jumlah=${entri6.length}: ` + JSON.stringify(entri6.map((e) => [e.namaPetugas, e.qty, e.jamInput])));
+cek('6b. qty MAS ANDRI pertama tetap 5 (tidak digabung)', entri6.filter((e) => e.namaPetugas === 'MAS ANDRI').map((e) => e.qty).includes(5), JSON.stringify(entri6.map((e) => [e.namaPetugas, e.qty])));
+cek('6c. qty MAS ANDRI kedua tercatat 3 terpisah', entri6.filter((e) => e.namaPetugas === 'MAS ANDRI').map((e) => e.qty).includes(3), JSON.stringify(entri6.map((e) => [e.namaPetugas, e.qty])));
+cek('6d. tidak ada penanda "(updated)" pada entri baru', !entri6.some((e) => /\(updated\)/i.test(e.jamInput)), JSON.stringify(entri6.map((e) => e.jamInput)));
+cek('6e. total qty tetap benar (7+5+3=15)', entri6.reduce((s, e) => s + e.qty, 0) === 15, String(entri6.reduce((s, e) => s + e.qty, 0)));
 
-// ── 6c. Kapitalisasi berbeda tetap digabung ke orang yang sama ───────────
+// ── 6f. Kapitalisasi berbeda tetap jadi entri terpisah milik orang sama ───
 F2.tambahQtyItemSO('kefa', 'rak kaca lantai 1 toko', 'NN07777', '8997270739', 'IBU FITRI DAN INTAN', 2, 'fisik');
 const entri6c = SO.kefa.racks['rak kaca lantai 1 toko'].items.NN07777.entries;
-cek('6c. beda kapitalisasi -> digabung, bukan entri baru', entri6c.length === 1, `jumlah=${entri6c.length}`);
-cek('6d. qty jadi 6', entri6c[0].qty === 6, String(entri6c[0].qty));
+cek('6f. beda kapitalisasi -> entri baru juga', entri6c.length === 2, `jumlah=${entri6c.length}`);
+cek('6g. qty tetap terpisah (4 dan 2)', entri6c.map((e) => e.qty).sort().join(',') === '2,4', JSON.stringify(entri6c.map((e) => e.qty)));
+
+// ── 6h. JENIS berbeda tetap terpisah ──────────────────────────────────────
+const SOjenisBaru = buatDunia();
+const FjenisBaru = buatSandbox(SOjenisBaru);
+FjenisBaru.tambahQtyItemSO('kefa', 'rak kaca lantai 1 toko', 'NN09296', '8997270739', 'MAS ANDRI', 5, 'fisik');
+FjenisBaru.tambahQtyItemSO('kefa', 'rak kaca lantai 1 toko', 'NN09296', '8997270739', 'MAS ANDRI', 4, 'gudang');
+const entriJenis = SOjenisBaru.kefa.racks['rak kaca lantai 1 toko'].items.NN09296.entries;
+cek('6h. jenis beda -> entri terpisah', entriJenis.filter((e) => e.namaPetugas === 'MAS ANDRI').length === 2, JSON.stringify(entriJenis.map((e) => [e.jenis, e.qty])));
 
 // ── 7. Entri "(updated)" diberi peringatan data lama ─────────────────────
 const hasil7 = F2.formatInfoBarangDiRakLain('kefa', 'NN02099', 'rak kaca lantai 1 toko', '8997270739', 'MAS ANDRI');
@@ -362,6 +376,47 @@ cek('16c. tidak menampilkan "null"', !/\bnull\b/i.test(hasilTanpaNama), hasilTan
 cek('16d. tidak ada bold kosong "**"', !/\*\*[ \t]*\*/.test(hasilTanpaNama), hasilTanpaNama);
 cek('16e. ada label pengganti yang terbaca', /TANPA NAMA/i.test(hasilTanpaNama), hasilTanpaNama);
 cek('16f. jam dan qty tetap tampil', hasilTanpaNama.includes('08:00') && hasilTanpaNama.includes('10:00') && /\b5\b/.test(hasilTanpaNama), hasilTanpaNama);
+
+// ── 17. KASUS NYATA: "Tri" input TOKO 2 lalu TOKO 4 ──────────────────────
+// Yang dilaporkan: layar menampilkan "Tri (Anda) 10:27 (updated) | FISIK: 6"
+// - dua input berbeda waktu digabung jadi satu baris, jam aslinya hilang.
+// Yang benar: dua baris terpisah, masing-masing dengan qty dan jam:menitnya.
+const SOtri = buatDunia();
+const Ftri = buatSandbox(SOtri);
+const RAKTRI = 'rak kaca lantai 1 toko';
+Ftri.tambahInputSO('kefa', RAKTRI, 'NN55555', '8997270739', 'Dimas', 12, 'fisik');
+Ftri.tambahInputSO('kefa', RAKTRI, 'NN55555', '8997270739', 'Irwan', 4, 'fisik');
+Ftri.tambahQtyItemSO('kefa', RAKTRI, 'NN55555', '8997270739', 'Tri', 2, 'fisik');
+Ftri.tambahQtyItemSO('kefa', RAKTRI, 'NN55555', '8997270739', 'Tri', 4, 'fisik');
+
+const entriTri = SOtri.kefa.racks[RAKTRI].items.NN55555.entries.filter((e) => e.namaPetugas === 'Tri');
+cek('17. Tri input 2x -> 2 entri terpisah', entriTri.length === 2, `jumlah=${entriTri.length}: ` + JSON.stringify(entriTri.map((e) => [e.qty, e.jamInput])));
+cek('17b. qty 2 dan 4 tersimpan terpisah', entriTri.map((e) => e.qty).sort().join(',') === '2,4', JSON.stringify(entriTri.map((e) => e.qty)));
+cek('17c. tidak ada penanda "(updated)"', !entriTri.some((e) => /\(updated\)/i.test(e.jamInput)), JSON.stringify(entriTri.map((e) => e.jamInput)));
+cek('17d. total tetap 22 (12+4+2+4)', SOtri.kefa.racks[RAKTRI].items.NN55555.entries.reduce((s, e) => s + e.qty, 0) === 22, String(SOtri.kefa.racks[RAKTRI].items.NN55555.entries.reduce((s, e) => s + e.qty, 0)));
+
+const layarTri = Ftri.tampilkanBarangPilihan(
+  { kode: 'NN55555', nama: 'BOX NASI MINERVA HOMMY 3205', satuan: 'PCS', harga: { kefa: { stok: 18 } } },
+  'kefa', '8997270739', RAKTRI, 'Tri'
+);
+cek('17e. layar memuat 4 baris riwayat (bukan 3)', (layarTri.match(/^\d+\. \*/gm) || []).length === 4, layarTri);
+cek('17f. baris Tri muncul 2x', (layarTri.match(/\*Tri\*/gi) || []).length === 2, layarTri);
+cek('17g. qty 2 tampil terpisah', /\bFISIK: 2\b/.test(layarTri), layarTri);
+cek('17h. qty 4 tampil terpisah', /\bFISIK: 4\b/.test(layarTri), layarTri);
+cek('17i. qty gabungan 6 TIDAK tampil sebagai satu baris', !/FISIK: 6\b/.test(layarTri), layarTri);
+cek('17j. tidak ada peringatan "data lama"', !/data lama/i.test(layarTri), layarTri);
+
+// ── 18. Sumber kode layar EDIT RAK / EDIT ITEM juga merinci per entry ────
+// Layar itu tidak bisa dijalankan di sandbox (butuh chatId/kirim), jadi yang
+// diuji adalah teks yang dibangun: tiap entri harus menyertakan jam:menit.
+const fs18 = require('fs');
+const src18 = fs18.readFileSync(require('path').join(__dirname, '..', 'index.js'), 'utf8');
+cek('18. layar EDIT RAK menampilkan jam per entry', /entries\.forEach\(e => \{[\s\S]{0,400}jamInput/.test(src18), 'pola tidak ditemukan');
+cek('18b. layar EDIT RAK meng-escape nama petugas', /escapeMd\(e\.namaPetugas\)/.test(src18), 'escapeMd tidak dipakai');
+cek('18c. layar EDIT ITEM meng-escape nama petugas', /escapeMd\(entry\.namaPetugas\)/.test(src18), 'escapeMd tidak dipakai');
+cek('18d. layar EDIT ITEM meng-escape jam', /escapeMd\(entry\.jamInput\)/.test(src18), 'escapeMd tidak dipakai');
+cek('18e. tidak ada lagi penggabungan qty (qty +=)', !/entries\[existIdx\]\.qty\s*\+=/.test(src18), 'masih ada penggabungan qty');
+cek('18f. tidak ada lagi penulisan jam "(updated)" saat tambah', !/jamInput\s*=\s*getJamSekarang\(\)\s*\+\s*' \(updated\)'/.test(src18), 'masih menimpa jam dengan (updated)');
 
 console.log('');
 console.log('────────────────────────────────────────────');

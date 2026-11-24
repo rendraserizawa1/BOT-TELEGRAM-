@@ -2610,34 +2610,28 @@ function tambahQtyItemSO(tokoKode, rak, kodeBarang, userId, namaPetugas, tambahQ
     tambahInputSO(tokoKode, rak, kodeBarang, userId, namaPetugas, tambahQty, jenis);
     return;
   }
-  
-  const entries = shared.racks[rak].items[kodeBarang].entries;
-  // BUG LAMA: pencocokan hanya userId + jenis, tanpa namaPetugas. Karena semua
-  // petugas memakai satu akun Telegram, qty petugas baru digabung ke entri
-  // petugas lama dan namanya tetap nama lama (6 entri di data produksi
-  // bertanda "(updated)"/"(edited)" sebagai jejaknya). Sekarang namaPetugas
-  // ikut dicocokkan supaya tiap petugas punya entri sendiri.
-  const existIdx = entries.findIndex(e =>
-    String(e.userId) === String(userId) &&
-    kunciPetugas(e.namaPetugas) === kunciPetugas(namaPetugas) &&
-    e.jenis === jenis
-  );
-  
-  if (existIdx >= 0) {
-    entries[existIdx].qty += tambahQty;
-    entries[existIdx].jamInput = getJamSekarang() + ' (updated)';
-    entries[existIdx].timestamp = Date.now();
-  } else {
-    entries.push({
-      userId: String(userId),
-      namaPetugas: namaPetugas,
-      qty: tambahQty,
-      jenis: jenis,
-      jamInput: getJamSekarang(),
-      timestamp: Date.now(),
-    });
-  }
-  
+
+  // SETIAP input adalah entri tersendiri.
+  //
+  // Dulu fungsi ini mencari entri lama (userId + jenis, lalu juga namaPetugas)
+  // dan MENGGABUNG qty ke entri itu, sambil menimpa jamInput menjadi
+  // "... (updated)". Akibatnya dua input berbeda waktu dari petugas yang sama
+  // tampil sebagai satu baris dengan qty hasil penjumlahan, dan jam input
+  // aslinya hilang — padahal yang dibutuhkan justru rincian per entry per qty
+  // beserta jam:menit masing-masing.
+  //
+  // Karena itu entri selalu ditambahkan baru. Rekap tidak terpengaruh: semua
+  // pembaca (getBarangDiSemuaRak, getTotalBarangSemuaRak, export Excel, layar
+  // rekap) menjumlahkan e.qty, sehingga totalnya tetap sama.
+  shared.racks[rak].items[kodeBarang].entries.push({
+    userId: String(userId),
+    namaPetugas: namaPetugas,
+    qty: tambahQty,
+    jenis: jenis,
+    jamInput: getJamSekarang(),
+    timestamp: Date.now(),
+  });
+
   saveShared();
   if (typeof triggerBackupAfterEvent === 'function') triggerBackupAfterEvent(tokoKode);
 }
@@ -13983,7 +13977,10 @@ bot.on('callback_query', async (query) => {
       m += `*${globalIdx}. ${escapeMd(si.nama)}*${badge}\n   🔖 \`${si.kode}\` | 📊 Total: ${si.totalQty} | ${si.itemData.entries.length} entri\n`;
       si.itemData.entries.forEach(e => {
         const jenisIcon = e.jenis === 'fisik' ? '🏪' : '🏭';
-        m += `      ${e.namaPetugas}: ${jenisIcon} ${e.jenis} *${e.qty}*\n`;
+        // Rincian per entry: nama petugas + qty + jam:menit input masing-masing.
+        // Entri tidak pernah digabung lagi (lihat tambahQtyItemSO), jadi tiap
+        // baris di sini adalah satu input nyata pada jam tertentu.
+        m += `      ${escapeMd(e.namaPetugas)}: ${jenisIcon} ${e.jenis} *${e.qty}* | ⏰ ${escapeMd(e.jamInput)}\n`;
       });
       m += '\n';
       buttons.push([{ text: `✏️ ${globalIdx}. ${si.nama} (${si.totalQty})${badge}`, callback_data: `so:edititem:${rakName}:${si.kode}` }]);
@@ -14086,7 +14083,7 @@ bot.on('callback_query', async (query) => {
     let m = `✏️ *EDIT ITEM*\n${GARIS_TEBAL}\n📦 ${escapeMd(nama)}\n🔖 \`${kode}\`${kode.startsWith('NEW_') ? ' 🆕' : ''}\n📍 Rak: ${rakName}\n📊 Total: ${totalQty}\n\n`;
     const buttons = [];
     itemData.entries.forEach((entry, i) => {
-      m += `${i+1}. *${entry.namaPetugas}* | ${entry.jenis} | Qty: *${entry.qty}*\n   ⏰ ${entry.jamInput}\n\n`;
+      m += `${i+1}. *${escapeMd(entry.namaPetugas)}* | ${escapeMd(entry.jenis)} | Qty: *${entry.qty}*\n   ⏰ ${escapeMd(entry.jamInput)}\n\n`;
       buttons.push([{ text: `✏️ Edit #${i+1} (${entry.qty})`, callback_data: `so:editentry:${rakName}:${kode}:${i}` }]);
     });
     buttons.push([{ text: '🗑️ Hapus Semua', callback_data: `so:hapusitem:${rakName}:${kode}` }]);
