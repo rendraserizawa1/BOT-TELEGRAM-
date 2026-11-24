@@ -19,6 +19,9 @@ Status: **dikerjakan** (lihat bagian "Hasil pelaksanaan", "Perbaikan lanjutan",
 > memperbaiki: (a) `dimas` dan `Dimas` disimpan sebagai dua nama berbeda
 > sehingga laporan memecah satu orang jadi dua, dan (b) layar "Siapa nama Anda?"
 > kini punya tombol pilihan petugas (online maupun offline).
+>
+> Bagian **"Perbaikan kelima — daftar petugas hanya HARI INI"** menyaring daftar
+> itu agar tidak lagi memuat petugas dari hari-hari sebelumnya.
 
 ## Masalah
 
@@ -568,3 +571,88 @@ entri tersimpan: ["Dimas", "Dimas"]   -> nama unik: ["Dimas"]  (bukan 2)
   input berikutnya; laporan tetap menampilkan keduanya seperti apa adanya.
 - Bila dua petugas **berbeda** kebetulan bernama sama persis, keduanya tetap
   tidak bisa dibedakan tanpa akun terpisah.
+
+## Perbaikan kelima — daftar petugas hanya HARI INI (2026-11-24, sesi kelima)
+
+### Keluhan
+
+Daftar petugas pada layar `Siapa nama Anda?` menampilkan **semua** petugas yang
+pernah tercatat, termasuk dari hari-hari sebelumnya. Hasilnya 10 nama, sebagian
+sudah tidak bertugas:
+
+```
+4. Domas (⚪ offline)
+5. Astrid oka (⚪ offline)
+6. Ibu fitri dan intan (⚪ offline)
+7. Mas andri (⚪ offline)
+8. dimas dan tri (⚪ offline)
+9. Nezha (⚪ offline)
+10. Tri kusworo (⚪ offline)
+```
+
+Permintaan: **hanya petugas dalam rentang hari ini saja**.
+
+### Akar masalah
+
+`getDaftarPetugasSO` mengambil riwayat `STOCKOPNAME[tokoKode]` **tanpa menyaring
+tanggal**, sehingga sesi SO hari-hari sebelumnya ikut masuk:
+
+```js
+// SEBELUM perbaikan
+const riwayat = Array.isArray(STOCKOPNAME[tokoKode]) ? STOCKOPNAME[tokoKode] : [];
+riwayat.forEach((sesi) => { /* semua sesi, tanpa cek tanggal */ });
+```
+
+### Perubahan
+
+1. Tanggal acuan diambil dari `shared.tanggal` (sudah dinormalkan
+   `getSOShared`, yang otomatis me-reset data saat tanggal berganti).
+2. Setiap sesi riwayat disaring: hanya dipakai bila
+   `sesi.tanggal`/`sharedData.tanggal` **sama** dengan tanggal hari ini.
+3. `getSOShared` bisa mengembalikan `undefined` untuk toko tak dikenal —
+   sekarang dijaga (`|| {}`) supaya tidak melempar.
+
+Sumber daftar sekarang:
+- `usersAktif` → petugas yang **sedang online hari ini**
+- `racks` → nama pada entri hitungan **hari ini** (offline, sudah input)
+- `STOCKOPNAME` → **hanya** sesi bertanggal hari ini (mis. sesi yang di-reset
+  lalu dimulai lagi hari ini)
+
+### Bukti
+
+Data uji berisi riwayat kemarin dengan `Domas`, `Astrid oka`, `Mas andri`,
+`dimas dan tri`, `Nezha`, `Tri kusworo`, `IRWAN`, dan SO hari ini hanya `Dimas`
++ `Tri`:
+
+```
+=== DAFTAR PETUGAS HARI INI (24/11/2026) ===
+  1. Dimas   🟢 online
+  2. Tri     ⚪ offline
+
+  jumlah: 2
+  nama kemarin yang masih muncul: TIDAK ADA (benar)
+```
+
+### Berkas yang berubah pada sesi kelima
+
+- `index.js` — `getDaftarPetugasSO` (saring riwayat per tanggal + penjagaan
+  `getSOShared` undefined).
+- `boot/test-so-petugas.js` — 95 → **103 pemeriksaan**. Tes 21 mengunci
+  "petugas kemarin tidak muncul" (dari `usersAktif` maupun dari `entries`),
+  tes 22 mengunci "riwayat bertanggal sama tetap dipakai", tes 23 mengunci
+  "tanpa riwayat / toko tidak dikenal tidak crash".
+
+### Regresi sesi kelima
+
+| | Baseline `e2f2cd7` | Sekarang |
+|---|---|---|
+| Total lulus | 304 | **422** |
+| Total gagal | 2 | 2 (sama, butuh jaringan) |
+| Regresi | — | **0** |
+
+### Catatan
+
+Petugas yang sudah tercatat hari ini tetap muncul walau sudah offline, supaya
+bisa dipilih kembali tanpa mengetik. Yang **tidak** muncul hanya petugas dari
+hari lain. Bila petugas baru bergabung, gunakan tombol
+`⌨️ Ketik Nama Manual`.

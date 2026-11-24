@@ -154,6 +154,7 @@ function buatSandbox(so) {
     const SO = arguments[0];
     const getSOShared = (toko) => SO[toko];
     const STOCKOPNAME = SO.__stockopname || {};
+    const getTanggalSlash = () => '24/11/2026';
     const GARIS_TEBAL = '━━━━━━━━━━━━━━━━━━━━';
     const getJamSekarang = () => '10:00';
     const saveShared = () => {};
@@ -468,6 +469,67 @@ cek('20f. petugas offline ditandai offline', daftar20.find((p) => p.nama === 'Tr
 cek('20g. rak petugas online ikut terbawa', daftar20.find((p) => p.nama === 'Dimas')?.rakAktif === 'rak kaca lantai 1 toko', JSON.stringify(daftar20));
 cek('20h. daftar urut: online dulu, lalu nama', daftar20[0].online === true, JSON.stringify(daftar20.map((p) => [p.nama, p.online])));
 cek('20i. tidak ada nama kosong di daftar', !daftar20.some((p) => !p.nama || !String(p.nama).trim()), JSON.stringify(daftar20));
+
+// ── 21. Daftar HANYA hari ini: riwayat hari lain TIDAK boleh muncul ──────
+// Permintaan pemilik: "daftar petugas hanya menampilkan petugas di rentang
+// hari ini saja, jangan semua". Petugas dari sesi kemarin tidak boleh muncul.
+const dunia21 = buatDunia();
+dunia21.kefa.tanggal = '24/11/2026';
+dunia21.kefa.usersAktif = {
+  '111': { nama: 'Dimas', petugas: ['Dimas'], rakAktif: 'rak kaca lantai 1 toko', jamMulai: '08:00', lastActive: 300 },
+};
+dunia21.kefa.racks['rak kaca lantai 1 toko'].items.NN77777 = {
+  entries: [
+    { userId: '222', namaPetugas: 'Tri', qty: 2, jenis: 'fisik', jamInput: '09:00', timestamp: 100 },
+  ],
+};
+// Riwayat kemarin berisi petugas yang hari ini TIDAK ikut SO.
+dunia21.__stockopname = {
+  kefa: [
+    { timestamp: 1, tanggal: '23/11/2026', sharedData: {
+      usersAktif: { '9': { nama: 'PetugasKemarin', petugas: ['PetugasKemarin'], rakAktif: 'Rak Lama' } },
+      racks: { 'Rak Lama': { items: { NN1: { entries: [
+        { userId: '9', namaPetugas: 'OrangKemarin', qty: 5, jenis: 'fisik', jamInput: '10:00', timestamp: 1 },
+      ] } } } },
+    } },
+    // Sesi HARI INI di riwayat (mis. habis reset) -> tetap boleh muncul.
+    { timestamp: 2, tanggal: '24/11/2026', sharedData: {
+      usersAktif: { '8': { nama: 'PetugasHariIni', petugas: ['PetugasHariIni'], rakAktif: 'Rak Baru' } },
+      racks: {},
+    } },
+  ],
+};
+const F21 = buatSandbox(dunia21);
+const daftar21 = F21.getDaftarPetugasSO('kefa');
+const nama21 = daftar21.map((p) => p.nama);
+cek('21. petugas hari ini tetap muncul (online)', nama21.includes('Dimas'), JSON.stringify(nama21));
+cek('21b. petugas hari ini tetap muncul (offline)', nama21.includes('Tri'), JSON.stringify(nama21));
+cek('21c. petugas dari riwayat HARI INI muncul', nama21.includes('PetugasHariIni'), JSON.stringify(nama21));
+cek('21d. petugas KEMARIN tidak muncul', !nama21.includes('PetugasKemarin'), JSON.stringify(nama21));
+cek('21e. petugas KEMARIN (dari entri) tidak muncul', !nama21.includes('OrangKemarin'), JSON.stringify(nama21));
+cek('21f. hanya petugas hari ini (tidak ada sisa kemarin)', daftar21.length === 5, JSON.stringify(nama21));
+
+// ── 22. Riwayat dengan tanggal SAMA tetap dipakai walau timestamp lama ───
+const dunia22 = buatDunia();
+dunia22.kefa.tanggal = '24/11/2026';
+dunia22.kefa.usersAktif = {};
+dunia22.kefa.racks = {};
+dunia22.__stockopname = { kefa: [
+  { timestamp: 1, tanggal: '24/11/2026', sharedData: { usersAktif: { '1': { nama: 'Siang', petugas: ['Siang'] } }, racks: {} } },
+] };
+const F22 = buatSandbox(dunia22);
+const daftar22 = F22.getDaftarPetugasSO('kefa');
+cek('22. riwayat tanggal sama tetap dipakai', daftar22.length === 1 && daftar22[0].nama === 'Siang', JSON.stringify(daftar22));
+
+// ── 23. Tanpa riwayat sama sekali tidak crash ────────────────────────────
+const dunia23 = buatDunia();
+dunia23.kefa.usersAktif = {};
+dunia23.kefa.racks = {};
+delete dunia23.__stockopname;
+const F23 = buatSandbox(dunia23);
+let aman23 = true;
+try { F23.getDaftarPetugasSO('kefa'); F23.getDaftarPetugasSO('toko-tidak-ada'); } catch (e) { aman23 = false; console.log('     error: ' + e.message); }
+cek('23. tanpa riwayat / toko tidak ada -> tidak crash', aman23);
 
 console.log('');
 console.log('────────────────────────────────────────────');

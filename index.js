@@ -2573,17 +2573,27 @@ function samakanNamaPetugas(nama, daftar) {
   return cocok[0].nama;
 }
 
-// Daftar semua petugas yang pernah tercatat di SO toko ini — yang sedang
-// online maupun yang sudah offline — untuk ditampilkan sebagai tombol pilihan.
+// Daftar semua petugas yang tercatat di SO toko ini PADA HARI INI SAJA —
+// yang sedang online maupun yang sudah offline — untuk tombol pilihan.
 //
-// Sumbernya digabung dari:
+// Sumbernya:
 //   1. usersAktif  -> petugas yang sedang bergabung sekarang (online)
-//   2. racks       -> nama pada setiap entri hasil hitung (pernah input)
-//   3. riwayat STOCKOPNAME -> sesi-sesi SO hari-hari sebelumnya (pernah ada)
+//   2. racks       -> nama pada setiap entri hasil hitung hari ini (offline)
+//   3. riwayat STOCKOPNAME -> HANYA sesi yang tanggalnya sama dengan hari ini
+//      (mis. sesi yang di-reset lalu dimulai lagi hari ini)
+//
+// Sesi dari hari-hari sebelumnya SENGAJA TIDAK diambil. Dulu ikut diambil
+// sehingga daftar penuh nama lama yang sudah tidak bertugas (Domas, Astrid oka,
+// Tri kusworo, dst.) dan menyulitkan pemilihan.
+//
 // Nama disatukan dengan kunciPetugas supaya "Dimas" dan "dimas" jadi satu.
 function getDaftarPetugasSO(tokoKode) {
-  const shared = getSOShared(tokoKode);
+  // getSOShared bisa mengembalikan undefined untuk toko yang tidak dikenal
+  // (mis. data belum dimuat). Jangan sampai melempar — daftar cukup kosong.
+  const shared = getSOShared(tokoKode) || {};
   const peta = new Map();
+  // Tanggal acuan = tanggal sesi SO toko ini (sudah dinormalkan getSOShared).
+  const tanggalHariIni = (shared && shared.tanggal) || getTanggalSlash(false);
 
   const catat = (nama, online, rakAktif, waktu) => {
     const rapi = String(nama == null ? '' : nama).trim().replace(/\s+/g, ' ');
@@ -2616,11 +2626,16 @@ function getDaftarPetugasSO(tokoKode) {
     });
   });
 
-  // 3. Riwayat SO hari-hari sebelumnya.
+  // 3. Riwayat SO — HANYA yang tanggalnya hari ini.
+  // Sesi hari-hari sebelumnya tidak dipakai: daftar jadi penuh nama lama yang
+  // sudah tidak bertugas dan menyulitkan pemilihan.
   const riwayat = Array.isArray(STOCKOPNAME[tokoKode]) ? STOCKOPNAME[tokoKode] : [];
   riwayat.forEach((sesi) => {
     const sd = sesi && sesi.sharedData;
     if (!sd) return;
+    // Tanggal sesi bisa tersimpan di sesi.tanggal atau di sharedData.tanggal.
+    const tanggalSesi = sesi.tanggal || sd.tanggal;
+    if (String(tanggalSesi || '') !== String(tanggalHariIni)) return;
     Object.values(sd.usersAktif || {}).forEach((u) => {
       const daftarNama = (u && Array.isArray(u.petugas) && u.petugas.length) ? u.petugas : [u && u.nama];
       daftarNama.forEach((n) => catat(n, false, null, sesi.timestamp));
