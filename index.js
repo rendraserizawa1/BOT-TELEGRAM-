@@ -1843,6 +1843,37 @@ function cobaIsianParkir(text) {
   return /^parkir\b/i.test(t) || /^[\d\s.,;:+\-]+$/.test(t);
 }
 
+// ── Tombol isian parkir ───────────────────────────────────────────────────
+// Tanpa tombol ini petugas harus MENGKETIK `parkir batal` / `parkir 0 0` di
+// keyboard. Di lapangan itu sering salah format (spasi, titik, huruf besar) dan
+// laporan tertahan karena bot menunggu isian yang benar. Tombol membuat pilihan
+// yang paling sering dipakai cukup sekali tekan.
+//
+// `ymd` & `toko` dibawa di callback_data karena isian parkir menunggu di sesi,
+// dan tombol ini bisa ditekan lama setelah pesan itu dikirim (mis. besoknya
+// membuka ulang laporan). Tanpa keduanya, laporan bisa ter-generate untuk
+// tanggal yang salah.
+//
+// Tombol "Hari Ini"/"Kemarin" TETAP disertakan: saat menunggu isian parkir,
+// petugas sering baru sadar tanggalnya keliru, dan dulu tombol itu satu-satunya
+// jalan memperbaikinya tanpa mengetik ulang perintah.
+function kbIsianParkir(ymd, toko = 'cp') {
+  const pref = toko === 'nk' ? 'jualkasirnk:' : toko === 'kefa' ? 'jualkasirkefa:' : 'jualkasir:';
+  return {
+    inline_keyboard: [
+      [
+        { text: '🚫 Tanpa Parkir', callback_data: `parkir:skip:${toko}:${ymd}` },
+        { text: '0️⃣ Parkir 0 0', callback_data: `parkir:nol:${toko}:${ymd}` },
+      ],
+      [
+        { text: '📅 Hari Ini', callback_data: `${pref}${ymdLokal(0)}` },
+        { text: '📅 Kemarin', callback_data: `${pref}${ymdLokal(-1)}` },
+      ],
+      [{ text: '🔙 Menu Utama', callback_data: 'menu:main' }],
+    ],
+  };
+}
+
 async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
   if (!bisaAksesLaporan(userId)) {
     return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
@@ -1945,11 +1976,12 @@ async function tampilkanLaporanKasir(chatId, userId, ymd, parkir, toko = 'cp') {
     updateSesi(userId, { pendingParkir: { ymd, toko } });
     return kirim(chatId,
       `🅿️ *LAPORAN PARKIR — ISI MANUAL*\n📅 ${escapeMd(tglLabel)}\n\n` +
-      `Laporan penjualan sudah siap. Sebelum digenerate, ketik 2 angka parkir:\n\n` +
+      `Laporan penjualan sudah siap. Sebelum digenerate, isi 2 angka parkir:\n\n` +
+      `*Pilih tombol di bawah* — atau ketik:\n` +
       `\`parkir [di komputer] [stor luar]\`\nContoh: \`parkir 0 778000\`\n\n` +
-      `• Tidak ada parkir → \`parkir 0 0\`\n` +
-      `• Tanpa bagian parkir → \`parkir batal\``,
-      { parse_mode: 'Markdown', reply_markup: kbLaporanKasir(ymd, toko) });
+      `• Tidak ada parkir → tekan *0️⃣ Parkir 0 0*\n` +
+      `• Tanpa bagian parkir → tekan *🚫 Tanpa Parkir*`,
+      { parse_mode: 'Markdown', reply_markup: kbIsianParkir(ymd, toko) });
   }
 
   const lines = [];
@@ -13390,9 +13422,12 @@ bot.on('message', async (msg) => {
         return tampilkanLaporanKasir(chatId, userId, pp.ymd, isian, pp.toko);
       }
       if (cobaIsianParkir(text)) {
+        // Pesan ini dulu tanpa tombol sama sekali, sehingga petugas yang salah
+        // format benar-benar mentok: satu-satunya jalan keluar adalah mengetik
+        // ulang. Sekarang tombolnya disertakan lagi supaya bisa langsung dipilih.
         return kirim(chatId,
-          `⚠️ Format parkir belum benar.\nKetik 2 angka: \`parkir [di komputer] [stor luar]\`\nContoh: \`parkir 0 778000\` — atau \`parkir batal\` untuk tanpa bagian parkir.`,
-          { parse_mode: 'Markdown' });
+          `⚠️ Format parkir belum benar.\nKetik 2 angka: \`parkir [di komputer] [stor luar]\`\nContoh: \`parkir 0 778000\`\n\nAtau tekan tombol di bawah:`,
+          { parse_mode: 'Markdown', reply_markup: kbIsianParkir(pp.ymd, pp.toko) });
       }
       // teks lain → anggap perintah baru, lanjut proses normal
       updateSesi(userId, { pendingParkir: null });
@@ -13707,6 +13742,36 @@ bot.on('callback_query', async (query) => {
     const ymd = data.slice('jualkasirkefa:'.length);
     if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
     return tampilkanLaporanKasir(chatId, userId, ymd, undefined, 'kefa');
+  }
+
+  // ════════════ ISIAN PARKIR LEWAT TOMBOL ════════════
+  // Tanpa ini petugas harus mengetik `parkir batal` / `parkir 0 0`. Tombol
+  // membuat pilihan tersering cukup sekali tekan dan tidak bisa salah format.
+  // ymd & toko diambil dari callback_data, bukan dari sesi: tombol bisa ditekan
+  // lama setelah pesan dikirim (mis. besoknya membuka ulang laporan), dan
+  // sesi bisa sudah berganti. Tombol yang ditekan adalah sumber kebenaran.
+  if (data.startsWith('parkir:')) {
+    if (!bisaAksesLaporan(userId)) return kirim(chatId, '🚫 Akses ditolak. Khusus staff laporan.');
+    const bagian = data.split(':');
+    const aksi = bagian[1];
+    const tokoParkir = bagian[2] === 'nk' || bagian[2] === 'kefa' ? bagian[2] : 'cp';
+    const ymdParkir = bagian[3];
+    // Isian sudah dipilih -> jangan biarkan bot menunggu isian manual lagi.
+    updateSesi(userId, { pendingParkir: null });
+
+    if (!ymdParkir || !/^\d{4}-\d{2}-\d{2}$/.test(ymdParkir)) {
+      return kirim(chatId, '⚠️ Tombol parkir ini sudah kedaluwarsa. Buka ulang laporan penjualannya ya kak.',
+        { reply_markup: kbMainMenu(userId) });
+    }
+
+    if (aksi === 'skip') {
+      return tampilkanLaporanKasir(chatId, userId, ymdParkir, { skip: true }, tokoParkir);
+    }
+    if (aksi === 'nol') {
+      return tampilkanLaporanKasir(chatId, userId, ymdParkir, { komputer: 0, luar: 0 }, tokoParkir);
+    }
+    return kirim(chatId, '⚠️ Pilihan parkir tidak dikenal. Buka ulang laporan penjualannya ya kak.',
+      { reply_markup: kbMainMenu(userId) });
   }
 
   // ════════════ LAPORAN HOMMY & KIREI (per merek) ════════════
