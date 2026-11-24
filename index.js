@@ -2544,6 +2544,105 @@ function kunciPetugas(nama) {
     .toLowerCase();
 }
 
+// Samakan ejaan nama petugas ke ejaan yang SUDAH ADA di data.
+//
+// Kasus nyata: petugas mengetik "dimas" padahal sebelumnya sudah terdaftar
+// "Dimas". `kunciPetugas` sudah menganggap keduanya orang yang sama untuk
+// pencocokan, tetapi nama yang TERSIMPAN tetap apa adanya, sehingga laporan
+// Excel memecah satu orang menjadi dua baris ("Petugas 1: dimas",
+// "Petugas 2: Dimas"). Fungsi ini mengembalikan ejaan lama yang sudah ada
+// supaya tidak muncul nama kembar.
+//
+// Bila nama belum pernah ada, dipakai nama yang sudah dirapikan spasinya.
+function samakanNamaPetugas(nama, daftar) {
+  const rapi = String(nama == null ? '' : nama).trim().replace(/\s+/g, ' ');
+  if (!rapi) return '';
+  const kunci = kunciPetugas(rapi);
+  const cocok = (Array.isArray(daftar) ? daftar : [])
+    .filter((p) => p && p.nama && kunciPetugas(p.nama) === kunci);
+  if (!cocok.length) return rapi;
+  // Pilih ejaan yang paling akhir dipakai; bila seri, yang namanya paling rapi
+  // (bukan huruf besar semua) supaya tampilan konsisten.
+  cocok.sort((a, b) => {
+    const selisih = (Number(b.terakhir) || 0) - (Number(a.terakhir) || 0);
+    if (selisih !== 0) return selisih;
+    const aKapital = a.nama === a.nama.toUpperCase() ? 1 : 0;
+    const bKapital = b.nama === b.nama.toUpperCase() ? 1 : 0;
+    return aKapital - bKapital;
+  });
+  return cocok[0].nama;
+}
+
+// Daftar semua petugas yang pernah tercatat di SO toko ini — yang sedang
+// online maupun yang sudah offline — untuk ditampilkan sebagai tombol pilihan.
+//
+// Sumbernya digabung dari:
+//   1. usersAktif  -> petugas yang sedang bergabung sekarang (online)
+//   2. racks       -> nama pada setiap entri hasil hitung (pernah input)
+//   3. riwayat STOCKOPNAME -> sesi-sesi SO hari-hari sebelumnya (pernah ada)
+// Nama disatukan dengan kunciPetugas supaya "Dimas" dan "dimas" jadi satu.
+function getDaftarPetugasSO(tokoKode) {
+  const shared = getSOShared(tokoKode);
+  const peta = new Map();
+
+  const catat = (nama, online, rakAktif, waktu) => {
+    const rapi = String(nama == null ? '' : nama).trim().replace(/\s+/g, ' ');
+    if (!rapi) return;
+    const kunci = kunciPetugas(rapi);
+    if (!kunci) return;
+    const ada = peta.get(kunci);
+    if (!ada) {
+      peta.set(kunci, { nama: rapi, online: !!online, rakAktif: rakAktif || null, terakhir: Number(waktu) || 0 });
+      return;
+    }
+    if (online && !ada.online) {
+      ada.online = true;
+      ada.nama = rapi;              // ejaan petugas yang sedang aktif diutamakan
+      ada.rakAktif = rakAktif || ada.rakAktif;
+    }
+    ada.terakhir = Math.max(ada.terakhir, Number(waktu) || 0);
+  };
+
+  // 1. Sedang online.
+  Object.values(shared.usersAktif || {}).forEach((u) => {
+    const daftarNama = (u && Array.isArray(u.petugas) && u.petugas.length) ? u.petugas : [u && u.nama];
+    daftarNama.forEach((n) => catat(n, true, u && u.rakAktif, u && u.lastActive));
+  });
+
+  // 2. Pernah input (nama pada entri).
+  Object.values(shared.racks || {}).forEach((rd) => {
+    Object.values((rd && rd.items) || {}).forEach((id) => {
+      ((id && id.entries) || []).forEach((e) => catat(e && e.namaPetugas, false, null, e && e.timestamp));
+    });
+  });
+
+  // 3. Riwayat SO hari-hari sebelumnya.
+  const riwayat = Array.isArray(STOCKOPNAME[tokoKode]) ? STOCKOPNAME[tokoKode] : [];
+  riwayat.forEach((sesi) => {
+    const sd = sesi && sesi.sharedData;
+    if (!sd) return;
+    Object.values(sd.usersAktif || {}).forEach((u) => {
+      const daftarNama = (u && Array.isArray(u.petugas) && u.petugas.length) ? u.petugas : [u && u.nama];
+      daftarNama.forEach((n) => catat(n, false, null, sesi.timestamp));
+    });
+    Object.values(sd.racks || {}).forEach((rd) => {
+      Object.values((rd && rd.items) || {}).forEach((id) => {
+        ((id && id.entries) || []).forEach((e) => catat(e && e.namaPetugas, false, null, sesi.timestamp));
+      });
+    });
+  });
+
+  const hasil = [...peta.values()];
+  // Online dulu (biar cepat dipilih), lalu yang paling akhir dipakai.
+  hasil.sort((a, b) => {
+    if (a.online !== b.online) return a.online ? -1 : 1;
+    const selisih = (Number(b.terakhir) || 0) - (Number(a.terakhir) || 0);
+    if (selisih !== 0) return selisih;
+    return String(a.nama).localeCompare(String(b.nama), 'id');
+  });
+  return hasil;
+}
+
 function tambahInputSO(tokoKode, rak, kodeBarang, userId, namaPetugas, qty, jenis) {
   const shared = getSOShared(tokoKode);
   if (!shared.racks[rak]) {
@@ -8044,7 +8143,12 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
   
   if (session.soSetupStep === 'petugas') {
     if (!message || message.length < 2) return kirim(chatId, '⚠️ Minimal 2 karakter.');
-    const petugas = message.split(',').map(n => n.trim()).filter(n => n.length >= 2);
+    // Samakan ejaan ke nama yang sudah pernah ada: "dimas" -> "Dimas".
+    // Tanpa ini laporan Excel memecah satu orang jadi dua baris petugas.
+    const daftarAda = getDaftarPetugasSO(tokoKode);
+    const petugas = message.split(',')
+      .map(n => samakanNamaPetugas(n, daftarAda))
+      .filter(n => n.length >= 2);
     if (!petugas.length) return kirim(chatId, '⚠️ Contoh: `Budi` atau `Budi, Sari`');
     
     soInfo.petugas = petugas;
@@ -13845,10 +13949,95 @@ bot.on('callback_query', async (query) => {
     if (!session.tokoKode) return;
     updateSesi(userId, { soSetupStep: 'petugas' });
     const usersAktif = getAllUsersAktif(session.tokoKode);
+    const daftarPetugas = getDaftarPetugasSO(session.tokoKode);
     let m = `➕ *BERGABUNG KE SO*\n🏦 ${NAMA_TOKO[session.tokoKode]}\n${GARIS_TEBAL}\n\n👥 *Petugas sudah ada:*\n`;
-    Object.entries(usersAktif).forEach(([, info], i) => { m += `   ${i+1}. ${info.nama} (di ${info.rakAktif})\n`; });
-    m += `\n${GARIS_TIPIS}\n\n👤 *Siapa nama Anda?*\n\n*Contoh:* \`Joko\` atau \`Joko, Andi\`\n\nKetik *batal* untuk keluar.`;
-    await kirim(chatId, m, { reply_markup: KB_KEMBALI_SO });
+    if (daftarPetugas.length === 0) {
+      m += `   _(belum ada petugas tercatat)_\n`;
+    } else {
+      daftarPetugas.forEach((p, i) => {
+        const status = p.online ? '🟢 online' : '⚪ offline';
+        const rak = p.online && p.rakAktif ? ` — ${escapeMd(p.rakAktif)}` : '';
+        m += `   ${i+1}. ${escapeMd(p.nama)} (${status})${rak}\n`;
+      });
+    }
+    // Tombol pilih langsung: petugas tidak perlu mengetik manual lagi.
+    // callback_data memakai NAMA (bukan indeks) supaya tidak salah orang bila
+    // daftar berubah di antara pesan dikirim dan tombol ditekan. Telegram
+    // membatasi callback_data 64 byte, jadi nama yang kepanjangan jatuh ke
+    // indeks — masih aman karena daftar saat itu juga yang dipakai.
+    const buttons = [];
+    daftarPetugas.slice(0, 20).forEach((p, i) => {
+      const tanda = p.online ? '🟢' : '⚪';
+      const pakaiNama = `so:joinnama:${encodeURIComponent(p.nama)}`;
+      const cb = Buffer.byteLength(pakaiNama, 'utf8') <= 64 ? pakaiNama : `so:joinnamaindex:${i}`;
+      buttons.push([{ text: `${tanda} ${i+1}. ${p.nama}`, callback_data: cb }]);
+    });
+    buttons.push([{ text: '⌨️ Ketik Nama Manual', callback_data: 'so:joinmanual' }]);
+    buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
+    m += `\n${GARIS_TIPIS}\n\n👤 *Siapa nama Anda?*\n\n`;
+    if (daftarPetugas.length > 0) {
+      m += `👉 *Pilih dari tombol di bawah* — atau ketik manual.\n`;
+    }
+    m += `\n*Contoh manual:* \`Joko\` atau \`Joko, Andi\`\n\nKetik *batal* untuk keluar.`;
+    await kirim(chatId, m, { reply_markup: { inline_keyboard: buttons } });
+    return;
+  }
+
+  // Petugas memilih namanya dari daftar (tanpa mengetik).
+  if (data.startsWith('so:joinnama:') || data.startsWith('so:joinnamaindex:')) {
+    const session = getSesi(userId);
+    if (!session.tokoKode) return;
+    const daftarPetugas = getDaftarPetugasSO(session.tokoKode);
+    // Dua bentuk callback: berisi NAMA (diutamakan) atau indeks (cadangan bila
+    // nama terlalu panjang untuk batas 64 byte callback_data Telegram).
+    let namaPilihan = '';
+    if (data.startsWith('so:joinnamaindex:')) {
+      const idx = parseInt(data.slice('so:joinnamaindex:'.length), 10);
+      const p = Number.isInteger(idx) ? daftarPetugas[idx] : null;
+      namaPilihan = p ? p.nama : '';
+    } else {
+      const mentah = data.slice('so:joinnama:'.length);
+      try { namaPilihan = decodeURIComponent(mentah); } catch (e) { namaPilihan = mentah; }
+    }
+    // Cocokkan lewat kunciPetugas ke daftar terkini, supaya ejaannya konsisten.
+    const pilihan = daftarPetugas.find((p) => kunciPetugas(p.nama) === kunciPetugas(namaPilihan));
+    const namaFinal = pilihan ? pilihan.nama : samakanNamaPetugas(namaPilihan, daftarPetugas);
+    if (!namaFinal) {
+      return kirim(chatId, '⚠️ Petugas tidak ditemukan. Coba pilih lagi.', { reply_markup: KB_KEMBALI_SO });
+    }
+    const soInfo = session.soInfo || { petugas: [], rakHistory: [], rakAktif: null, jamMulaiAktif: null };
+    soInfo.petugas = [namaFinal];
+    updateSesi(userId, { soInfo, soSetupStep: 'rak' });
+    const existingRacks = Object.keys(getAllRacks(session.tokoKode));
+    let rakMsg = `✅ *Petugas:* ${escapeMd(namaFinal)}\n${GARIS_TIPIS}\n\n📦 *STEP 2/3: Pilih/Buat Rak*\n\n`;
+    const buttons = [];
+    if (existingRacks.length > 0) {
+      rakMsg += `📚 *Rak yang sudah ada:*\n`;
+      existingRacks.forEach((rak, i) => {
+        const items = Object.keys(getBarangDiRak(session.tokoKode, rak)).length;
+        rakMsg += `${i+1}. ${escapeMd(rak)} (${items} barang)\n`;
+        buttons.push([{ text: `📦 ${rak} (${items} barang)`, callback_data: `so:pilihrak:${rak}` }]);
+      });
+      buttons.push([{ text: '🆕 Buat Rak Baru', callback_data: 'so:rakbaru' }]);
+      buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
+      rakMsg += `\n💡 *3 cara input rak:*\n   1. Pilih dari tombol\n   2. 📸 Kirim FOTO barcode rak\n   3. Ketik nama manual`;
+    } else {
+      rakMsg += `💡 *2 cara input rak:*\n   1. 📸 Kirim FOTO barcode rak\n   2. Ketik manual\n\n*Contoh:* \`Rak A1\``;
+      buttons.push([{ text: '🔙 Kembali', callback_data: 'so:kembali' }]);
+    }
+    await kirim(chatId, rakMsg, { reply_markup: { inline_keyboard: buttons } });
+    return;
+  }
+
+  // Petugas memilih mengetik nama sendiri (mis. petugas baru).
+  if (data === 'so:joinmanual') {
+    const session = getSesi(userId);
+    if (!session.tokoKode) return;
+    updateSesi(userId, { soSetupStep: 'petugas' });
+    await kirim(chatId,
+      `⌨️ *KETIK NAMA PETUGAS*\n${GARIS_TEBAL}\n\n👤 Siapa nama Anda?\n\n*Contoh:* \`Joko\` atau \`Joko, Andi\`\n\nKetik *batal* untuk keluar.`,
+      { reply_markup: KB_KEMBALI_SO }
+    );
     return;
   }
   

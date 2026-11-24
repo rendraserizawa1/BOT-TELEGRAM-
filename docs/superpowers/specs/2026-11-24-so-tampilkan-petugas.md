@@ -2,7 +2,7 @@
 
 Tanggal: 2026-11-24
 Status: **dikerjakan** (lihat bagian "Hasil pelaksanaan", "Perbaikan lanjutan",
-dan "Perbaikan ketiga" di bawah)
+"Perbaikan ketiga", dan "Perbaikan keempat" di bawah)
 
 > Catatan: rancangan awal hanya menampilkan entri milik **petugas lain**, sehingga
 > layar tetap kosong bila yang membuka adalah petugas yang sudah menghitung
@@ -14,6 +14,11 @@ dan "Perbaikan ketiga" di bawah)
 > penyimpanan: input berulang dari petugas yang sama dulu digabung menjadi satu
 > baris (`qty += `), sehingga qty 2 lalu 4 tampil sebagai `6` dan jam aslinya
 > hilang. Sekarang setiap input adalah entri tersendiri.
+>
+> Bagian **"Perbaikan keempat — nama petugas disamakan & bisa dipilih"**
+> memperbaiki: (a) `dimas` dan `Dimas` disimpan sebagai dua nama berbeda
+> sehingga laporan memecah satu orang jadi dua, dan (b) layar "Siapa nama Anda?"
+> kini punya tombol pilihan petugas (online maupun offline).
 
 ## Masalah
 
@@ -445,3 +450,121 @@ Entri yang sudah terlanjur digabung sebelum perbaikan ini **tidak** diubah
 (tidak bisa dipisah tanpa menebak qty dan jam aslinya). Entri itu tetap dikenali
 dari penanda `(updated)`/`(edited)` dan tetap diberi peringatan
 `⚠️ data lama — petugas bisa tercampur` di layar. Input berikutnya sudah benar.
+
+## Perbaikan keempat — nama petugas disamakan & bisa dipilih (2026-11-24, sesi keempat)
+
+### Keluhan
+
+1. Petugas mengetik `dimas` (huruf d kecil) padahal sudah ada `Dimas`. Dianggap
+   orang lain, dan nama petugas tidak otomatis disamakan dengan `Dimas` yang
+   sudah ada. Laporan Excel menampilkan dua baris:
+   `Petugas 1: dimas`, `Petugas 2: Dimas`, `Petugas 3: Tri`.
+2. Layar `Siapa nama Anda?` tidak menampilkan daftar petugas yang bisa dipilih;
+   petugas harus mengetik manual. Yang tampil hanya petugas yang sedang online.
+
+### Akar masalah 1 — pencocokan sudah benar, PENYIMPANAN yang salah
+
+`kunciPetugas()` **sudah** menganggap `Dimas` dan `dimas` orang yang sama
+(dibuktikan: keduanya ditandai `(Anda)` di layar). Masalahnya nama **disimpan
+apa adanya** (`namaPetugas: namaPetugas`), sehingga:
+
+- rekap per petugas mengelompokkan berdasarkan nama mentah → dua baris;
+- export Excel membuat satu sheet per nama mentah → dua sheet;
+- daftar `allPetugas` di laporan berisi dua nama.
+
+Dibuktikan pada data produksi asli (`so_shared.bak.json`, toko kefa):
+
+```
+nama mentah : ["MAS ANDRI", "ibu fitri dan intan", "Ibu fitri dan intan"]   (3)
+petugas unik: ["Ibu fitri dan intan", "MAS ANDRI"]                          (2)
+```
+
+### Akar masalah 2 — daftar petugas hanya dari yang online
+
+`so:join` hanya membaca `getAllUsersAktif()` (`shared.usersAktif`), yaitu
+petugas yang **sedang** bergabung. Petugas yang sudah pernah input lalu offline
+tidak muncul, dan tidak ada tombol pilihan sama sekali.
+
+### Perubahan
+
+1. **`samakanNamaPetugas(nama, daftar)`** — fungsi baru. Mengembalikan ejaan
+   nama yang **sudah ada** (dicocokkan lewat `kunciPetugas`), memilih ejaan yang
+   paling akhir dipakai. Nama yang belum pernah ada dipakai apa adanya setelah
+   spasi dirapikan. Dipanggil di **setiap** titik input nama petugas
+   (`soSetupStep === 'petugas'`), sehingga `dimas` tersimpan sebagai `Dimas`.
+2. **`getDaftarPetugasSO(tokoKode)`** — fungsi baru. Menggabungkan nama dari
+   tiga sumber: `usersAktif` (online), seluruh `entries` di `racks` (pernah
+   input), dan riwayat `STOCKOPNAME` (sesi hari-hari sebelumnya). Nama disatukan
+   lewat `kunciPetugas`, ditandai `online`/`offline`, diurutkan online dulu lalu
+   yang paling akhir dipakai.
+3. **Layar `Siapa nama Anda?`** sekarang menampilkan daftar petugas
+   (`🟢 online` / `⚪ offline`, plus rak bila online) **dan** tombol pilihan
+   langsung, ditambah tombol `⌨️ Ketik Nama Manual` untuk petugas baru.
+4. **Handler `so:joinnama`** — memilih dari daftar langsung lanjut ke STEP 2/3
+   (pilih rak), tanpa mengetik. `callback_data` memakai **nama** (bukan indeks)
+   supaya tidak salah orang bila daftar berubah; bila nama terlalu panjang untuk
+   batas 64 byte Telegram, jatuh ke `so:joinnamaindex:<i>`.
+
+### Layar baru
+
+```
+➕ *BERGABUNG KE SO*
+🏦 Perabot Mamaku Kefamenanu
+────────────────────
+
+👥 *Petugas sudah ada:*
+   1. Dimas (🟢 online) — rak lantai 1 hommy
+   2. Tri (⚪ offline)
+   3. Irwan (⚪ offline)
+
+────────────────────
+
+👤 *Siapa nama Anda?*
+
+👉 *Pilih dari tombol di bawah* — atau ketik manual.
+
+*Contoh manual:* `Joko` atau `Joko, Andi`
+
+Ketik *batal* untuk keluar.
+
+[ 🟢 1. Dimas ]  -> so:joinnama:Dimas
+[ ⚪ 2. Tri ]    -> so:joinnama:Tri
+[ ⚪ 3. Irwan ]  -> so:joinnama:Irwan
+[ ⌨️ Ketik Nama Manual ]
+[ 🔙 Kembali ]
+```
+
+### Bukti perbaikan
+
+```
+Dimas (kapital) sudah input lebih dulu.
+user ketik "dimas" -> disimpan sebagai "Dimas"
+entri tersimpan: ["Dimas", "Dimas"]   -> nama unik: ["Dimas"]  (bukan 2)
+```
+
+### Berkas yang berubah pada sesi keempat
+
+- `index.js` — `samakanNamaPetugas`, `getDaftarPetugasSO` (baru); handler
+  `soSetupStep === 'petugas'`; handler callback `so:join`, `so:joinnama`,
+  `so:joinnamaindex`, `so:joinmanual`.
+- `boot/test-so-petugas.js` — 78 → **95 pemeriksaan**. Tes 19 mengunci
+  penyamaan ejaan (kapitalisasi, spasi, nama baru, daftar kosong, pilih ejaan
+  terakhir). Tes 20 mengunci daftar petugas (online + offline, tanpa duplikat,
+  status online/offline, rak terbawa, urutan, tanpa nama kosong).
+
+### Regresi sesi keempat
+
+| | Baseline `e2f2cd7` | Sekarang |
+|---|---|---|
+| Total lulus | 304 | **414** |
+| Total gagal | 2 | 2 (sama, butuh jaringan) |
+| Regresi | — | **0** |
+
+### Batasan
+
+- Data lama yang sudah tersimpan dengan ejaan berbeda (`dimas` dan `Dimas`
+  sebagai entri terpisah) **tidak** digabung otomatis — qty dan jamnya sudah
+  tercatat dan tidak boleh diubah tanpa persetujuan. Perbaikan berlaku untuk
+  input berikutnya; laporan tetap menampilkan keduanya seperti apa adanya.
+- Bila dua petugas **berbeda** kebetulan bernama sama persis, keduanya tetap
+  tidak bisa dibedakan tanpa akun terpisah.

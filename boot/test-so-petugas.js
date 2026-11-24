@@ -88,6 +88,8 @@ function ambilFungsi(nama) {
 
 const FUNGSI = [
   'kunciPetugas',
+  'samakanNamaPetugas',
+  'getDaftarPetugasSO',
   'getBarangDiSemuaRak',
   'getTotalBarangSemuaRak',
   'formatInfoBarangDiRakLain',
@@ -151,6 +153,7 @@ function buatSandbox(so) {
   const src = `
     const SO = arguments[0];
     const getSOShared = (toko) => SO[toko];
+    const STOCKOPNAME = SO.__stockopname || {};
     const GARIS_TEBAL = '━━━━━━━━━━━━━━━━━━━━';
     const getJamSekarang = () => '10:00';
     const saveShared = () => {};
@@ -417,6 +420,54 @@ cek('18c. layar EDIT ITEM meng-escape nama petugas', /escapeMd\(entry\.namaPetug
 cek('18d. layar EDIT ITEM meng-escape jam', /escapeMd\(entry\.jamInput\)/.test(src18), 'escapeMd tidak dipakai');
 cek('18e. tidak ada lagi penggabungan qty (qty +=)', !/entries\[existIdx\]\.qty\s*\+=/.test(src18), 'masih ada penggabungan qty');
 cek('18f. tidak ada lagi penulisan jam "(updated)" saat tambah', !/jamInput\s*=\s*getJamSekarang\(\)\s*\+\s*' \(updated\)'/.test(src18), 'masih menimpa jam dengan (updated)');
+
+// ── 19. Nama petugas disamakan ke ejaan yang sudah ada (Dimas vs dimas) ──
+// Laporan Excel memisahkan "Petugas 1: dimas" dan "Petugas 2: Dimas" padahal
+// itu orang yang sama. Pencocokan sudah benar (kunciPetugas), tetapi nama
+// TERSIMPAN apa adanya sehingga rekap/laporan memecah satu orang jadi dua.
+const daftar19 = [
+  { nama: 'Dimas', terakhir: 100 },
+  { nama: 'Tri', terakhir: 200 },
+];
+cek('19. nama beda kapitalisasi disamakan ke ejaan lama', F2.samakanNamaPetugas('dimas', daftar19) === 'Dimas', F2.samakanNamaPetugas('dimas', daftar19));
+cek('19b. ejaan persis tetap dipakai', F2.samakanNamaPetugas('Dimas', daftar19) === 'Dimas');
+cek('19c. spasi berlebih dirapikan', F2.samakanNamaPetugas('  DIMAS  ', daftar19) === 'Dimas');
+cek('19d. nama baru (belum ada) tetap dipakai apa adanya', F2.samakanNamaPetugas('Budi', daftar19) === 'Budi');
+cek('19e. nama baru dengan spasi berlebih dirapikan', F2.samakanNamaPetugas('  Budi   Santoso ', daftar19) === 'Budi Santoso');
+cek('19f. nama kosong aman', F2.samakanNamaPetugas('', daftar19) === '' && F2.samakanNamaPetugas(null, daftar19) === '');
+cek('19g. daftar kosong aman', F2.samakanNamaPetugas('dimas', []) === 'dimas');
+cek('19h. pilih ejaan yang paling sering/terakhir dipakai', F2.samakanNamaPetugas('dimas', [
+  { nama: 'DIMAS', terakhir: 50 },
+  { nama: 'Dimas', terakhir: 300 },
+  { nama: 'dimas', terakhir: 100 },
+]) === 'Dimas');
+
+// ── 20. Daftar petugas untuk dipilih: online + offline, tanpa duplikat ───
+// Layar "Siapa nama Anda?" hanya menampilkan petugas yang sedang online.
+// Petugas yang sudah pernah input (termasuk yang offline) harus ikut muncul
+// supaya bisa dipilih langsung tanpa mengetik manual.
+const dunia20 = buatDunia();
+dunia20.kefa.usersAktif = {
+  '111': { nama: 'Dimas', petugas: ['Dimas'], rakAktif: 'rak kaca lantai 1 toko', jamMulai: '08:00', lastActive: 300 },
+};
+dunia20.kefa.racks['rak kaca lantai 1 toko'].items.NN77777 = {
+  entries: [
+    { userId: '222', namaPetugas: 'Tri', qty: 2, jenis: 'fisik', jamInput: '09:00', timestamp: 100 },
+    { userId: '222', namaPetugas: 'dimas', qty: 3, jenis: 'fisik', jamInput: '09:10', timestamp: 200 },
+    { userId: '333', namaPetugas: 'Irwan', qty: 1, jenis: 'fisik', jamInput: '09:20', timestamp: 150 },
+  ],
+};
+const F20 = buatSandbox(dunia20);
+const daftar20 = F20.getDaftarPetugasSO('kefa');
+cek('20. petugas online ikut terdaftar', daftar20.some((p) => p.nama === 'Dimas'), JSON.stringify(daftar20));
+cek('20b. petugas offline (pernah input) ikut terdaftar', daftar20.some((p) => p.nama === 'Tri'), JSON.stringify(daftar20));
+cek('20c. petugas offline lain ikut terdaftar', daftar20.some((p) => p.nama === 'Irwan'), JSON.stringify(daftar20));
+cek('20d. "dimas" tidak jadi entri terpisah dari "Dimas"', daftar20.filter((p) => /^dimas$/i.test(p.nama)).length === 1, JSON.stringify(daftar20.map((p) => p.nama)));
+cek('20e. petugas online ditandai online', daftar20.find((p) => p.nama === 'Dimas')?.online === true, JSON.stringify(daftar20));
+cek('20f. petugas offline ditandai offline', daftar20.find((p) => p.nama === 'Tri')?.online === false, JSON.stringify(daftar20));
+cek('20g. rak petugas online ikut terbawa', daftar20.find((p) => p.nama === 'Dimas')?.rakAktif === 'rak kaca lantai 1 toko', JSON.stringify(daftar20));
+cek('20h. daftar urut: online dulu, lalu nama', daftar20[0].online === true, JSON.stringify(daftar20.map((p) => [p.nama, p.online])));
+cek('20i. tidak ada nama kosong di daftar', !daftar20.some((p) => !p.nama || !String(p.nama).trim()), JSON.stringify(daftar20));
 
 console.log('');
 console.log('────────────────────────────────────────────');
