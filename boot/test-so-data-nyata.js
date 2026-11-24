@@ -52,8 +52,32 @@ function ambil(src, nama) {
   return src.slice(m.index, i);
 }
 
-const FNS = ['kunciPetugas', 'getBarangDiSemuaRak', 'getTotalBarangSemuaRak', 'formatInfoBarangDiRakLain', 'tampilkanBarangPilihan', 'escapeMd'];
+// msMasukAkal/formatTanggalDariMs/formatJamDariMs/tanggalEntri/jamEntri/hitungTotalSO
+// ikut diambil karena getBarangDiSemuaRak & formatInfoBarangDiRakLain memakainya
+// (aturan total antar hari + tanggal/jam per entri).
+const FNS = [
+  'kunciPetugas',
+  'msMasukAkal',
+  'formatTanggalDariMs',
+  'formatJamDariMs',
+  'tanggalEntri',
+  'jamEntri',
+  'hitungTotalSO',
+  'tandaiHitungUlangSO',
+  'getBarangDiSemuaRak',
+  'getTotalBarangSemuaRak',
+  'formatInfoBarangDiRakLain',
+  'tampilkanBarangPilihan',
+  'escapeMd',
+];
 const badan = FNS.map((f) => ambil(SUMBER, f)).join('\n\n');
+
+// Konstanta angka dari index.js disuntikkan otomatis supaya tes tidak perlu
+// memperbarui daftar manual setiap kali konstanta baru ditambahkan.
+const KONSTANTA_ANGKA = [...SUMBER.matchAll(/^const\s+([A-Z][A-Z0-9_]*)\s*=\s*([^;\n]+);/gm)]
+  .filter((m) => /^[\d\s*+\-/().]+$/.test(m[2].trim()))
+  .map((m) => `const ${m[1]} = ${m[2].trim()};`)
+  .join('\n');
 
 const BERKAS = process.argv[2] || 'C:/Windows/Temp/so_shared.bak.json';
 
@@ -102,6 +126,7 @@ function buatFungsi(so) {
   return new Function('SO', `
     const getSOShared = (t) => SO[t];
     const GARIS_TEBAL = '━━━━━━━━━━━━━━━━━━━━';
+    ${KONSTANTA_ANGKA}
     ${badan}
     return { ${FNS.join(', ')} };
   `)(so);

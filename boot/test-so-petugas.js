@@ -86,10 +86,26 @@ function ambilFungsi(nama) {
   return SUMBER.slice(m.index, i);
 }
 
+// Konstanta dari index.js disuntikkan otomatis supaya tes tidak perlu
+// memperbarui daftar manual setiap kali konstanta baru ditambahkan.
+const SUMBER_KONSTANTA = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
+const KONSTANTA_ANGKA = [...SUMBER_KONSTANTA.matchAll(/^const\s+([A-Z][A-Z0-9_]*)\s*=\s*([^;\n]+);/gm)]
+  .filter((m) => /^[\d\s*+\-/().]+$/.test(m[2].trim()))
+  .map((m) => `const ${m[1]} = ${m[2].trim()};`)
+  .join('\n');
+
 const FUNGSI = [
   'kunciPetugas',
   'samakanNamaPetugas',
   'getDaftarPetugasSO',
+  'msMasukAkal',
+  'tanggalKeMs',
+  'formatTanggalDariMs',
+  'formatJamDariMs',
+  'tanggalEntri',
+  'jamEntri',
+  'hitungTotalSO',
+  'tandaiHitungUlangSO',
   'getBarangDiSemuaRak',
   'getTotalBarangSemuaRak',
   'formatInfoBarangDiRakLain',
@@ -158,6 +174,7 @@ function buatSandbox(so) {
     const GARIS_TEBAL = '━━━━━━━━━━━━━━━━━━━━';
     const getJamSekarang = () => '10:00';
     const saveShared = () => {};
+    ${KONSTANTA_ANGKA}
     ${sumberFungsi}
     return { ${FUNGSI.join(', ')} };
   `;
@@ -405,9 +422,9 @@ const layarTri = Ftri.tampilkanBarangPilihan(
 );
 cek('17e. layar memuat 4 baris riwayat (bukan 3)', (layarTri.match(/^\d+\. \*/gm) || []).length === 4, layarTri);
 cek('17f. baris Tri muncul 2x', (layarTri.match(/\*Tri\*/gi) || []).length === 2, layarTri);
-cek('17g. qty 2 tampil terpisah', /\bFISIK: 2\b/.test(layarTri), layarTri);
-cek('17h. qty 4 tampil terpisah', /\bFISIK: 4\b/.test(layarTri), layarTri);
-cek('17i. qty gabungan 6 TIDAK tampil sebagai satu baris', !/FISIK: 6\b/.test(layarTri), layarTri);
+cek('17g. qty 2 tampil terpisah', /FISIK \(TOKO\):\s*\*?2\b/.test(layarTri), layarTri);
+cek('17h. qty 4 tampil terpisah', /FISIK \(TOKO\):\s*\*?4\b/.test(layarTri), layarTri);
+cek('17i. qty gabungan 6 TIDAK tampil sebagai satu baris', !/FISIK \(TOKO\):\s*\*?6\b/.test(layarTri), layarTri);
 cek('17j. tidak ada peringatan "data lama"', !/data lama/i.test(layarTri), layarTri);
 
 // ── 18. Sumber kode layar EDIT RAK / EDIT ITEM juga merinci per entry ────
@@ -418,7 +435,7 @@ const src18 = fs18.readFileSync(require('path').join(__dirname, '..', 'index.js'
 cek('18. layar EDIT RAK menampilkan jam per entry', /entries\.forEach\(e => \{[\s\S]{0,400}jamInput/.test(src18), 'pola tidak ditemukan');
 cek('18b. layar EDIT RAK meng-escape nama petugas', /escapeMd\(e\.namaPetugas\)/.test(src18), 'escapeMd tidak dipakai');
 cek('18c. layar EDIT ITEM meng-escape nama petugas', /escapeMd\(entry\.namaPetugas\)/.test(src18), 'escapeMd tidak dipakai');
-cek('18d. layar EDIT ITEM meng-escape jam', /escapeMd\(entry\.jamInput\)/.test(src18), 'escapeMd tidak dipakai');
+cek('18d. layar EDIT ITEM meng-escape jam', /escapeMd\(jamEntri\(entry\)\)/.test(src18), 'escapeMd tidak dipakai');
 cek('18e. tidak ada lagi penggabungan qty (qty +=)', !/entries\[existIdx\]\.qty\s*\+=/.test(src18), 'masih ada penggabungan qty');
 cek('18f. tidak ada lagi penulisan jam "(updated)" saat tambah', !/jamInput\s*=\s*getJamSekarang\(\)\s*\+\s*' \(updated\)'/.test(src18), 'masih menimpa jam dengan (updated)');
 

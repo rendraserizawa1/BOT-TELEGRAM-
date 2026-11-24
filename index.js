@@ -414,6 +414,16 @@ const KATA_RESET = ['batal','mulai','start','keluar','exit','stop','reset','/sta
 const GARIS_TEBAL = '━━━━━━━━━━━━━━━━━━';
 const GARIS_TIPIS = '──────────────────';
 
+// Masa berlaku satu sesi Stock Opname.
+//
+// Dulu SO direset SETIAP KALI TANGGAL BERGANTI (getSOShared membandingkan
+// shared.tanggal dengan tanggal hari ini). Akibatnya besoknya semua rak, entri,
+// dan daftar petugas hilang, sehingga SO tidak mungkin dikerjakan lebih dari
+// satu hari. Sekarang satu sesi berlaku 7x24 jam sejak mulai/reset, dan hanya
+// direset kalau benar-benar sudah lewat batas (atau admin menekan Reset).
+const SEMINGGU_MS = 7 * 24 * 60 * 60 * 1000;
+
+
 // ════════════════════════════════════════════════════════════════
 //   3. LOGGER
 // ════════════════════════════════════════════════════════════════
@@ -1409,6 +1419,71 @@ function getJamSekarang() {
   });
   return formatter.format(new Date());
 }
+
+// Timestamp dianggap sah hanya bila masuk akal (>= 1 Januari 2000).
+// Data lama/uji bisa memuat timestamp placeholder (mis. 1, 2, 3) yang akan
+// ditampilkan sebagai 01/01/1970 dan MENUTUPI jamInput yang sebenarnya benar.
+// Untuk kasus itu, jamInput lebih dipercaya.
+const MS_MINIMAL_SAH = 946684800000; // 2000-01-01T00:00:00Z
+
+function msMasukAkal(ms) {
+  const t = Number(ms);
+  return Number.isFinite(t) && t >= MS_MINIMAL_SAH;
+}
+
+// Format tanggal (DD/MM/YYYY) dan jam (HH:MM) dari sebuah timestamp memakai zona
+// waktu WITA — zona yang dipakai seluruh bot. Server Railway berjalan di UTC,
+// jadi TIDAK boleh memakai getDate()/getHours() langsung: entri jam 00:30 WITA
+// akan tampil sebagai 16:30 hari sebelumnya.
+function formatTanggalDariMs(ms) {
+  if (!msMasukAkal(ms)) return '';
+  const t = Number(ms);
+  const bagian = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Makassar',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+  }).formatToParts(new Date(t));
+  const o = {};
+  bagian.forEach(p => { o[p.type] = p.value; });
+  return `${o.day}/${o.month}/${o.year}`;
+}
+
+function formatJamDariMs(ms) {
+  if (!msMasukAkal(ms)) return '';
+  const t = Number(ms);
+  const jam = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Makassar',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(t));
+  return jam === '24:00' ? '00:00' : jam;
+}
+
+// Tanggal satu entri SO.
+//
+// Sesi SO kini berjalan seminggu, jadi "10:25" saja tidak cukup — dua entri dari
+// hari berbeda bisa tampak berjam sama. Urutan sumber:
+//   1. entri.tanggal  -> ditulis saat input (paling jelas)
+//   2. entri.timestamp -> data lama, diturunkan ke WITA
+function tanggalEntri(entri) {
+  if (!entri) return '';
+  const tgl = String(entri.tanggal == null ? '' : entri.tanggal).trim();
+  if (tgl) return tgl;
+  return formatTanggalDariMs(entri.timestamp);
+}
+
+// Jam:menit satu entri SO.
+//
+// Sumber utama = timestamp, karena jamInput hanya "HH:MM" dan bisa berakhiran
+// "(updated)"/"(edited)" dari model penggabungan lama. jamInput hanya dipakai
+// sebagai cadangan bila timestamp tidak ada, dan sufiks kotornya dibersihkan.
+function jamEntri(entri) {
+  if (!entri) return '';
+  const dariMs = formatJamDariMs(entri.timestamp);
+  if (dariMs) return dariMs;
+  return String(entri.jamInput == null ? '' : entri.jamInput)
+    .replace(/\s*\((updated|edited)\)\s*$/i, '')
+    .trim();
+}
+
 
 function getTanggal(kemarin) {
   const d = getJakartaDate(kemarin);
@@ -2436,34 +2511,65 @@ function generateNomorBA(tokoKode) {
 //   8B. SHARED STOCK OPNAME HELPERS (Multi-User + Barang Baru + Foto)
 // ════════════════════════════════════════════════════════════════
 
+// Data SO kosong untuk satu toko, dengan masa berlaku 7x24 jam sejak `mulai`.
+// Mengubah 'DD/MM/YYYY' menjadi milidetik (awal hari, WITA). Mengembalikan NaN
+// bila tidak bisa dibaca — dipakai hanya untuk memulihkan tanggal sesi data lama.
+function tanggalKeMs(tanggal) {
+  const m = String(tanggal == null ? '' : tanggal).trim()
+    .match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return NaN;
+  const ms = Date.parse(`${m[3]}-${m[2]}-${m[1]}T00:00:00+08:00`);
+  return Number.isFinite(ms) ? ms : NaN;
+}
+
+function buatSharedKosong(mulai) {
+  const t = Number.isFinite(Number(mulai)) ? Number(mulai) : Date.now();
+  return {
+    tanggal: formatTanggalDariMs(t),   // tanggal MULAI sesi
+    sesiMulai: t,
+    sesiBerakhir: t + SEMINGGU_MS,
+    sesiAktif: false,
+    racks: {},
+    usersAktif: {},
+    barangBaru: [],
+  };
+}
+
 function getSOShared(tokoKode) {
-  const tanggalHariIni = getTanggalSlash(false);
-  
   if (!SO_SHARED[tokoKode]) {
-    SO_SHARED[tokoKode] = {
-      tanggal: tanggalHariIni,
-      sesiAktif: false,
-      racks: {},
-      usersAktif: {},
-      barangBaru: [],
-    };
+    SO_SHARED[tokoKode] = buatSharedKosong(Date.now());
   }
-  
-  if (SO_SHARED[tokoKode].tanggal !== tanggalHariIni) {
-    backupSOShared(tokoKode);
-    SO_SHARED[tokoKode] = {
-      tanggal: tanggalHariIni,
-      sesiAktif: false,
-      racks: {},
-      usersAktif: {},
-      barangBaru: [],
-    };
+
+  const shared = SO_SHARED[tokoKode];
+
+  // Data lama (sebelum sesi mingguan) belum punya sesiMulai/sesiBerakhir. Isi
+  // otomatis TANPA menghapus data yang sudah ada. Sesi dimulai dari tanggal data
+  // lama itu sendiri (bila ada), supaya rentang sesi cocok dengan tanggal entri
+  // dan petugas yang sudah tercatat tetap bisa dipilih.
+  if (!Number.isFinite(Number(shared.sesiMulai)) || !Number.isFinite(Number(shared.sesiBerakhir))) {
+    let mulai = Number(shared.sesiMulai);
+    if (!Number.isFinite(mulai)) mulai = tanggalKeMs(shared.tanggal);
+    if (!Number.isFinite(mulai)) mulai = Date.now();
+    shared.sesiMulai = mulai;
+    shared.sesiBerakhir = Number.isFinite(Number(shared.sesiBerakhir))
+      ? Number(shared.sesiBerakhir)
+      : mulai + SEMINGGU_MS;
+    if (!shared.tanggal) shared.tanggal = formatTanggalDariMs(mulai);
     saveJSON(CONFIG.paths.soShared, SO_SHARED);
   }
-  
+
+  // Sesi berakhir HANYA bila benar-benar lewat batas 7x24 jam (atau admin
+  // menekan Reset). Pergantian tanggal TIDAK lagi mereset apa pun — itulah inti
+  // perbaikannya: SO hari ini bisa dilanjutkan besok dan beberapa hari ke depan.
+  if (Date.now() > Number(shared.sesiBerakhir)) {
+    backupSOShared(tokoKode);
+    SO_SHARED[tokoKode] = buatSharedKosong(Date.now());
+    saveJSON(CONFIG.paths.soShared, SO_SHARED);
+  }
+
   // Pastikan barangBaru array ada
   if (!SO_SHARED[tokoKode].barangBaru) SO_SHARED[tokoKode].barangBaru = [];
-  
+
   return SO_SHARED[tokoKode];
 }
 
@@ -2592,8 +2698,8 @@ function getDaftarPetugasSO(tokoKode) {
   // (mis. data belum dimuat). Jangan sampai melempar — daftar cukup kosong.
   const shared = getSOShared(tokoKode) || {};
   const peta = new Map();
-  // Tanggal acuan = tanggal sesi SO toko ini (sudah dinormalkan getSOShared).
-  const tanggalHariIni = (shared && shared.tanggal) || getTanggalSlash(false);
+  // Tanggal acuan = tanggal MULAI sesi SO toko ini (sudah dinormalkan getSOShared).
+  const tanggalMulaiSesi = (shared && shared.tanggal) || getTanggalSlash(false);
 
   const catat = (nama, online, rakAktif, waktu) => {
     const rapi = String(nama == null ? '' : nama).trim().replace(/\s+/g, ' ');
@@ -2626,16 +2732,20 @@ function getDaftarPetugasSO(tokoKode) {
     });
   });
 
-  // 3. Riwayat SO — HANYA yang tanggalnya hari ini.
-  // Sesi hari-hari sebelumnya tidak dipakai: daftar jadi penuh nama lama yang
-  // sudah tidak bertugas dan menyulitkan pemilihan.
+  // 3. Riwayat SO — HANYA dari sesi yang sedang berjalan.
+  // Sesi hari-hari SEBELUMNYA (yang sudah selesai/direset) tidak dipakai: daftar
+  // jadi penuh nama lama yang sudah tidak bertugas dan menyulitkan pemilihan.
+  //
+  // Sejak SO berlaku 1 minggu, patokannya bukan lagi "tanggal hari ini" tetapi
+  // rentang sesi: sesi yang tanggal mulainya sama dengan tanggal mulai sesi aktif.
+  // Dengan begitu petugas hari ke-2/ke-3 tetap muncul sampai sesi berakhir.
   const riwayat = Array.isArray(STOCKOPNAME[tokoKode]) ? STOCKOPNAME[tokoKode] : [];
   riwayat.forEach((sesi) => {
     const sd = sesi && sesi.sharedData;
     if (!sd) return;
     // Tanggal sesi bisa tersimpan di sesi.tanggal atau di sharedData.tanggal.
     const tanggalSesi = sesi.tanggal || sd.tanggal;
-    if (String(tanggalSesi || '') !== String(tanggalHariIni)) return;
+    if (String(tanggalSesi || '') !== String(tanggalMulaiSesi)) return;
     Object.values(sd.usersAktif || {}).forEach((u) => {
       const daftarNama = (u && Array.isArray(u.petugas) && u.petugas.length) ? u.petugas : [u && u.nama];
       daftarNama.forEach((n) => catat(n, false, null, sesi.timestamp));
@@ -2673,6 +2783,7 @@ function tambahInputSO(tokoKode, rak, kodeBarang, userId, namaPetugas, qty, jeni
     qty: qty,
     jenis: jenis,
     jamInput: getJamSekarang(),
+    tanggal: formatTanggalDariMs(Date.now()),
     timestamp: Date.now(),
   });
   
@@ -2682,6 +2793,101 @@ function tambahInputSO(tokoKode, rak, kodeBarang, userId, namaPetugas, qty, jeni
   
   saveShared();
   if (typeof triggerBackupAfterEvent === 'function') triggerBackupAfterEvent(tokoKode);
+}
+
+// Menghitung total satu barang dari daftar entri.
+//
+// Sesi SO kini berjalan seminggu, jadi barang yang sama bisa dihitung lebih dari
+// sekali di hari berbeda. Aturan yang dipilih pemilik:
+//
+//   - ANTAR HARI  : dipakai HARI TERAKHIR saja. 10 PCS Senin lalu 8 PCS Kamis
+//                   menghasilkan 8, bukan 18 — supaya stok tidak dobel ketika
+//                   barang dihitung ulang karena ada yang terjual.
+//   - DALAM 1 HARI: DIJUMLAH. Tri input 2 lalu 4 di hari yang sama tetap 6,
+//                   sesuai perilaku yang sudah disetujui sebelumnya.
+//
+// Pengelompokan per JENIS (fisik/gudang) supaya hitungan gudang tidak
+// menghapus hitungan fisik, dan per RAK supaya dua rak berbeda tetap dijumlah.
+// `adaHitungUlang` dipakai layar untuk menandai entri hari lama yang angkanya
+// sudah digantikan (entri tetap ditampilkan, tidak dihapus).
+function hitungTotalSO(entries) {
+  const hasil = { fisik: 0, gudang: 0, total: 0, adaHitungUlang: false };
+  const daftar = Array.isArray(entries) ? entries : [];
+
+  // Kumpulkan per jenis -> per rak -> per tanggal.
+  const perJenis = { fisik: new Map(), gudang: new Map() };
+  daftar.forEach((e) => {
+    if (!e) return;
+    const jenis = String(e.jenis || '').toLowerCase() === 'fisik' ? 'fisik' : 'gudang';
+    const rak = String(e.rak == null ? '' : e.rak);
+    const tgl = tanggalEntri(e);
+    const qty = Number(e.qty);
+    if (!Number.isFinite(qty)) return;
+    const petaRak = perJenis[jenis];
+    if (!petaRak.has(rak)) petaRak.set(rak, new Map());
+    const petaTgl = petaRak.get(rak);
+    petaTgl.set(tgl, (petaTgl.get(tgl) || 0) + qty);
+  });
+
+  ['fisik', 'gudang'].forEach((jenis) => {
+    perJenis[jenis].forEach((petaTgl) => {
+      // Tanggal diurutkan; yang terakhir menang. Tanggal kosong dianggap paling
+      // tua supaya entri tanpa keterangan tidak menimpa entri yang jelas.
+      const tanggal = [...petaTgl.keys()].sort((a, b) => {
+        if (!a && b) return -1;
+        if (a && !b) return 1;
+        // DD/MM/YYYY -> YYYYMMDD agar urutan leksikal = urutan tanggal.
+        const kunci = (t) => {
+          const m = String(t || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+          return m ? `${m[3]}${m[2]}${m[1]}` : String(t || '');
+        };
+        return kunci(a).localeCompare(kunci(b));
+      });
+      if (tanggal.length > 1) hasil.adaHitungUlang = true;
+      const terakhir = tanggal[tanggal.length - 1];
+      if (terakhir === undefined) return;
+      hasil[jenis] += petaTgl.get(terakhir);
+    });
+  });
+
+  hasil.total = hasil.fisik + hasil.gudang;
+  return hasil;
+}
+
+
+// Menandai entri yang angkanya SUDAH DIGANTIKAN oleh hitungan di hari yang lebih
+// baru. Entri tetap ditampilkan (tidak dihapus) - petugas hanya perlu tahu mana
+// yang dipakai untuk total. Aturannya sama dengan hitungTotalSO: per jenis + per
+// rak, tanggal terakhir menang.
+//
+// Mengembalikan array boolean sejajar dengan `entries`.
+function tandaiHitungUlangSO(entries) {
+  const daftar = Array.isArray(entries) ? entries : [];
+  const kunciTanggal = (t) => {
+    const m = String(t || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    return m ? `${m[3]}${m[2]}${m[1]}` : String(t || '');
+  };
+  const kunciGrup = (e) => {
+    const jenis = String(e.jenis || '').toLowerCase() === 'fisik' ? 'fisik' : 'gudang';
+    return jenis + '\u0000' + String(e.rak == null ? '' : e.rak);
+  };
+
+  // Kunci grup -> tanggal terakhir yang menang.
+  const terakhir = new Map();
+  daftar.forEach((e) => {
+    if (!e) return;
+    const grup = kunciGrup(e);
+    const nilai = kunciTanggal(tanggalEntri(e));
+    const ada = terakhir.get(grup);
+    if (ada === undefined || nilai > ada) terakhir.set(grup, nilai);
+  });
+
+  return daftar.map((e) => {
+    if (!e) return false;
+    const maks = terakhir.get(kunciGrup(e));
+    if (maks === undefined) return false;
+    return kunciTanggal(tanggalEntri(e)) < maks;
+  });
 }
 
 function editQtyItemSO(tokoKode, rak, kodeBarang, entryIndex, newQty) {
@@ -2743,6 +2949,7 @@ function tambahQtyItemSO(tokoKode, rak, kodeBarang, userId, namaPetugas, tambahQ
     qty: tambahQty,
     jenis: jenis,
     jamInput: getJamSekarang(),
+    tanggal: formatTanggalDariMs(Date.now()),
     timestamp: Date.now(),
   });
 
@@ -2763,17 +2970,17 @@ function getBarangDiSemuaRak(tokoKode, kodeBarang) {
   Object.entries(shared.racks || {}).forEach(([rakName, rackData]) => {
     const itemData = rackData.items[kodeBarang];
     if (itemData && itemData.entries.length > 0) {
-      let totalFisik = 0, totalGudang = 0;
-      itemData.entries.forEach(e => {
-        if (e.jenis === 'fisik') totalFisik += e.qty;
-        else totalGudang += e.qty;
-      });
+      // Aturan total yang sama dengan rekap & laporan (lihat hitungTotalSO):
+      // antar hari dipakai hari terakhir, di dalam hari dijumlahkan.
+      const entries = itemData.entries.map(e => ({ ...e, rak: rakName }));
+      const t = hitungTotalSO(entries);
       result.push({
         rak: rakName,
         entries: itemData.entries,
-        totalFisik,
-        totalGudang,
-        total: totalFisik + totalGudang,
+        totalFisik: t.fisik,
+        totalGudang: t.gudang,
+        total: t.total,
+        adaHitungUlang: t.adaHitungUlang,
       });
     }
   });
@@ -2823,16 +3030,20 @@ function getSOGabunganData(tokoKode) {
   const shared = getSOShared(tokoKode);
   const gabungan = { fisik: {}, gudang: {} };
   
-  Object.values(shared.racks || {}).forEach(rackData => {
+  // Dikumpulkan per rak dulu, lalu dihitung dengan aturan yang sama seperti
+  // layar & laporan (hitungTotalSO): antar hari hari terakhir menang, di dalam
+  // hari dijumlahkan. Tanpa ini rekap bisa menampilkan angka berbeda dari layar.
+  const perKode = {};
+  Object.entries(shared.racks || {}).forEach(([rakName, rackData]) => {
     Object.entries(rackData.items || {}).forEach(([kode, itemData]) => {
-      itemData.entries.forEach(entry => {
-        if (entry.jenis === 'fisik') {
-          gabungan.fisik[kode] = (gabungan.fisik[kode] || 0) + entry.qty;
-        } else {
-          gabungan.gudang[kode] = (gabungan.gudang[kode] || 0) + entry.qty;
-        }
-      });
+      if (!perKode[kode]) perKode[kode] = [];
+      itemData.entries.forEach(e => perKode[kode].push({ ...e, rak: rakName }));
     });
+  });
+  Object.entries(perKode).forEach(([kode, entries]) => {
+    const t = hitungTotalSO(entries);
+    if (t.fisik) gabungan.fisik[kode] = t.fisik;
+    if (t.gudang) gabungan.gudang[kode] = t.gudang;
   });
   
   return gabungan;
@@ -2876,11 +3087,18 @@ function formatInfoBarangDiRakLain(tokoKode, kodeBarang, currentRak, currentUser
   // Urutkan kronologis supaya jelas urutan inputnya.
   info.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
 
+  // Entri yang angkanya sudah digantikan hitungan hari yang lebih baru diberi
+  // tanda ↩️, supaya petugas tahu kenapa total tidak sama dengan jumlah semua
+  // baris. Entri tetap ditampilkan semua.
+  const ditandai = tandaiHitungUlangSO(info);
+
   let m = `\n📋 *RIWAYAT HITUNG BARANG INI:*\n──────────────────\n`;
   info.forEach((inp, i) => {
     const jenis = String(inp.jenis || '').toLowerCase();
     const jenisIcon = jenis === 'fisik' ? '🏪' : '🏭';
-    const jenisLabel = jenis ? jenis.toUpperCase() : 'TIDAK DISEBUT';
+    // Sebutkan lokasinya dengan jelas: FISIK = barang di toko, GUDANG = barang di
+    // gudang. Tanpa label ini petugas tidak tahu "di gudang mana" barang dihitung.
+    const jenisLabel = jenis === 'fisik' ? 'FISIK (TOKO)' : jenis === 'gudang' ? 'GUDANG' : 'TIDAK DISEBUT';
     // Nama petugas dan nama rak berasal dari input pengguna. Pesan ini dikirim
     // dengan parse_mode Markdown (lihat kirim()), jadi karakter '_' '*' '`' '['
     // di dalamnya harus di-escape — kalau tidak, Telegram menolak seluruh pesan
@@ -2891,8 +3109,19 @@ function formatInfoBarangDiRakLain(tokoKode, kodeBarang, currentRak, currentUser
     const namaTampil = String(inp.namaPetugas == null ? '' : inp.namaPetugas).trim()
       ? escapeMd(inp.namaPetugas)
       : 'TANPA NAMA';
-    m += `${i+1}. *${namaTampil}*${tandaSaya} di *${escapeMd(inp.rak)}*\n`;
-    m += `   ⏰ ${escapeMd(inp.jamInput)} | ${jenisIcon} ${jenisLabel}: ${inp.qty}\n`;
+    // Tanggal + jam:menit lengkap. Sesi SO berjalan seminggu, jadi jam saja tidak
+    // cukup — dua entri beda hari bisa berjam sama.
+    const tgl = tanggalEntri(inp);
+    const jam = jamEntri(inp);
+    m += `${i+1}. *${namaTampil}*${tandaSaya}\n`;
+    m += `   📅 ${escapeMd(tgl || '-')} ⏰ ${escapeMd(jam || '-')}\n`;
+    m += `   📍 Rak: *${escapeMd(inp.rak)}*\n`;
+    m += `   ${jenisIcon} ${jenisLabel}: *${inp.qty}*\n`;
+    // Tanda "sudah digantikan": entri ini tetap ada di riwayat, tapi angkanya
+    // tidak dipakai lagi untuk total karena ada hitung ulang di hari lebih baru.
+    if (ditandai[i]) {
+      m += `   ↩️ _dihitung ulang di hari lain — angka ini tidak dipakai untuk total_\n`;
+    }
     // Penanda "(updated)"/"(edited)" hanya ditulis oleh penggabungan model lama,
     // yang mencampur qty antar petugas. Data tidak diubah - hanya diberi tanda
     // supaya petugas tahu dan bisa hitung ulang bila ragu.
@@ -2901,15 +3130,21 @@ function formatInfoBarangDiRakLain(tokoKode, kodeBarang, currentRak, currentUser
     }
   });
 
-  let totalSemua = 0;
-  let totalLain = 0;
-  info.forEach(inp => {
-    totalSemua += inp.qty;
-    if (!inp.milikSaya) totalLain += inp.qty;
-  });
+  // Angka ringkasan memakai aturan yang sama dengan rekap & laporan.
+  const t = hitungTotalSO(info);
+  // Jumlah input per petugas (bukan penjumlahan qty) supaya tidak rancu dengan
+  // total: kalau ada hitung ulang antar hari, menjumlah qty petugas lain akan
+  // menghasilkan angka yang tidak sama dengan total.
+  const lain = info.filter(inp => !inp.milikSaya);
 
-  m += `\n📦 *Total dihitung:* ${totalSemua} dari ${info.length} input\n`;
-  if (totalLain > 0) m += `👥 *Dihitung petugas lain:* ${totalLain}\n`;
+  m += `\n📦 *Total dihitung:* ${t.total} dari ${info.length} input\n`;
+  if (t.adaHitungUlang) {
+    m += `↩️ _Barang ini dihitung ulang di hari lain — total memakai hitungan terakhir._\n`;
+  }
+  if (lain.length > 0) {
+    const namaLain = [...new Set(lain.map(i => String(i.namaPetugas == null ? '' : i.namaPetugas).trim() || 'TANPA NAMA'))];
+    m += `👥 *Juga dihitung oleh:* ${escapeMd(namaLain.join(', '))} (${lain.length} input)\n`;
+  }
 
   return m;
 }
@@ -2966,7 +3201,7 @@ async function generateLaporanSOGabungan(tokoKode, namaToko) {
   const shared = getSOShared(tokoKode);
   const barangBaru = getBarangBaruSO(tokoKode);
   
-  let m = `📋 *LAPORAN STOCK OPNAME GABUNGAN*\n🏦 ${namaToko}\n📅 ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n`;
+  let m = `📋 *LAPORAN STOCK OPNAME GABUNGAN*\n🏦 ${namaToko}\n📅 ${formatTanggalDariMs(shared.sesiMulai)} – ${formatTanggalDariMs(shared.sesiBerakhir)}\n${GARIS_TEBAL}\n\n`;
   
   const allPetugas = new Set();
   Object.values(shared.racks || {}).forEach(rackData => {
@@ -3046,6 +3281,56 @@ async function generateLaporanSOGabungan(tokoKode, namaToko) {
     });
   }
   
+  // ── DETAIL PER ENTRI: SEMUA petugas, lengkap dengan tanggal + jam:menit,
+  // rak, jenis (FISIK/GUDANG), dan qty per entry (bukan hasil penjumlahan).
+  // Sesi SO kini berjalan seminggu, jadi jam saja tidak cukup: dua entri beda
+  // hari bisa berjam sama. Dikirim lewat kirim() yang sudah memecah pesan
+  // panjang di batas baris (splitMessage), jadi aman untuk ratusan entri.
+  {
+    const semuaEntri = [];
+    Object.entries(shared.racks || {}).forEach(([rakName, rackData]) => {
+      Object.entries(rackData.items || {}).forEach(([kode, itemData]) => {
+        const item = petaBarang.get(String(kode).toUpperCase());
+        let namaBarang = item?.nama || kode;
+        if (kode.startsWith('NEW_')) {
+          // barangBaru (array) dipakai di sini, BUKAN petaBarangBaru - peta itu
+          // hanya dibuat di generateExcelSOGabungan dan tidak ada di fungsi ini.
+          const baru = barangBaru.find((b) => b.kode === kode);
+          if (baru) namaBarang = baru.nama;
+        }
+        (itemData.entries || []).forEach((e) => {
+          semuaEntri.push({ ...e, rak: rakName, kode, namaBarang });
+        });
+      });
+    });
+    if (semuaEntri.length > 0) {
+      // Urut kronologis supaya jelas siapa input apa dan kapan.
+      semuaEntri.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+      // Tandai entri yang angkanya sudah digantikan hitungan hari lebih baru,
+      // supaya jelas kenapa total tidak sama dengan jumlah semua baris.
+      const ditandai = tandaiHitungUlangSO(semuaEntri);
+      m += `\n${GARIS_TEBAL}\n📋 *DETAIL PER ENTRI (semua petugas):*\n${GARIS_TIPIS}\n`;
+      let tanggalTerakhir = null;
+      semuaEntri.forEach((e, i) => {
+        const tgl = tanggalEntri(e) || "-";
+        const jam = jamEntri(e) || "-";
+        if (tgl !== tanggalTerakhir) {
+          m += `\n📅 *${escapeMd(tgl)}*\n`;
+          tanggalTerakhir = tgl;
+        }
+        const jenis = String(e.jenis || "").toLowerCase();
+        const jenisLabel = jenis === "fisik" ? "🏪 FISIK (TOKO)" : jenis === "gudang" ? "🏭 GUDANG" : "❓ TIDAK DISEBUT";
+        const namaPetugas = String(e.namaPetugas == null ? "" : e.namaPetugas).trim()
+          ? escapeMd(e.namaPetugas)
+          : "TANPA NAMA";
+        m += `   ⏰ ${escapeMd(jam)} | 👤 ${namaPetugas} | 📍 ${escapeMd(e.rak)}\n`;
+        m += `      ${jenisLabel} | 📦 ${escapeMd(e.kode)} ${escapeMd(e.namaBarang)} = *${e.qty}*\n`;
+        if (ditandai[i]) m += `      ↩️ _dihitung ulang di hari lain — tidak dipakai untuk total_\n`;
+      });
+      m += `\n_📊 ${semuaEntri.length} entri dari ${Object.keys(shared.racks || {}).length} rak_\n`;
+    }
+  }
+
   m += `\n${GARIS_TEBAL}\n📊 *RINGKASAN:*\n`;
   m += `   📦 Rak: ${Object.keys(shared.racks || {}).length} | 📊 Barang: ${allKodes.size}\n`;
   m += `   ✅ ${sesuai.length} | ➕ ${lebih.length} | ➖ ${kurang.length}\n`;
@@ -3095,7 +3380,9 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
   
   wsInfo.addRow(['LAPORAN STOCK OPNAME GABUNGAN', '']);
   wsInfo.addRow(['Toko', namaToko]);
-  wsInfo.addRow(['Tanggal', getTanggalIndonesia()]);
+  // SO berlaku 1 minggu, jadi yang dicetak adalah RENTANG sesi - bukan satu
+  // tanggal - supaya jelas laporan ini mencakup beberapa hari.
+  wsInfo.addRow(['Periode SO', `${formatTanggalDariMs(shared.sesiMulai)} s/d ${formatTanggalDariMs(shared.sesiBerakhir)}`]);
   wsInfo.addRow(['', '']);
   wsInfo.addRow(['PETUGAS', '']);
   let pi = 0;
@@ -3155,7 +3442,7 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
         if (baru) nama = baru.nama;
       }
       itemData.entries.forEach(e => {
-        rakRows.push([kode, nama, item?.satuan || '', e.namaPetugas, e.jenis.toUpperCase(), e.qty, e.jamInput, kode.startsWith('NEW_') ? 'BARANG BARU' : '']);
+        rakRows.push([kode, nama, item?.satuan || '', e.namaPetugas, e.jenis.toUpperCase(), e.qty, tanggalEntri(e), jamEntri(e), kode.startsWith('NEW_') ? 'BARANG BARU' : '']);
       });
     });
     if (!rakRows.length) return;
@@ -3165,15 +3452,76 @@ async function generateExcelSOGabungan(tokoKode, namaToko) {
       { header: 'Kode', width: 18 }, { header: 'Nama Barang', width: 45 },
       { header: 'Satuan', width: 8 }, { header: 'Petugas', width: 15 },
       { header: 'Jenis', width: 10 }, { header: 'Qty', width: 8 },
-      { header: 'Jam', width: 18 }, { header: 'Status', width: 15 },
+      { header: 'Tanggal', width: 14 }, { header: 'Jam', width: 8 }, { header: 'Status', width: 15 },
     ];
     ws.getRow(1).eachCell(c => { c.font = { bold: true, color: { argb: 'FFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0F3460' } }; });
     rakRows.forEach(r => {
       const row = ws.addRow(r);
-      if (r[7] === 'BARANG BARU') row.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2CC' } }; });
+      if (r[8] === 'BARANG BARU') row.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2CC' } }; });
     });
   });
   
+  // ═══ SHEET: DETAIL SEMUA ENTRI ═══
+  // Satu baris = satu entri, LENGKAP: tanggal, jam:menit, petugas, rak, jenis,
+  // kode, nama barang, dan qty per entri. Inilah rincian "di rak mana / di
+  // gudang mana beserta jumlah per entrynya" yang tidak terbaca dari sheet rekap
+  // (yang hanya berisi total).
+  {
+    const semuaEntri = [];
+    Object.entries(shared.racks || {}).forEach(([rakName, rackData]) => {
+      Object.entries(rackData.items || {}).forEach(([kode, itemData]) => {
+        const item = petaBarang.get(String(kode).toUpperCase());
+        let namaBarang = item?.nama || kode;
+        if (kode.startsWith("NEW_")) {
+          const baru = petaBarangBaru.get(kode);
+          if (baru) namaBarang = baru.nama;
+        }
+        (itemData.entries || []).forEach((e) => {
+          semuaEntri.push({ ...e, rak: rakName, kode, namaBarang });
+        });
+      });
+    });
+    if (semuaEntri.length > 0) {
+      semuaEntri.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+      const wsDetail = wb.addWorksheet(namaSheetUnik(wb, "Detail Semua Entri"));
+      wsDetail.columns = [
+        { header: "No", width: 6 },
+        { header: "Tanggal", width: 14 },
+        { header: "Jam", width: 8 },
+        { header: "Petugas", width: 20 },
+        { header: "Rak", width: 28 },
+        { header: "Jenis", width: 16 },
+        { header: "Kode", width: 18 },
+        { header: "Nama Barang", width: 45 },
+        { header: "Qty", width: 8 },
+        { header: "Satuan", width: 8 },
+      ];
+      wsDetail.getRow(1).eachCell(c => { c.font = { bold: true, color: { argb: "FFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "0F3460" } }; });
+      semuaEntri.forEach((e, i) => {
+        const jenis = String(e.jenis || "").toLowerCase();
+        const jenisLabel = jenis === "fisik" ? "FISIK (TOKO)" : jenis === "gudang" ? "GUDANG" : "TIDAK DISEBUT";
+        const item = petaBarang.get(String(e.kode).toUpperCase());
+        const row = wsDetail.addRow([
+          i + 1,
+          tanggalEntri(e),
+          jamEntri(e),
+          String(e.namaPetugas == null ? "" : e.namaPetugas).trim() || "TANPA NAMA",
+          e.rak,
+          jenisLabel,
+          e.kode,
+          e.namaBarang,
+          e.qty,
+          item?.satuan || "",
+        ]);
+        // Sorot entri dari hari yang sudah digantikan hitungannya.
+        if (/\(updated\)|\(edited\)/i.test(String(e.jamInput || ""))) {
+          row.eachCell(c => { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2CC" } }; });
+        }
+      });
+      wsDetail.getRow(1).font = { bold: true };
+    }
+  }
+
   // ═══ SHEET BARANG BARU (dengan FOTO!) ═══
   if (barangBaru.length > 0) {
     const wsNew = wb.addWorksheet(namaSheetUnik(wb, 'Barang Baru'));
@@ -13733,8 +14081,17 @@ bot.on('callback_query', async (query) => {
       });
       
       if (totalUsersAktif > 0 || totalRacks > 0) {
-        let m = `📦 *STOCK OPNAME*\n🏦 ${toko.nama}\n📅 ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n`;
-        m += `⚠️ *SUDAH ADA SO BERJALAN HARI INI!*\n\n`;
+        let m = `📊 *STOCK OPNAME*\n🏦 ${toko.nama}\n📅 ${formatTanggalDariMs(shared.sesiMulai)} – ${formatTanggalDariMs(shared.sesiBerakhir)}\n${GARIS_TEBAL}\n\n`;
+        m += `📌 *SUDAH ADA SO BERJALAN!*\n`;
+        // Sisa waktu sesi: SO berlaku 1 minggu penuh, jadi petugas perlu tahu
+        // sampai kapan datanya masih bisa dilanjutkan.
+        {
+          const sisaMs = Number(shared.sesiBerakhir) - Date.now();
+          const sisaHari = Math.floor(sisaMs / (24 * 60 * 60 * 1000));
+          const sisaJam = Math.floor((sisaMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+          const hariKe = Math.floor((Date.now() - Number(shared.sesiMulai)) / (24 * 60 * 60 * 1000)) + 1;
+          m += `⏳ Hari ke-${hariKe} dari 7 — sisa ${sisaHari} hari ${sisaJam} jam\n\n`;
+        }
         
         if (totalUsersAktif > 0) {
           m += `👥 *PETUGAS AKTIF (${totalUsersAktif}):*\n${GARIS_TIPIS}\n`;
@@ -13771,7 +14128,7 @@ bot.on('callback_query', async (query) => {
       
       updateSesi(userId, { soSetupStep: 'petugas' });
       try {
-        await bot.editMessageText(`📦 *STOCK OPNAME*\n🏦 ${toko.nama}\n📅 ${getTanggalSlash(false)}\n${GARIS_TEBAL}\n\n✨ *SO BARU*\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\nJika lebih dari 1, pisah koma.\n\n*Contoh:* \`Budi\` atau \`Budi, Sari\`\n\nKetik *batal* untuk keluar.`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: KB_KEMBALI_SO });
+        await bot.editMessageText(`📦 *STOCK OPNAME*\n🏦 ${toko.nama}\n📅 ${formatTanggalDariMs(Date.now())} – ${formatTanggalDariMs(Date.now() + SEMINGGU_MS)}\n${GARIS_TEBAL}\n\n✨ *SO BARU*\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\nJika lebih dari 1, pisah koma.\n\n*Contoh:* \`Budi\` atau \`Budi, Sari\`\n\nKetik *batal* untuk keluar.`, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: KB_KEMBALI_SO });
       } catch(e) {
         await kirim(chatId, `📦 *SO - ${toko.nama}*\n\n👥 *STEP 1/3: Nama Petugas*\nKetik nama petugas.`, { reply_markup: KB_KEMBALI_SO });
       }
@@ -14099,10 +14456,12 @@ bot.on('callback_query', async (query) => {
     const session = getSesi(userId);
     if (!session.tokoKode) return;
     if (typeof backupSOShared === 'function') backupSOShared(session.tokoKode);
-    SO_SHARED[session.tokoKode] = { tanggal: getTanggalSlash(false), sesiAktif: false, racks: {}, usersAktif: {}, barangBaru: [] };
+    // Sesi baru: 7x24 jam lagi sejak sekarang.
+    SO_SHARED[session.tokoKode] = buatSharedKosong(Date.now());
     saveJSON(CONFIG.paths.soShared, SO_SHARED);
     updateSesi(userId, { soSetupStep: 'petugas' });
-    await kirim(chatId, `✅ *Data lama di-backup & direset!*\n${GARIS_TEBAL}\n\n🆕 *SO BARU - ${NAMA_TOKO[session.tokoKode]}*\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\n*Contoh:* \`Budi\` atau \`Budi, Sari\``, { reply_markup: KB_KEMBALI_SO });
+    const sBaru = SO_SHARED[session.tokoKode];
+    await kirim(chatId, `✅ *Data lama di-backup & direset!*\n${GARIS_TEBAL}\n\n🆕 *SO BARU - ${NAMA_TOKO[session.tokoKode]}*\n📅 Berlaku sampai *${formatTanggalDariMs(sBaru.sesiBerakhir)}* (7 hari)\n\n👥 *STEP 1/3: Nama Petugas*\n\nKetik nama petugas.\n*Contoh:* \`Budi\` atau \`Budi, Sari\``, { reply_markup: KB_KEMBALI_SO });
     return;
   }
   
@@ -14158,8 +14517,9 @@ bot.on('callback_query', async (query) => {
         const baru = barangBaruList.find(b => b.kode === kode);
         if (baru) nama = baru.nama;
       }
-      let totalQty = 0;
-      itemData.entries.forEach(e => totalQty += e.qty);
+      // Aturan total yang sama dengan rekap & laporan (lihat hitungTotalSO):
+      // barang yang dihitung ulang di hari lain memakai hitungan terakhir.
+      const totalQty = hitungTotalSO(itemData.entries).total;
       return { kode, nama, itemData, totalQty, isBaru: kode.startsWith('NEW_') };
     }).sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
     
@@ -14233,8 +14593,9 @@ bot.on('callback_query', async (query) => {
         const baru = barangBaruList.find(b => b.kode === kode);
         if (baru) nama = baru.nama;
       }
-      let totalQty = 0;
-      itemData.entries.forEach(e => totalQty += e.qty);
+      // Aturan total yang sama dengan rekap & laporan (lihat hitungTotalSO):
+      // barang yang dihitung ulang di hari lain memakai hitungan terakhir.
+      const totalQty = hitungTotalSO(itemData.entries).total;
       return { kode, nama, totalQty };
     }).sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
     
@@ -14281,13 +14642,19 @@ bot.on('callback_query', async (query) => {
       const baru = getBarangBaruSO(session.tokoKode).find(b => b.kode === kode);
       if (baru) nama = baru.nama;
     }
-    let totalQty = 0;
-    itemData.entries.forEach(e => totalQty += e.qty);
+    // Aturan total yang sama dengan rekap & laporan (lihat hitungTotalSO).
+    const totalQty = hitungTotalSO(itemData.entries).total;
     
     let m = `✏️ *EDIT ITEM*\n${GARIS_TEBAL}\n📦 ${escapeMd(nama)}\n🔖 \`${kode}\`${kode.startsWith('NEW_') ? ' 🆕' : ''}\n📍 Rak: ${rakName}\n📊 Total: ${totalQty}\n\n`;
     const buttons = [];
     itemData.entries.forEach((entry, i) => {
-      m += `${i+1}. *${escapeMd(entry.namaPetugas)}* | ${escapeMd(entry.jenis)} | Qty: *${entry.qty}*\n   ⏰ ${escapeMd(entry.jamInput)}\n\n`;
+      // Tanggal + jam:menit lengkap. Sesi SO berjalan seminggu, jadi jam saja
+      // tidak cukup untuk membedakan entri hari ini dengan hari sebelumnya.
+      // Nama kosong diberi label supaya tidak muncul "**" yang membingungkan.
+      const namaEntry = String(entry.namaPetugas == null ? '' : entry.namaPetugas).trim()
+        ? escapeMd(entry.namaPetugas)
+        : 'TANPA NAMA';
+      m += `${i+1}. *${namaEntry}* | ${escapeMd(entry.jenis)} | Qty: *${entry.qty}*\n   📅 ${escapeMd(tanggalEntri(entry))} ⏰ ${escapeMd(jamEntri(entry))}\n\n`;
       buttons.push([{ text: `✏️ Edit #${i+1} (${entry.qty})`, callback_data: `so:editentry:${rakName}:${kode}:${i}` }]);
     });
     buttons.push([{ text: '🗑️ Hapus Semua', callback_data: `so:hapusitem:${rakName}:${kode}` }]);
