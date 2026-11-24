@@ -1,0 +1,42 @@
+# Aturan akhir baris — WAJIB, jangan dihapus.
+#
+# Kenapa berkas ini ada (insiden 24 Nov 2026):
+#   `core.autocrlf=true` di Windows membuat working tree ber-CRLF. Saat deploy
+#   lewat `railway up`, yang diunggah adalah WORKING TREE (bukan blob git),
+#   sehingga docker-entrypoint.sh ikut ber-CRLF. Shebang menjadi "#!/bin/sh\r"
+#   dan kernel mencari interpreter bernama "/bin/sh\r":
+#
+#       exec container process (missing dynamic library?)
+#       `/app/./entrypoint.sh`: No such file or directory
+#
+#   Container gagal start, bot mati, /health tidak menjawab. Deploy lama tidak
+#   kena karena Railway menarik blob langsung dari GitHub (LF).
+#
+# Aturan: berkas yang dieksekusi di dalam container Linux SELALU berakhir LF,
+# apa pun setelan core.autocrlf di mesin pengembang.
+
+# Skrip shell: LF mutlak.
+*.sh    text eol=lf
+*.bash  text eol=lf
+
+# Dockerfile: LF (hindari baris perintah rusak karena CR).
+Dockerfile      text eol=lf
+*.dockerfile    text eol=lf
+.dockerignore   text eol=lf
+
+# Konfigurasi yang dibaca tool Linux.
+*.yml   text eol=lf
+*.yaml  text eol=lf
+Procfile text eol=lf
+*.json  text eol=lf
+
+# Kode JavaScript: LF (Node di container Linux; CRLF tidak merusak tapi
+# membuat diff berisik antar mesin).
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.cjs   text eol=lf
+
+# Berkas Windows-only tetap CRLF.
+*.ps1   text eol=crlf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
