@@ -442,6 +442,45 @@ console.log('=== Uji Stock Opname: sesi 1 minggu penuh ===\n');
     'nilai konstanta tidak sesuai');
 }
 
+// ── 20. Entri menyimpan `rak` (mencegah qty rak lain HILANG) ─────────────
+// Kenapa penting: hitungTotalSO mengelompokkan per rak. Kalau entri hanya
+// mengandalkan nama key saat dibaca, satu pembaca yang lupa menambahkan `rak`
+// membuat entri dari dua rak berbeda tergabung dan qty salah satu rak hilang
+// (terbukti: Rak A 10 + Rak B 7 menjadi 7, bukan 17).
+{
+  const F = buatSandbox();
+  F.tambahInputSO('kefa', 'Rak A', 'NN1', '111', 'Dimas', 10, 'fisik');
+  F.tambahQtyItemSO('kefa', 'Rak A', 'NN1', '111', 'Dimas', 5, 'fisik');
+  const entri = F.getSOShared('kefa').racks['Rak A'].items.NN1.entries;
+  cek('20. tambahInputSO menyimpan rak di entri',
+    entri.length === 2 && entri[0].rak === 'Rak A', JSON.stringify(entri.map((e) => e.rak)));
+  cek('20b. tambahQtyItemSO menyimpan rak di entri',
+    entri.length === 2 && entri[1].rak === 'Rak A', JSON.stringify(entri.map((e) => e.rak)));
+
+  // Dua rak berbeda -> tetap DIJUMLAH (bukan saling menimpa).
+  const G = buatSandbox();
+  G.tambahInputSO('kefa', 'Rak A', 'NN1', '111', 'Dimas', 10, 'fisik');
+  G.tambahInputSO('kefa', 'Rak B', 'NN1', '111', 'Dimas', 7, 'fisik');
+  const t = G.getTotalBarangSemuaRak('kefa', 'NN1');
+  cek('20c. dua rak berbeda tetap dijumlah (10 + 7 = 17)', t.total === 17, `total=${t.total}`);
+  cek('20d. rekap memisahkan per rak', t.raks.length === 2, `${t.raks.length} rak`);
+
+  // Kalau entri dibaca TANPA rak DAN beda hari, qty rak lain HILANG (aturan
+  // "hari terakhir menang" menimpa rak yang seharusnya terpisah).
+  const mentah = [
+    { userId: '111', namaPetugas: 'Dimas', qty: 10, jenis: 'fisik', jamInput: '09:00', tanggal: '24/11/2026', timestamp: Date.parse('2026-11-24T09:00:00+08:00') },
+    { userId: '111', namaPetugas: 'Dimas', qty: 7, jenis: 'fisik', jamInput: '09:00', tanggal: '25/11/2026', timestamp: Date.parse('2026-11-25T09:00:00+08:00') },
+  ];
+  const hasilMentah = G.hitungTotalSO(mentah);
+  cek('20e. tanpa rak + beda hari: qty rak lain HILANG (bukti bug lama)',
+    hasilMentah.total === 7, `total=${hasilMentah.total} (seharusnya 17 kalau rak disimpan)`);
+
+  // Dengan rak yang benar, angka yang sama menghasilkan 17.
+  const denganRak = mentah.map((e, i) => ({ ...e, rak: i === 0 ? 'Rak A' : 'Rak B' }));
+  cek('20f. dengan rak: hasil benar 17', G.hitungTotalSO(denganRak).total === 17,
+    `total=${G.hitungTotalSO(denganRak).total}`);
+}
+
 console.log('');
 console.log(`LULUS: ${lulus}   GAGAL: ${gagal}`);
 process.exit(gagal === 0 ? 0 : 1);

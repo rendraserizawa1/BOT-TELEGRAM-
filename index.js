@@ -2777,11 +2777,17 @@ function tambahInputSO(tokoKode, rak, kodeBarang, userId, namaPetugas, qty, jeni
     shared.racks[rak].items[kodeBarang] = { entries: [] };
   }
   
+  // `rak` DISIMPAN di entri, bukan hanya diambil dari nama key saat membaca.
+  // Alasannya: hitungTotalSO() mengelompokkan per rak. Kalau rak hanya berasal dari
+  // key, setiap pembaca WAJIB ingat menambahkannya; satu pembaca yang lupa membuat
+  // entri dari dua rak berbeda tergabung dan qty salah satu rak HILANG
+  // (terbukti: 10 + 7 di dua rak menjadi 7, bukan 17).
   shared.racks[rak].items[kodeBarang].entries.push({
     userId: String(userId),
     namaPetugas: namaPetugas,
     qty: qty,
     jenis: jenis,
+    rak: rak,
     jamInput: getJamSekarang(),
     tanggal: formatTanggalDariMs(Date.now()),
     timestamp: Date.now(),
@@ -2948,6 +2954,7 @@ function tambahQtyItemSO(tokoKode, rak, kodeBarang, userId, namaPetugas, tambahQ
     namaPetugas: namaPetugas,
     qty: tambahQty,
     jenis: jenis,
+    rak: rak,
     jamInput: getJamSekarang(),
     tanggal: formatTanggalDariMs(Date.now()),
     timestamp: Date.now(),
@@ -14517,9 +14524,10 @@ bot.on('callback_query', async (query) => {
         const baru = barangBaruList.find(b => b.kode === kode);
         if (baru) nama = baru.nama;
       }
-      // Aturan total yang sama dengan rekap & laporan (lihat hitungTotalSO):
-      // barang yang dihitung ulang di hari lain memakai hitungan terakhir.
-      const totalQty = hitungTotalSO(itemData.entries).total;
+      // Aturan total yang sama dengan rekap & laporan (lihat hitungTotalSO).
+      // `rak` disertakan eksplisit: hitungTotalSO mengelompokkan per rak, dan entri
+      // dari dua rak berbeda TIDAK boleh tergabung (qty salah satu rak akan hilang).
+      const totalQty = hitungTotalSO(itemData.entries.map(e => ({ ...e, rak: rakName }))).total;
       return { kode, nama, itemData, totalQty, isBaru: kode.startsWith('NEW_') };
     }).sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
     
@@ -14593,9 +14601,9 @@ bot.on('callback_query', async (query) => {
         const baru = barangBaruList.find(b => b.kode === kode);
         if (baru) nama = baru.nama;
       }
-      // Aturan total yang sama dengan rekap & laporan (lihat hitungTotalSO):
-      // barang yang dihitung ulang di hari lain memakai hitungan terakhir.
-      const totalQty = hitungTotalSO(itemData.entries).total;
+      // Aturan total yang sama dengan rekap & laporan (lihat hitungTotalSO).
+      // `rak` disertakan eksplisit supaya entri dari rak lain tidak ikut tergabung.
+      const totalQty = hitungTotalSO(itemData.entries.map(e => ({ ...e, rak: rakName }))).total;
       return { kode, nama, totalQty };
     }).sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
     
@@ -14643,7 +14651,8 @@ bot.on('callback_query', async (query) => {
       if (baru) nama = baru.nama;
     }
     // Aturan total yang sama dengan rekap & laporan (lihat hitungTotalSO).
-    const totalQty = hitungTotalSO(itemData.entries).total;
+    // `rak` disertakan eksplisit supaya entri dari rak lain tidak ikut tergabung.
+    const totalQty = hitungTotalSO(itemData.entries.map(e => ({ ...e, rak: rakName }))).total;
     
     let m = `✏️ *EDIT ITEM*\n${GARIS_TEBAL}\n📦 ${escapeMd(nama)}\n🔖 \`${kode}\`${kode.startsWith('NEW_') ? ' 🆕' : ''}\n📍 Rak: ${rakName}\n📊 Total: ${totalQty}\n\n`;
     const buttons = [];
