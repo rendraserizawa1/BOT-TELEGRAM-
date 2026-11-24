@@ -2531,6 +2531,19 @@ function getAllRacks(tokoKode) {
   return shared.racks || {};
 }
 
+// Identitas petugas untuk Stock Opname.
+// Satu HP toko dipakai bergantian dengan SATU akun Telegram, jadi userId TIDAK
+// bisa dipakai membedakan orang: 114 entri di data produksi hanya punya 1 userId
+// tetapi memuat 2 nama petugas. Yang membedakan orang adalah namaPetugas.
+// Dinormalkan karena data asli memuat "ibu fitri dan intan" DAN "Ibu fitri dan
+// intan" - perbandingan persis akan memecah satu orang menjadi dua.
+function kunciPetugas(nama) {
+  return String(nama == null ? '' : nama)
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
 function tambahInputSO(tokoKode, rak, kodeBarang, userId, namaPetugas, qty, jenis) {
   const shared = getSOShared(tokoKode);
   if (!shared.racks[rak]) {
@@ -2599,8 +2612,15 @@ function tambahQtyItemSO(tokoKode, rak, kodeBarang, userId, namaPetugas, tambahQ
   }
   
   const entries = shared.racks[rak].items[kodeBarang].entries;
-  const existIdx = entries.findIndex(e => 
-    String(e.userId) === String(userId) && e.jenis === jenis
+  // BUG LAMA: pencocokan hanya userId + jenis, tanpa namaPetugas. Karena semua
+  // petugas memakai satu akun Telegram, qty petugas baru digabung ke entri
+  // petugas lama dan namanya tetap nama lama (6 entri di data produksi
+  // bertanda "(updated)"/"(edited)" sebagai jejaknya). Sekarang namaPetugas
+  // ikut dicocokkan supaya tiap petugas punya entri sendiri.
+  const existIdx = entries.findIndex(e =>
+    String(e.userId) === String(userId) &&
+    kunciPetugas(e.namaPetugas) === kunciPetugas(namaPetugas) &&
+    e.jenis === jenis
   );
   
   if (existIdx >= 0) {
@@ -2718,31 +2738,54 @@ function resetSOSharedToko(tokoKode) {
   }
 }
 
-function formatInfoBarangDiRakLain(tokoKode, kodeBarang, currentRak, currentUserId) {
+// Menampilkan entri milik ORANG LAIN atau di RAK LAIN.
+// BUG LAMA: pembandingnya userId (akun Telegram). Karena seluruh petugas toko
+// memakai satu akun, barang yang dihitung orang lain di rak yang sama dianggap
+// "milik sendiri" sehingga blok ini tidak pernah muncul. Sekarang yang
+// dibandingkan adalah identitas petugas (namaPetugas).
+function formatInfoBarangDiRakLain(tokoKode, kodeBarang, currentRak, currentUserId, namaPetugasSaya) {
   const raks = getBarangDiSemuaRak(tokoKode, kodeBarang);
   const info = [];
-  
+  const kunciSaya = kunciPetugas(namaPetugasSaya);
+
   raks.forEach(r => {
     r.entries.forEach(e => {
-      if (r.rak !== currentRak || String(e.userId) !== String(currentUserId)) {
+      const bedaRak = r.rak !== currentRak;
+      // Kalau nama petugas tidak diketahui, jatuh ke userId seperti perilaku lama.
+      const bedaOrang = kunciSaya
+        ? kunciPetugas(e.namaPetugas) !== kunciSaya
+        : String(e.userId) !== String(currentUserId);
+      if (bedaRak || bedaOrang) {
         info.push({ ...e, rak: r.rak });
       }
     });
   });
-  
+
   if (info.length === 0) return '';
-  
+
   let m = `\n⚠️ *BARANG INI SUDAH ADA DI:*\n──────────────────\n`;
   info.forEach((inp, i) => {
-    const jenisIcon = inp.jenis === 'fisik' ? '🏪' : '🏭';
-    m += `${i+1}. *${inp.namaPetugas}* di *${inp.rak}*\n`;
-    m += `   ⏰ ${inp.jamInput} | ${jenisIcon} ${inp.jenis.toUpperCase()}: ${inp.qty}\n`;
+    const jenis = String(inp.jenis || '').toLowerCase();
+    const jenisIcon = jenis === 'fisik' ? '🏪' : '🏭';
+    const jenisLabel = jenis ? jenis.toUpperCase() : 'TIDAK DISEBUT';
+    // Nama petugas dan nama rak berasal dari input pengguna. Pesan ini dikirim
+    // dengan parse_mode Markdown (lihat kirim()), jadi karakter '_' '*' '`' '['
+    // di dalamnya harus di-escape — kalau tidak, Telegram menolak seluruh pesan
+    // ("can't parse entities") dan info petugas tidak pernah sampai ke layar.
+    m += `${i+1}. *${escapeMd(inp.namaPetugas)}* di *${escapeMd(inp.rak)}*\n`;
+    m += `   ⏰ ${escapeMd(inp.jamInput)} | ${jenisIcon} ${jenisLabel}: ${inp.qty}\n`;
+    // Penanda "(updated)"/"(edited)" hanya ditulis oleh penggabungan model lama,
+    // yang mencampur qty antar petugas. Data tidak diubah - hanya diberi tanda
+    // supaya petugas tahu dan bisa hitung ulang bila ragu.
+    if (/\s*\((updated|edited)\)\s*$/i.test(String(inp.jamInput || ''))) {
+      m += `   ⚠️ _data lama — petugas bisa tercampur, hitung ulang bila ragu_\n`;
+    }
   });
-  
+
   let totalLain = 0;
   info.forEach(inp => totalLain += inp.qty);
   m += `\n📦 *Total di rak/user lain:* ${totalLain}\n`;
-  
+
   return m;
 }
 
@@ -7884,14 +7927,14 @@ function kbSOAktif() {
 // Tombol batal standar untuk pesan SO yang tidak pakai kbSOAktif()
 const KB_KEMBALI_SO = { inline_keyboard: [[{ text: '🔙 Kembali', callback_data: 'so:kembali' }]] };
 
-function tampilkanBarangPilihan(item, tokoKode, userId, rakAktif) {
+function tampilkanBarangPilihan(item, tokoKode, userId, rakAktif, namaPetugasSaya) {
   const h = item.harga[tokoKode] || { stok: 0 }; // barang baru dari iPos bisa tak ada di toko ini
   
   let m = `📦 *Barang ditemukan!*\n${GARIS_TEBAL}\n`;
   m += `🔖 ${item.kode}\n📦 ${escapeMd(item.nama)}\n📏 ${item.satuan}\n💻 Stok Sistem: ${h.stok}\n`;
   
-  if (userId) {
-    const infoLain = formatInfoBarangDiRakLain(tokoKode, item.kode, rakAktif, userId);
+  if (userId || namaPetugasSaya) {
+    const infoLain = formatInfoBarangDiRakLain(tokoKode, item.kode, rakAktif, userId, namaPetugasSaya);
     if (infoLain) m += infoLain;
   }
   
@@ -7958,9 +8001,9 @@ function iposMatiSejak(tokoKode) {
   } catch (e) { return null; }
 }
 
-async function tampilkanBarangPilihanLive(item, tokoKode, userId, rakAktif) {
+async function tampilkanBarangPilihanLive(item, tokoKode, userId, rakAktif, namaPetugasSaya) {
   const fresh = await segarkanItemRealtime(tokoKode, item.kode);
-  return tampilkanBarangPilihan(fresh || item, tokoKode, userId, rakAktif);
+  return tampilkanBarangPilihan(fresh || item, tokoKode, userId, rakAktif, namaPetugasSaya);
 }
 
 async function handleStockOpnameMode(chatId, userId, message, session) {
@@ -8524,14 +8567,14 @@ async function handleStockOpnameMode(chatId, userId, message, session) {
     const exactItem = DATA_BARANG.find(d => d.kode === message.trim().toUpperCase());
     if (exactItem) {
       updateSesi(userId, { pendingBarangKode: exactItem.kode });
-      await kirim(chatId, await tampilkanBarangPilihanLive(exactItem, tokoKode, userId, soInfo.rakAktif), { reply_markup: KB_KEMBALI_SO });
+      await kirim(chatId, await tampilkanBarangPilihanLive(exactItem, tokoKode, userId, soInfo.rakAktif, soInfo.petugas?.[0] || getNama(userId)), { reply_markup: KB_KEMBALI_SO });
       return;
     }
 
     const hasil = cariBarang(message);
     if (hasil.hasil.length === 1) {
       updateSesi(userId, { pendingBarangKode: hasil.hasil[0].kode });
-      await kirim(chatId, await tampilkanBarangPilihanLive(hasil.hasil[0], tokoKode, userId, soInfo.rakAktif), { reply_markup: KB_KEMBALI_SO });
+      await kirim(chatId, await tampilkanBarangPilihanLive(hasil.hasil[0], tokoKode, userId, soInfo.rakAktif, soInfo.petugas?.[0] || getNama(userId)), { reply_markup: KB_KEMBALI_SO });
       return;
     }
     
@@ -13739,7 +13782,7 @@ bot.on('callback_query', async (query) => {
     if (!item) return;
     const session = getSesi(userId);
     updateSesi(userId, { pendingBarangKode: kode });
-    kirim(chatId, await tampilkanBarangPilihanLive(item, session.tokoKode, userId, session.soInfo?.rakAktif), { reply_markup: KB_KEMBALI_SO });
+    kirim(chatId, await tampilkanBarangPilihanLive(item, session.tokoKode, userId, session.soInfo?.rakAktif, session.soInfo?.petugas?.[0] || getNama(userId)), { reply_markup: KB_KEMBALI_SO });
     return;
   }
   
