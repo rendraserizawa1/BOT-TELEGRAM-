@@ -2778,7 +2778,12 @@ function formatInfoBarangDiRakLain(tokoKode, kodeBarang, currentRak, currentUser
     // di dalamnya harus di-escape — kalau tidak, Telegram menolak seluruh pesan
     // ("can't parse entities") dan info petugas tidak pernah sampai ke layar.
     const tandaSaya = inp.milikSaya ? ' _(Anda)_' : '';
-    m += `${i+1}. *${escapeMd(inp.namaPetugas)}*${tandaSaya} di *${escapeMd(inp.rak)}*\n`;
+    // Nama petugas bisa kosong pada entri lama. Jangan tampilkan "**" kosong —
+    // beri label yang jelas supaya baris tetap terbaca.
+    const namaTampil = String(inp.namaPetugas == null ? '' : inp.namaPetugas).trim()
+      ? escapeMd(inp.namaPetugas)
+      : 'TANPA NAMA';
+    m += `${i+1}. *${namaTampil}*${tandaSaya} di *${escapeMd(inp.rak)}*\n`;
     m += `   ⏰ ${escapeMd(inp.jamInput)} | ${jenisIcon} ${jenisLabel}: ${inp.qty}\n`;
     // Penanda "(updated)"/"(edited)" hanya ditulis oleh penggabungan model lama,
     // yang mencampur qty antar petugas. Data tidak diubah - hanya diberi tanda

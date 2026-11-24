@@ -343,6 +343,26 @@ cek('15g. qty 7, 5, 3 semuanya tampil', /\b7\b/.test(layarMulti) && /\b5\b/.test
 cek('15h. jenis fisik dan gudang dibedakan', /FISIK/i.test(layarMulti) && /GUDANG/i.test(layarMulti), layarMulti);
 cek('15i. hanya "dimas" yang ditandai (Anda)', (layarMulti.match(/\(Anda\)/gi) || []).length === 1, layarMulti);
 
+// ── 16. Nama petugas kosong / null / tidak ada -> label jelas, bukan "**" ──
+// Entri lama bisa tidak punya nama. Jangan sampai tampil "**" kosong atau
+// teks "undefined"/"null" di layar petugas.
+const SOtanpaNama = buatDunia();
+SOtanpaNama.kefa.racks['rak kaca lantai 1 toko'].items.NN99999 = {
+  entries: [
+    { userId: '8997270739', qty: 5, jenis: 'fisik', jamInput: '08:00', timestamp: 20 },
+    { userId: '8997270739', namaPetugas: null, qty: 3, jenis: 'fisik', jamInput: '09:00', timestamp: 21 },
+    { userId: '8997270739', namaPetugas: '   ', qty: 2, jenis: 'fisik', jamInput: '10:00', timestamp: 22 },
+  ],
+};
+const F8 = buatSandbox(SOtanpaNama);
+const hasilTanpaNama = F8.formatInfoBarangDiRakLain('kefa', 'NN99999', 'rak kaca lantai 1 toko', '8997270739', 'dimas');
+cek('16. nama kosong tidak crash', typeof hasilTanpaNama === 'string');
+cek('16b. tidak menampilkan "undefined"', !/undefined/i.test(hasilTanpaNama), hasilTanpaNama);
+cek('16c. tidak menampilkan "null"', !/\bnull\b/i.test(hasilTanpaNama), hasilTanpaNama);
+cek('16d. tidak ada bold kosong "**"', !/\*\*[ \t]*\*/.test(hasilTanpaNama), hasilTanpaNama);
+cek('16e. ada label pengganti yang terbaca', /TANPA NAMA/i.test(hasilTanpaNama), hasilTanpaNama);
+cek('16f. jam dan qty tetap tampil', hasilTanpaNama.includes('08:00') && hasilTanpaNama.includes('10:00') && /\b5\b/.test(hasilTanpaNama), hasilTanpaNama);
+
 console.log('');
 console.log('────────────────────────────────────────────');
 console.log(`  LULUS: ${lulus}   GAGAL: ${gagal}`);
