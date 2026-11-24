@@ -131,13 +131,19 @@ if (ujiNyata.length) {
   cek('data nyata: nama ibu fitri tampil', hasil.includes('ibu fitri dan intan') || hasil.includes('Ibu fitri dan intan'), hasil);
   cek('data nyata: jam hitung tampil', hasil.includes(sample.jamInput), hasil);
 
-  // Kebalikannya: ibu fitri sendiri tidak melihat blok untuk entrinya sendiri.
+  // Kebalikannya: ibu fitri sendiri HARUS tetap melihat riwayatnya sendiri,
+  // lengkap dengan nama + jam, dan entrinya ditandai "(Anda)".
+  // Dulu blok ini disembunyikan untuk pemilik entri, sehingga layar
+  // "Barang ditemukan!" tidak memuat nama petugas & jam sama sekali.
   const hasilSendiri = F.formatInfoBarangDiRakLain('kefa', sample.kode, sample.rak, String(sample.userId), sample.namaPetugas);
-  // Bisa tetap muncul kalau ada entri ORANG LAIN di item yang sama — itu benar.
-  const adaOrangLain = (perItem.get(sample.rak + '\u0000' + sample.kode) || [])
-    .some((e) => F.kunciPetugas(e.namaPetugas) !== F.kunciPetugas(sample.namaPetugas));
-  cek('data nyata: petugas sendiri tidak melihat entrinya sendiri', !adaOrangLain ? hasilSendiri === '' : true,
-    adaOrangLain ? '(ada petugas lain di item ini - wajar muncul)' : hasilSendiri);
+  console.log('  Yang dilihat pemilik entri (ibu fitri) saat membuka barang yang sama:');
+  (hasilSendiri || '(KOSONG)').split('\n').filter((l) => l.trim()).forEach((l) => console.log('    ' + l));
+  cek('data nyata: petugas sendiri TETAP melihat riwayatnya', hasilSendiri !== '', '(kosong)');
+  cek('data nyata: nama petugas sendiri tetap tampil',
+    hasilSendiri.includes(sample.namaPetugas), hasilSendiri);
+  cek('data nyata: jam hitung sendiri tetap tampil',
+    hasilSendiri.includes(sample.jamInput), hasilSendiri);
+  cek('data nyata: entri sendiri ditandai (Anda)', /\(Anda\)/i.test(hasilSendiri), hasilSendiri);
 }
 
 // ── Entri bertanda harus diberi peringatan ───────────────────────────────

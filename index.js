@@ -2748,22 +2748,27 @@ function formatInfoBarangDiRakLain(tokoKode, kodeBarang, currentRak, currentUser
   const info = [];
   const kunciSaya = kunciPetugas(namaPetugasSaya);
 
+  // Tampilkan SEMUA entri, termasuk milik petugas yang sedang scan.
+  // Dulu entri milik sendiri disembunyikan (hanya "rak/user lain" yang tampil),
+  // akibatnya layar "Barang ditemukan!" tidak memuat nama petugas + jam sama
+  // sekali ketika yang scan adalah orang yang sudah menghitung barang itu -
+  // padahal justru itu yang ingin dilihat: siapa input berapa, jam berapa.
   raks.forEach(r => {
     r.entries.forEach(e => {
-      const bedaRak = r.rak !== currentRak;
-      // Kalau nama petugas tidak diketahui, jatuh ke userId seperti perilaku lama.
-      const bedaOrang = kunciSaya
-        ? kunciPetugas(e.namaPetugas) !== kunciSaya
-        : String(e.userId) !== String(currentUserId);
-      if (bedaRak || bedaOrang) {
-        info.push({ ...e, rak: r.rak });
-      }
+      // Bila nama petugas tidak diketahui, jatuh ke userId seperti perilaku lama.
+      const milikSaya = kunciSaya
+        ? kunciPetugas(e.namaPetugas) === kunciSaya
+        : String(e.userId) === String(currentUserId);
+      info.push({ ...e, rak: r.rak, milikSaya });
     });
   });
 
   if (info.length === 0) return '';
 
-  let m = `\n⚠️ *BARANG INI SUDAH ADA DI:*\n──────────────────\n`;
+  // Urutkan kronologis supaya jelas urutan inputnya.
+  info.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+
+  let m = `\n📋 *RIWAYAT HITUNG BARANG INI:*\n──────────────────\n`;
   info.forEach((inp, i) => {
     const jenis = String(inp.jenis || '').toLowerCase();
     const jenisIcon = jenis === 'fisik' ? '🏪' : '🏭';
@@ -2772,7 +2777,8 @@ function formatInfoBarangDiRakLain(tokoKode, kodeBarang, currentRak, currentUser
     // dengan parse_mode Markdown (lihat kirim()), jadi karakter '_' '*' '`' '['
     // di dalamnya harus di-escape — kalau tidak, Telegram menolak seluruh pesan
     // ("can't parse entities") dan info petugas tidak pernah sampai ke layar.
-    m += `${i+1}. *${escapeMd(inp.namaPetugas)}* di *${escapeMd(inp.rak)}*\n`;
+    const tandaSaya = inp.milikSaya ? ' _(Anda)_' : '';
+    m += `${i+1}. *${escapeMd(inp.namaPetugas)}*${tandaSaya} di *${escapeMd(inp.rak)}*\n`;
     m += `   ⏰ ${escapeMd(inp.jamInput)} | ${jenisIcon} ${jenisLabel}: ${inp.qty}\n`;
     // Penanda "(updated)"/"(edited)" hanya ditulis oleh penggabungan model lama,
     // yang mencampur qty antar petugas. Data tidak diubah - hanya diberi tanda
@@ -2782,9 +2788,15 @@ function formatInfoBarangDiRakLain(tokoKode, kodeBarang, currentRak, currentUser
     }
   });
 
+  let totalSemua = 0;
   let totalLain = 0;
-  info.forEach(inp => totalLain += inp.qty);
-  m += `\n📦 *Total di rak/user lain:* ${totalLain}\n`;
+  info.forEach(inp => {
+    totalSemua += inp.qty;
+    if (!inp.milikSaya) totalLain += inp.qty;
+  });
+
+  m += `\n📦 *Total dihitung:* ${totalSemua} dari ${info.length} input\n`;
+  if (totalLain > 0) m += `👥 *Dihitung petugas lain:* ${totalLain}\n`;
 
   return m;
 }

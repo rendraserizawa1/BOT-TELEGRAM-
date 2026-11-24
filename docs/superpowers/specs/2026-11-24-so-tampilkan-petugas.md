@@ -1,7 +1,14 @@
 # Stock Opname — tampilkan petugas + jam pada barang yang sudah dihitung
 
 Tanggal: 2026-11-24
-Status: **dikerjakan** (lihat bagian "Hasil pelaksanaan" di bawah)
+Status: **dikerjakan** (lihat bagian "Hasil pelaksanaan" dan "Perbaikan lanjutan"
+di bawah)
+
+> Catatan: rancangan awal hanya menampilkan entri milik **petugas lain**, sehingga
+> layar tetap kosong bila yang membuka adalah petugas yang sudah menghitung
+> barang itu. Bagian **"Perbaikan lanjutan — riwayat SELALU tampil"** di bawah
+> memperbaiki hal ini: sekarang semua entri tampil, entri sendiri ditandai
+> `(Anda)`.
 
 ## Masalah
 
@@ -218,3 +225,108 @@ kode baru (59 tes), dalam satu sesi supaya pembandingnya sah:
 - 6 entri lama yang sudah tercampur **tidak** diperbaiki qty-nya (tidak bisa
   dipisah tanpa menebak); hanya ditandai di layar.
 - Dua petugas dengan nama sama persis tetap tidak bisa dibedakan.
+
+## Perbaikan lanjutan — riwayat SELALU tampil (2026-11-24, sesi kedua)
+
+### Keluhan
+
+Setelah perbaikan di atas dipasang, layar `Barang ditemukan!` di toko masih
+hanya menampilkan angka:
+
+```
+💻 Stok Sistem: 18
+📊 *Total semua rak:*
+   🏪 Fisik: 2
+   📦 Total: 2
+   ➖ Selisih: -16
+```
+
+Tanpa nama petugas, tanpa jam input.
+
+### Akar masalah kedua — kesalahan desain, bukan bug teknis
+
+Rancangan pertama hanya menampilkan entri **milik orang lain**:
+
+```js
+const bedaRak  = r.rak !== currentRak;
+const bedaOrang = kunciPetugas(e.namaPetugas) !== kunciSaya;
+if (bedaRak || bedaOrang) info.push(...);   // entri sendiri dibuang
+```
+
+Kalau yang membuka layar adalah petugas yang **sudah** menghitung barang itu,
+`bedaRak` dan `bedaOrang` dua-duanya `false` → blok kosong sama sekali.
+
+Dibuktikan dengan menjalankan fungsi apa adanya pada bentuk data live
+(`NN03673`, `namaPetugas="dimas"`, `qty=16`, `jamInput="09:47 (updated)"`):
+
+```
+pemakai = "dimas"  (orang yang SAMA)   -> KOSONG  <- inilah yang dilihat user
+pemakai = "IRWAN"  (orang lain)        -> ADA blok
+pemakai = ""       (nama kosong)       -> KOSONG  (fallback userId, akun sama)
+```
+
+Padahal yang diminta adalah **riwayat lengkap per item** — siapa input berapa,
+jam berapa — termasuk entri sendiri.
+
+### Perubahan
+
+`formatInfoBarangDiRakLain` sekarang:
+
+1. Mengumpulkan **semua** entri dari semua rak, tanpa menyaring.
+2. Menandai entri milik sendiri dengan `_(Anda)_` (pembanding tetap
+   `kunciPetugas(namaPetugas)`, dengan fallback `userId` bila nama tidak
+   diketahui — perilaku lama dipertahankan sebagai jaring pengaman).
+3. Mengurutkan **kronologis** berdasarkan `timestamp`, supaya urutan input jelas.
+4. Judul blok diganti `⚠️ BARANG INI SUDAH ADA DI:` → `📋 RIWAYAT HITUNG
+   BARANG INI:`, karena isinya sekarang bukan lagi "barang ada di tempat lain"
+   melainkan riwayat hitung.
+5. Ringkasan bawah: `📦 Total dihitung: N dari M input`, ditambah
+   `👥 Dihitung petugas lain: N` bila ada entri petugas lain.
+6. Penanda `⚠️ data lama — petugas bisa tercampur` tetap dipertahankan untuk
+   entri ber-`(updated)`/`(edited)`.
+
+### Hasil di layar
+
+Satu item dihitung tiga petugas, dibuka oleh `dimas`:
+
+```
+📋 *RIWAYAT HITUNG BARANG INI:*
+──────────────────
+1. *IRWAN* di *RAK LANTAI 1 HOMMY*
+   ⏰ 08:39 | 🏪 FISIK: 12
+2. *ibu fitri dan intan* di *RAK LANTAI 1 HOMMY*
+   ⏰ 09:10 | 🏪 FISIK: 5
+3. *dimas* _(Anda)_ di *RAK LANTAI 1 HOMMY*
+   ⏰ 10:05 | 🏭 GUDANG: 3
+
+📦 *Total dihitung:* 20 dari 3 input
+👥 *Dihitung petugas lain:* 17
+```
+
+### Berkas yang berubah pada sesi kedua
+
+- `index.js` — `formatInfoBarangDiRakLain` saja (+24 / −12 baris).
+- `boot/test-so-petugas.js` — 31 → **52 pemeriksaan**. Tes 2/4 yang dulu
+  mengunci "blok kosong bila petugas sama" dibalik menjadi "blok tetap muncul +
+  ditandai (Anda)". Ditambah tes 14 (kasus nyata NN03673/dimas/09:47) dan tes 15
+  (tiga petugas, semua nama + jam + qty tampil, hanya satu `(Anda)`).
+- `boot/test-so-data-nyata.js` — 12 → **15 pemeriksaan** pada 114 entri
+  produksi; asersi "petugas sendiri tidak melihat entrinya" dibalik menjadi
+  "petugas sendiri TETAP melihat nama + jam + tanda (Anda)".
+
+### Regresi sesi kedua
+
+Seluruh `boot/test-*.js` dijalankan pada clone baseline `e2f2cd7` dan pada kode
+baru, satu sesi:
+
+| | Baseline | Baru |
+|---|---|---|
+| Total lulus | 304 | 371 |
+| Total gagal | 2 | 2 |
+
+- **Regresi: 0** — tidak ada berkas tes yang turun jumlah lulusnya.
+- 2 kegagalan sama persis di kedua versi (butuh jaringan/DB produksi).
+- 57 berkas tes tidak berubah hasil; 3 berkas baru seluruhnya lulus
+  (`test-so-petugas` 52, `test-so-data-nyata` 15, `test-kunci-proses` 16).
+- 22 berkas keluar dengan exit ≠ 0 di **kedua** versi karena butuh jaringan —
+  sudah begitu sebelum perubahan ini.

@@ -171,9 +171,16 @@ cek('1c. jam hitung tampil', hasil1.includes('11:22'));
 cek('1d. rak tampil', hasil1.includes('rak kaca lantai 1 toko'));
 cek('1e. qty tampil', hasil1.includes('7'));
 
-// ── 2. Petugas SAMA, rak SAMA -> blok TIDAK muncul ───────────────────────
+// ── 2. Petugas SAMA, rak SAMA -> blok TETAP muncul, ditandai "(Anda)" ────
+// Dulu blok disembunyikan bila petugasnya sendiri, sehingga layar
+// "Barang ditemukan!" tidak memuat nama petugas + jam sama sekali.
+// Sekarang riwayat SELALU ditampilkan; entri milik sendiri diberi tanda.
 const hasil2 = F2.formatInfoBarangDiRakLain('kefa', 'NN09296', 'rak kaca lantai 1 toko', '8997270739', 'ibu fitri dan intan');
-cek('2. petugas sama + rak sama -> blok kosong', hasil2 === '', hasil2);
+cek('2. petugas sama + rak sama -> blok TETAP muncul', hasil2 !== '', '(kosong)');
+cek('2b. entri milik sendiri ditandai (Anda)', /\(Anda\)/i.test(hasil2), hasil2);
+cek('2c. nama petugas tetap tampil', hasil2.includes('ibu fitri dan intan'), hasil2);
+cek('2d. jam hitung tetap tampil', hasil2.includes('11:22'), hasil2);
+cek('2e. qty tetap tampil', /7/.test(hasil2), hasil2);
 
 // ── 3. Rak BEDA -> blok muncul ───────────────────────────────────────────
 const hasil3 = F2.formatInfoBarangDiRakLain('kefa', 'NN11881', 'rak kaca lantai 1 toko', '8997270739', 'MAS ANDRI');
@@ -181,9 +188,10 @@ cek('3. rak beda -> blok muncul', hasil3 !== '' && hasil3.includes('gudang lanta
 
 // ── 4. Nama beda kapitalisasi = orang yang sama ──────────────────────────
 const hasil4 = F2.formatInfoBarangDiRakLain('kefa', 'NN07777', 'rak kaca lantai 1 toko', '8997270739', 'ibu fitri dan intan');
-cek('4. beda kapitalisasi dianggap orang sama -> blok kosong', hasil4 === '', hasil4);
+cek('4. beda kapitalisasi dianggap orang sama -> ditandai (Anda)', /\(Anda\)/i.test(hasil4), hasil4 || '(kosong)');
 const hasil4b = F2.formatInfoBarangDiRakLain('kefa', 'NN07777', 'rak kaca lantai 1 toko', '8997270739', 'MAS ANDRI');
-cek('4b. orang lain tetap melihatnya', hasil4b.includes('Ibu fitri dan intan'), hasil4b || '(kosong)');
+cek('4b. orang lain TIDAK ditandai (Anda)', !/\(Anda\)/i.test(hasil4b), hasil4b || '(kosong)');
+cek('4c. orang lain tetap melihat nama pemiliknya', hasil4b.includes('Ibu fitri dan intan'), hasil4b);
 
 // ── 5. Qty petugas A lalu B -> DUA entri terpisah ────────────────────────
 F2.tambahQtyItemSO('kefa', 'rak kaca lantai 1 toko', 'NN09296', '8997270739', 'MAS ANDRI', 5, 'fisik');
@@ -208,7 +216,11 @@ cek('6d. qty jadi 6', entri6c[0].qty === 6, String(entri6c[0].qty));
 const hasil7 = F2.formatInfoBarangDiRakLain('kefa', 'NN02099', 'rak kaca lantai 1 toko', '8997270739', 'MAS ANDRI');
 cek('7. entri bertanda -> ada peringatan data lama', /data lama/i.test(hasil7), hasil7 || '(kosong)');
 cek('7b. peringatan menyebut petugas bisa tercampur', /tercampur/i.test(hasil7));
-const hasil7b = F2.formatInfoBarangDiRakLain('kefa', 'NN09296', 'rak kaca lantai 1 toko', '8997270739', 'MAS ANDRI');
+// Sandbox BERSIH: tes 5/6/6c di atas sudah menambahkan entri ke NN09296 dan
+// NN07777, sehingga jam keduanya menjadi "(updated)". Untuk menguji bahwa
+// entri normal TIDAK diberi peringatan, harus pakai data yang belum tersentuh.
+const Fbersih7 = buatSandbox(buatDunia());
+const hasil7b = Fbersih7.formatInfoBarangDiRakLain('kefa', 'NN09296', 'rak kaca lantai 1 toko', '8997270739', 'MAS ANDRI');
 cek('7c. entri normal TIDAK diberi peringatan', !/data lama/i.test(hasil7b), hasil7b);
 
 // ── 8. Tidak ada data lain -> string kosong (regresi) ────────────────────
@@ -230,21 +242,24 @@ const layar = F2.tampilkanBarangPilihan(
   { kode: 'NN09296', nama: 'PIRING BT PAUS BIRU', satuan: 'PCS', harga: { kefa: { stok: 120 } } },
   'kefa', '8997270739', 'rak kaca lantai 1 toko', 'MAS ANDRI'
 );
-cek('10. layar "Barang ditemukan!" memuat blok petugas', layar.includes('BARANG INI SUDAH ADA DI'), layar);
+cek('10. layar "Barang ditemukan!" memuat blok riwayat', layar.includes('RIWAYAT HITUNG BARANG INI'), layar);
 cek('10b. layar memuat nama petugas + jam', layar.includes('ibu fitri dan intan') && layar.includes('11:22'));
 cek('10c. layar tetap memuat stok sistem', layar.includes('Stok Sistem: 120'));
 
-// ── 11. Kebalikan: petugas yang sama tidak melihat blok di layar ─────────
+// ── 11. Layar penuh: petugas yang sama tetap melihat riwayatnya ──────────
 // Pakai dunia BERSIH: tes 5/6 di atas sudah menambah entri MAS ANDRI ke
-// NN09296, jadi kalau memakai SO yang sama, ibu fitri memang seharusnya
-// melihat entri MAS ANDRI. Untuk menguji "tidak ada blok", butuh data bersih.
+// NN09296. Yang diuji di sini: petugas pemilik entri TETAP melihat nama + jam
+// di layar "Barang ditemukan!", bukan layar kosong seperti dulu.
 const SObersih = buatDunia();
 const F3 = buatSandbox(SObersih);
 const layar2 = F3.tampilkanBarangPilihan(
   { kode: 'NN09296', nama: 'PIRING BT PAUS BIRU', satuan: 'PCS', harga: { kefa: { stok: 120 } } },
   'kefa', '8997270739', 'rak kaca lantai 1 toko', 'ibu fitri dan intan'
 );
-cek('11. petugas sama -> layar tanpa blok "sudah ada di"', !layar2.includes('BARANG INI SUDAH ADA DI'), layar2);
+cek('11. petugas sama -> layar TETAP memuat blok riwayat', layar2.includes('RIWAYAT HITUNG BARANG INI'), layar2);
+cek('11b. layar memuat nama petugas', layar2.includes('ibu fitri dan intan'), layar2);
+cek('11c. layar memuat jam input', layar2.includes('11:22'), layar2);
+cek('11d. layar menandai entri sendiri', /\(Anda\)/i.test(layar2), layar2);
 
 // ── 12. Nama petugas berkarakter Markdown tidak boleh merusak pesan ──────
 // Pesan dikirim dengan parse_mode 'Markdown'. Nama seperti "Budi_Santoso" atau
@@ -278,6 +293,55 @@ try {
 } catch (e) { amanJenis = false; console.log('     error: ' + e.message); }
 cek('13. entri tanpa jenis tidak crash', amanJenis);
 cek('13b. entri tanpa jenis tetap tampil', amanJenis && hasilJenis.includes('Petugas X'), hasilJenis);
+
+// ── 14. KASUS NYATA 24 Nov: NN03673 oleh "dimas" jam 09:47 ───────────────
+// Inilah layar yang dilaporkan: hanya "Fisik: 16", tanpa nama petugas & jam.
+// Penyebabnya entri itu milik petugas yang sedang scan, jadi dulu disembunyikan.
+const SOnn = buatDunia();
+SOnn.kefa.racks['RAK LANTAI 1 HOMMY'] = {
+  items: {
+    NN03673: {
+      entries: [
+        { userId: '8997270739', namaPetugas: 'dimas', qty: 16, jenis: 'fisik', jamInput: '09:47 (updated)', timestamp: 10 },
+      ],
+    },
+  },
+};
+const F6 = buatSandbox(SOnn);
+const layarNN = F6.tampilkanBarangPilihan(
+  { kode: 'NN03673', nama: 'BOX NASI MINERVA HOMMY 3205', satuan: 'PCS', harga: { kefa: { stok: 18 } } },
+  'kefa', '8997270739', 'RAK LANTAI 1 HOMMY', 'dimas'
+);
+cek('14. kasus nyata: layar memuat nama petugas "dimas"', /dimas/i.test(layarNN), layarNN);
+cek('14b. kasus nyata: layar memuat jam 09:47', layarNN.includes('09:47'), layarNN);
+cek('14c. kasus nyata: layar memuat qty 16', /16/.test(layarNN), layarNN);
+cek('14d. kasus nyata: entri sendiri ditandai (Anda)', /\(Anda\)/i.test(layarNN), layarNN);
+
+// ── 15. Beberapa petugas: SEMUA harus tampil, bukan hanya yang pertama ───
+// Permintaan eksplisit: bila satu item dihitung beberapa petugas, tampilkan
+// semuanya lengkap dengan qty dan jam masing-masing.
+const SOmulti = buatDunia();
+SOmulti.kefa.racks['rak kaca lantai 1 toko'].items.NN88888 = {
+  entries: [
+    { userId: '8997270739', namaPetugas: 'ibu fitri dan intan', qty: 7, jenis: 'fisik', jamInput: '08:15', timestamp: 11 },
+    { userId: '8997270739', namaPetugas: 'MAS ANDRI', qty: 5, jenis: 'fisik', jamInput: '09:30', timestamp: 12 },
+    { userId: '8997270739', namaPetugas: 'dimas', qty: 3, jenis: 'gudang', jamInput: '10:45', timestamp: 13 },
+  ],
+};
+const F7 = buatSandbox(SOmulti);
+const layarMulti = F7.tampilkanBarangPilihan(
+  { kode: 'NN88888', nama: 'GELAS KACA', satuan: 'PCS', harga: { kefa: { stok: 20 } } },
+  'kefa', '8997270739', 'rak kaca lantai 1 toko', 'dimas'
+);
+cek('15. tiga petugas: ibu fitri tampil', layarMulti.includes('ibu fitri dan intan'), layarMulti);
+cek('15b. tiga petugas: MAS ANDRI tampil', layarMulti.includes('MAS ANDRI'), layarMulti);
+cek('15c. tiga petugas: dimas tampil', /dimas/i.test(layarMulti), layarMulti);
+cek('15d. jam 08:15 tampil', layarMulti.includes('08:15'), layarMulti);
+cek('15e. jam 09:30 tampil', layarMulti.includes('09:30'), layarMulti);
+cek('15f. jam 10:45 tampil', layarMulti.includes('10:45'), layarMulti);
+cek('15g. qty 7, 5, 3 semuanya tampil', /\b7\b/.test(layarMulti) && /\b5\b/.test(layarMulti) && /\b3\b/.test(layarMulti), layarMulti);
+cek('15h. jenis fisik dan gudang dibedakan', /FISIK/i.test(layarMulti) && /GUDANG/i.test(layarMulti), layarMulti);
+cek('15i. hanya "dimas" yang ditandai (Anda)', (layarMulti.match(/\(Anda\)/gi) || []).length === 1, layarMulti);
 
 console.log('');
 console.log('────────────────────────────────────────────');
